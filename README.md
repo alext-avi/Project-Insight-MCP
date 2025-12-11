@@ -49,7 +49,7 @@ A **Model Context Protocol (MCP)** server for integrating with the **Project Ins
 
 ### 1. Clone and Setup
 ```bash
-git clone https://github.com/alexthomas/AVI-MCP-Tools.git
+git clone git@github.com:alext-avi/AVI-MCP-Tools.git
 cd AVI-MCP-Tools
 ```
 
