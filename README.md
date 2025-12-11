@@ -1,6 +1,8 @@
-# Project Insight MCP Server
+# AVI MCP Tools - Project Insight Server
 
 A **Model Context Protocol (MCP)** server for integrating with the **Project Insight API**, enabling AI agents like GitHub Copilot to interact with project management data and tools through natural language.
+
+**Part of Applied Visions Inc. (AVI) MCP Tools suite.**
 
 ## 🚀 Status: Production Ready
 
@@ -47,8 +49,8 @@ A **Model Context Protocol (MCP)** server for integrating with the **Project Ins
 
 ### 1. Clone and Setup
 ```bash
-git clone https://github.com/yourusername/ProjectInsight.git
-cd ProjectInsight
+git clone https://github.com/alexthomas/AVI-MCP-Tools.git
+cd AVI-MCP-Tools
 ```
 
 ### 2. Configure API Settings
