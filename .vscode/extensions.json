@@ -1,0 +1,13 @@
+{
+    "recommendations": [
+        "ms-dotnettools.csharp",
+        "ms-dotnettools.csdevkit",
+        "ms-vscode.azure-account",
+        "ms-azuretools.azure-dev",
+        "ms-azuretools.vscode-azurefunctions",
+        "ms-dotnettools.vscode-dotnet-runtime",
+        "ms-vscode.vscode-json",
+        "redhat.vscode-yaml",
+        "humao.rest-client"
+    ]
+}

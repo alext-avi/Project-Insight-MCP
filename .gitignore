@@ -1,0 +1,53 @@
+# Build results
+bin/
+obj/
+*.user
+*.suo
+*.cache
+
+# Azure Functions artifacts
+func.pid
+
+# Log files  
+*.log
+function.log
+
+# Local settings (contains sensitive API keys)
+local.settings.json
+
+# IDE
+.vs/
+.vscode/settings.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Deployment artifacts (may contain sensitive data)
+deploy-params.json
+azure-resources.json
+
+# Temporary files
+*.tmp
+*.temp
+
+# .NET specific
+*.swp
+*.*~
+project.lock.json
+.idea/
+*.sln.iml
+*.dbmdl
+*.jfm
+
+# NuGet
+*.nupkg
+**/packages/*
+!**/packages/build/
+
+# Test results
+TestResults/
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/

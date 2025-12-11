@@ -1,0 +1,6 @@
+@ProjectInsightMCP_HostAddress = http://localhost:5247
+
+GET {{ProjectInsightMCP_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
