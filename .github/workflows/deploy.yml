@@ -1,0 +1,261 @@
+name: Deploy Project Insight MCP Server
+
+on:
+    push:
+        branches:
+            - main
+            - develop
+        paths:
+            - "servers/project-insight/src/**"
+            - "shared/**"
+            - "bicep/**"
+            - ".github/workflows/**"
+    pull_request:
+        branches:
+            - main
+        paths:
+            - "servers/project-insight/src/**"
+            - "shared/**"
+            - "bicep/**"
+            - ".github/workflows/**"
+    workflow_dispatch:
+        inputs:
+            environment:
+                description: "Environment to deploy to"
+                required: true
+                default: "dev"
+                type: choice
+                options:
+                    - dev
+                    - staging
+                    - prod
+
+env:
+    DOTNET_VERSION: "8.0.x"
+    AZURE_FUNCTIONAPP_PACKAGE_PATH: "servers/project-insight/src"
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Setup .NET
+              uses: actions/setup-dotnet@v4
+              with:
+                  dotnet-version: ${{ env.DOTNET_VERSION }}
+
+            - name: Restore dependencies
+              working-directory: servers/project-insight/src
+              run: dotnet restore
+
+            - name: Build
+              working-directory: servers/project-insight/src
+              run: dotnet build --no-restore --configuration Release
+
+            - name: Publish
+              working-directory: servers/project-insight/src
+              run: dotnet publish --configuration Release --output ./output
+
+            - name: Upload build artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: function-app
+                  path: servers/project-insight/src/output
+
+    validate-bicep:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Azure CLI Login
+              uses: azure/login@v2
+              with:
+                  creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+            - name: Validate Bicep template
+              run: |
+                  az bicep build --file bicep/main.bicep
+                  az deployment group validate \
+                    --resource-group ${{ vars.AZURE_RESOURCE_GROUP_DEV }} \
+                    --template-file bicep/main.bicep \
+                    --parameters @bicep/parameters/dev.parameters.json
+
+    deploy-dev:
+        if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev')
+        runs-on: ubuntu-latest
+        needs: [build, validate-bicep]
+        environment: dev
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Download build artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  name: function-app
+                  path: ./output
+
+            - name: Azure CLI Login
+              uses: azure/login@v2
+              with:
+                  creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+            - name: Deploy Infrastructure
+              id: deploy-infra
+              run: |
+                  az deployment group create \
+                    --resource-group ${{ vars.AZURE_RESOURCE_GROUP_DEV }} \
+                    --template-file bicep/main.bicep \
+                    --parameters @bicep/parameters/dev.parameters.json \
+                    --output json > deployment-output.json
+
+                  # Extract function app name from deployment output
+                  FUNCTION_APP_NAME=$(cat deployment-output.json | jq -r '.properties.outputs.functionAppName.value')
+                  echo "function-app-name=$FUNCTION_APP_NAME" >> $GITHUB_OUTPUT
+
+                  # Extract function app URL
+                  FUNCTION_APP_URL=$(cat deployment-output.json | jq -r '.properties.outputs.functionAppUrl.value')
+                  echo "function-app-url=$FUNCTION_APP_URL" >> $GITHUB_OUTPUT
+
+            - name: Deploy Function App
+              uses: Azure/functions-action@v1
+              with:
+                  app-name: ${{ steps.deploy-infra.outputs.function-app-name }}
+                  package: "./output"
+
+            - name: Health Check
+              run: |
+                  echo "Waiting for function app to be ready..."
+                  sleep 30
+
+                  # Test health endpoint
+                  HEALTH_URL="${{ steps.deploy-infra.outputs.function-app-url }}/api/health"
+
+                  for i in {1..10}; do
+                    if curl -f -s "$HEALTH_URL" > /dev/null; then
+                      echo "✅ Health check passed"
+                      break
+                    else
+                      echo "⏳ Health check failed, retrying in 15 seconds... (attempt $i/10)"
+                      sleep 15
+                    fi
+                  done
+
+    deploy-staging:
+        if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+        runs-on: ubuntu-latest
+        needs: [build, validate-bicep]
+        environment: staging
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Download build artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  name: function-app
+                  path: ./output
+
+            - name: Azure CLI Login
+              uses: azure/login@v2
+              with:
+                  creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+            - name: Deploy Infrastructure
+              id: deploy-infra
+              run: |
+                  az deployment group create \
+                    --resource-group ${{ vars.AZURE_RESOURCE_GROUP_STAGING }} \
+                    --template-file bicep/main.bicep \
+                    --parameters @bicep/parameters/staging.parameters.json \
+                    --output json > deployment-output.json
+
+                  FUNCTION_APP_NAME=$(cat deployment-output.json | jq -r '.properties.outputs.functionAppName.value')
+                  echo "function-app-name=$FUNCTION_APP_NAME" >> $GITHUB_OUTPUT
+
+                  FUNCTION_APP_URL=$(cat deployment-output.json | jq -r '.properties.outputs.functionAppUrl.value')
+                  echo "function-app-url=$FUNCTION_APP_URL" >> $GITHUB_OUTPUT
+
+            - name: Deploy Function App
+              uses: Azure/functions-action@v1
+              with:
+                  app-name: ${{ steps.deploy-infra.outputs.function-app-name }}
+                  package: "./output"
+
+            - name: Integration Tests
+              run: |
+                  echo "Running integration tests against staging environment..."
+                  sleep 30
+
+                  # Test health endpoint
+                  HEALTH_URL="${{ steps.deploy-infra.outputs.function-app-url }}/api/health"
+                  curl -f "$HEALTH_URL" || exit 1
+
+                  echo "✅ Integration tests passed"
+
+    deploy-prod:
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
+        runs-on: ubuntu-latest
+        needs: [build, validate-bicep]
+        environment: production
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Download build artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  name: function-app
+                  path: ./output
+
+            - name: Azure CLI Login
+              uses: azure/login@v2
+              with:
+                  creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+            - name: Deploy Infrastructure
+              id: deploy-infra
+              run: |
+                  az deployment group create \
+                    --resource-group ${{ vars.AZURE_RESOURCE_GROUP_PROD }} \
+                    --template-file bicep/main.bicep \
+                    --parameters @bicep/parameters/prod.parameters.json \
+                    --output json > deployment-output.json
+
+                  FUNCTION_APP_NAME=$(cat deployment-output.json | jq -r '.properties.outputs.functionAppName.value')
+                  echo "function-app-name=$FUNCTION_APP_NAME" >> $GITHUB_OUTPUT
+
+                  FUNCTION_APP_URL=$(cat deployment-output.json | jq -r '.properties.outputs.functionAppUrl.value')
+                  echo "function-app-url=$FUNCTION_APP_URL" >> $GITHUB_OUTPUT
+
+            - name: Deploy Function App
+              uses: Azure/functions-action@v1
+              with:
+                  app-name: ${{ steps.deploy-infra.outputs.function-app-name }}
+                  package: "./output"
+
+            - name: Production Health Check
+              run: |
+                  echo "Running production health checks..."
+                  sleep 45
+
+                  # Test health endpoint
+                  HEALTH_URL="${{ steps.deploy-infra.outputs.function-app-url }}/api/health"
+
+                  for i in {1..15}; do
+                    if curl -f -s "$HEALTH_URL" > /dev/null; then
+                      echo "✅ Production health check passed"
+                      break
+                    else
+                      echo "⏳ Production health check failed, retrying in 20 seconds... (attempt $i/15)"
+                      sleep 20
+                    fi
+                  done
+
+            - name: Notify deployment
+              run: |
+                  echo "🚀 Production deployment completed successfully!"
+                  echo "Function App URL: ${{ steps.deploy-infra.outputs.function-app-url }}"

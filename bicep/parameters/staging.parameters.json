@@ -1,0 +1,32 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "resourcePrefix": {
+            "value": "func-projectinsight"
+        },
+        "environment": {
+            "value": "staging"
+        },
+        "location": {
+            "value": "East US"
+        },
+        "runtime": {
+            "value": "dotnet-isolated"
+        },
+        "appServicePlanSku": {
+            "value": "EP1"
+        },
+        "enableApplicationInsights": {
+            "value": true
+        },
+        "tags": {
+            "value": {
+                "Environment": "staging",
+                "Project": "ProjectInsight",
+                "ManagedBy": "Bicep",
+                "CostCenter": "Engineering"
+            }
+        }
+    }
+}

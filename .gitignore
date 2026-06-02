@@ -1,0 +1,81 @@
+# Build results
+**/bin/
+**/obj/
+*.user
+*.suo
+*.cache
+
+# Azure Functions artifacts
+func.pid
+**/output/
+
+# Claude Code local settings (may contain tokens/permissions)
+.claude/settings.local.json
+
+# Log files  
+*.log
+function.log
+
+# Local settings (contains sensitive API keys)
+**/local.settings.json
+.mcp.json
+**/.env.local
+**/.env.*.local
+**/.env.*.user
+**/appPackage/build/
+**/env/.env.*
+
+# IDE
+.vs/
+.vscode/settings.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Deployment artifacts (may contain sensitive data)
+**/deploy-params.json
+**/azure-resources.json
+
+# Temporary files
+*.tmp
+*.temp
+
+# .NET specific
+*.swp
+*.*~
+project.lock.json
+.idea/
+*.sln.iml
+*.dbmdl
+*.jfm
+
+# NuGet
+*.nupkg
+**/packages/*
+!**/packages/build/
+
+# Test results
+TestResults/
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+# Published output (build artifacts)
+**/publish/
+*.zip
+
+# NuGet packages
+**/nupkg/
+
+# MCPB build artifacts and signing material
+servers/project-insight/mcpb/build/server/
+servers/project-insight/mcpb/signing/
+servers/project-insight/mcpb/*.mcpb
+servers/project-insight/src-stdio/bin/mcpb/
+
+# Environment files — never commit real env files; keep only the example(s)
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example

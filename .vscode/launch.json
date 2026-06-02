@@ -1,0 +1,35 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch Azure Functions",
+            "type": "func",
+            "request": "launch",
+            "program": "${workspaceFolder}/bin/Debug/net8.0/ProjectInsightMCP.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "FUNCTIONS_WORKER_RUNTIME": "dotnet",
+                "FUNCTIONS_INPROC_NET8_ENABLED": "1"
+            },
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "preLaunchTask": "build"
+        },
+        {
+            "name": "Debug .NET Core",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "${workspaceFolder}/bin/Debug/net8.0/ProjectInsightMCP.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "console": "integratedTerminal",
+            "env": {
+                "FUNCTIONS_WORKER_RUNTIME": "dotnet",
+                "FUNCTIONS_INPROC_NET8_ENABLED": "1"
+            },
+            "preLaunchTask": "build"
+        }
+    ]
+}

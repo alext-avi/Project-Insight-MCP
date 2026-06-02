@@ -1,0 +1,188 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "build",
+			"command": "dotnet",
+			"type": "process",
+			"args": [
+				"build",
+				"ProjectInsightMCP.csproj",
+				"/property:GenerateFullPaths=true",
+				"/consoleloggerparameters:NoSummary"
+			],
+			"group": "build",
+			"presentation": {
+				"reveal": "silent"
+			},
+			"problemMatcher": "$msCompile"
+		},
+		{
+			"label": "clean",
+			"command": "dotnet",
+			"type": "process",
+			"args": [
+				"clean",
+				"ProjectInsightMCP.csproj"
+			],
+			"group": "build",
+			"presentation": {
+				"reveal": "always"
+			},
+			"problemMatcher": "$msCompile"
+		},
+		{
+			"label": "restore",
+			"command": "dotnet",
+			"type": "process",
+			"args": [
+				"restore",
+				"ProjectInsightMCP.csproj"
+			],
+			"group": "build",
+			"presentation": {
+				"reveal": "silent"
+			},
+			"problemMatcher": "$msCompile"
+		},
+		{
+			"label": "func: start",
+			"type": "shell",
+			"command": "func",
+			"args": [
+				"start",
+				"--verbose"
+			],
+			"isBackground": true,
+			"dependsOn": "build",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": [
+				{
+					"pattern": [
+						{
+							"regexp": "^(.*)$",
+							"file": 1,
+							"location": 2,
+							"message": 3
+						}
+					],
+					"background": {
+						"activeOnStart": true,
+						"beginsPattern": "^.*Starting host.*",
+						"endsPattern": "^.*Job host started.*"
+					}
+				}
+			]
+		},
+		{
+			"label": "func: stop",
+			"type": "shell",
+			"command": "pkill",
+			"args": [
+				"-f",
+				"func start"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always"
+			}
+		},
+		{
+			"label": "test: health",
+			"type": "shell",
+			"command": "curl",
+			"args": [
+				"-s",
+				"http://localhost:7071/api/health?validate-auth=true"
+			],
+			"group": "test",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": true
+			}
+		},
+		{
+			"label": "test: mcp tools",
+			"type": "shell",
+			"command": "curl",
+			"args": [
+				"-s",
+				"-X",
+				"POST",
+				"http://localhost:7071/api/mcp",
+				"-H",
+				"Content-Type: application/json",
+				"-d",
+				"{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"tools/list\", \"params\": {}}"
+			],
+			"group": "test",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": true
+			}
+		},
+		{
+			"label": "test: search projects",
+			"type": "shell",
+			"command": "curl",
+			"args": [
+				"-s",
+				"-X",
+				"POST",
+				"http://localhost:7071/api/mcp",
+				"-H",
+				"Content-Type: application/json",
+				"-d",
+				"{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"tools/call\", \"params\": {\"name\": \"search_projects\", \"arguments\": {}}}"
+			],
+			"group": "test",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": true
+			}
+		},
+		{
+			"label": "test: full suite",
+			"type": "shell",
+			"command": "./quick-test-mcp.sh",
+			"group": "test",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": true
+			}
+		},
+		{
+			"label": "deploy to azure",
+			"type": "shell",
+			"command": "./deploy.sh",
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": true
+			}
+		},
+		{
+			"label": "build and start",
+			"type": "shell",
+			"command": "dotnet build && echo 'Build complete! Ready for VS Code development.'",
+			"group": "build"
+		}
+	]
+}

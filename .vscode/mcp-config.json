@@ -1,0 +1,21 @@
+{
+  "mcp.servers": {
+    "project-insight": {
+      "name": "Project Insight MCP Server",
+      "description": "Project management tools via Project Insight API",
+      "transport": {
+        "type": "http",
+        "url": "http://localhost:7071/api/mcp"
+      },
+      "capabilities": {
+        "tools": true,
+        "resources": false,
+        "prompts": false
+      },
+      "settings": {
+        "timeout": 30000,
+        "retries": 3
+      }
+    }
+  }
+}

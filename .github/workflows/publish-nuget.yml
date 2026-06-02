@@ -1,0 +1,107 @@
+name: Publish NuGet Package
+
+on:
+    push:
+        branches:
+            - main
+        paths:
+            - "servers/project-insight/src/**"
+            - "servers/project-insight/src-stdio/**"
+            - "shared/**"
+            - ".github/workflows/publish-nuget.yml"
+    workflow_dispatch:
+
+env:
+    DOTNET_VERSION: "8.0.x"
+    PROJECT_PATH: "servers/project-insight/src-stdio/ProjectInsightMCP.Stdio.csproj"
+
+jobs:
+    publish:
+        runs-on: ubuntu-latest
+        permissions:
+            packages: write
+            contents: read
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Setup .NET
+              uses: actions/setup-dotnet@v4
+              with:
+                  dotnet-version: ${{ env.DOTNET_VERSION }}
+
+            - name: Extract version
+              id: version
+              run: |
+                  VERSION=$(grep -oP '(?<=<Version>).*?(?=</Version>)' ${{ env.PROJECT_PATH }})
+                  echo "version=$VERSION" >> $GITHUB_OUTPUT
+                  echo "Package version: $VERSION"
+
+            - name: Add GitHub Packages source
+              run: |
+                  dotnet nuget add source \
+                    --username ${{ github.actor }} \
+                    --password ${{ secrets.GITHUB_TOKEN }} \
+                    --store-password-in-clear-text \
+                    --name github \
+                    "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+
+            - name: Check if version already published on nuget.org
+              id: check
+              run: |
+                  # Check nuget.org for this version
+                  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                    "https://api.nuget.org/v3-flatcontainer/projectinsight.mcp/${{ steps.version.outputs.version }}/projectinsight.mcp.nuspec")
+
+                  if [ "$HTTP_CODE" = "200" ]; then
+                    echo "skip=true" >> $GITHUB_OUTPUT
+                    echo "Version ${{ steps.version.outputs.version }} already exists on nuget.org, skipping."
+                  else
+                    echo "skip=false" >> $GITHUB_OUTPUT
+                    echo "Version ${{ steps.version.outputs.version }} not found on nuget.org, will publish."
+                  fi
+
+            - name: Restore dependencies
+              if: steps.check.outputs.skip != 'true'
+              run: dotnet restore ${{ env.PROJECT_PATH }}
+
+            - name: Build
+              if: steps.check.outputs.skip != 'true'
+              run: dotnet build ${{ env.PROJECT_PATH }} --no-restore --configuration Release
+
+            - name: Pack
+              if: steps.check.outputs.skip != 'true'
+              run: dotnet pack ${{ env.PROJECT_PATH }} --no-build --configuration Release --output ./nupkg
+
+            - name: Publish to GitHub Packages
+              if: steps.check.outputs.skip != 'true'
+              run: |
+                  dotnet nuget push ./nupkg/*.nupkg \
+                    --source github \
+                    --api-key ${{ secrets.GITHUB_TOKEN }} \
+                    --skip-duplicate
+
+            - name: Publish to nuget.org
+              if: ${{ steps.check.outputs.skip != 'true' && env.HAS_NUGET_KEY == 'true' }}
+              env:
+                  HAS_NUGET_KEY: ${{ secrets.NUGET_API_KEY != '' }}
+              run: |
+                  dotnet nuget push ./nupkg/*.nupkg \
+                    --source https://api.nuget.org/v3/index.json \
+                    --api-key ${{ secrets.NUGET_API_KEY }} \
+                    --skip-duplicate
+
+            - name: Summary
+              env:
+                  HAS_NUGET_KEY: ${{ secrets.NUGET_API_KEY != '' }}
+              run: |
+                  if [ "${{ steps.check.outputs.skip }}" = "true" ]; then
+                    echo "### Skipped — v${{ steps.version.outputs.version }} already published" >> $GITHUB_STEP_SUMMARY
+                  else
+                    echo "### Published ProjectInsight.MCP v${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+                    echo "- GitHub Packages" >> $GITHUB_STEP_SUMMARY
+                    if [ "$HAS_NUGET_KEY" = "true" ]; then
+                      echo "- [nuget.org](https://www.nuget.org/packages/ProjectInsight.MCP/${{ steps.version.outputs.version }})" >> $GITHUB_STEP_SUMMARY
+                    fi
+                  fi
