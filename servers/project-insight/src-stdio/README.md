@@ -18,6 +18,13 @@ dotnet tool install ProjectInsight.MCP
 dotnet tool update -g ProjectInsight.MCP
 ```
 
+### As a Claude Desktop extension (.mcpb bundle)
+
+For one-click setup in Claude Desktop (no .NET SDK required), download the
+latest `project-insight-<version>.mcpb` from the
+[**Releases page**](https://github.com/alext-avi/Project-Insight-MCP/releases)
+and add it as an extension, then set your `ProjectInsight__BaseUrl`.
+
 ## Authentication
 
 You have two options. **SSO (recommended)** ties each MCP session to the user running the client — no shared tokens, no copy-paste, and the per-user credential is cached for future sessions.
