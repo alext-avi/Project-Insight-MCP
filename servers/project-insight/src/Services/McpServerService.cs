@@ -905,25 +905,49 @@ public class McpServerService
             };
         }
 
+        var taskId = taskIdObj.ToString()!;
+        var userId = userIdObj.ToString()!;
+
+        // Auto-ensure the user is on the task's project so the caller doesn't have to.
+        var task = await _projectInsightApi.GetTaskAsync(taskId, "Project_Id", cancellationToken);
+        var projectId = task.Data?.ProjectId;
+        if (!task.Success || string.IsNullOrEmpty(projectId))
+        {
+            return new McpToolResult
+            {
+                Content = new List<McpContent> { new() { Type = "text", Text = FormatApiError("look up the task's project", task.Message, task.Errors) } },
+                IsError = true
+            };
+        }
+
+        var ensure = await _projectInsightApi.EnsureProjectResourceAsync(projectId, userId, cancellationToken);
+        if (!ensure.Success || ensure.Errors?.Count > 0)
+        {
+            return new McpToolResult
+            {
+                Content = new List<McpContent> { new() { Type = "text", Text = FormatApiError("add the user to the task's project", ensure.Message, ensure.Errors) } },
+                IsError = true
+            };
+        }
+
         var resource = new TaskResource
         {
-            TaskId = taskIdObj.ToString(),
-            UserId = userIdObj.ToString()
+            TaskId = taskId,
+            UserId = userId
         };
 
-        if (arguments.TryGetValue("workHours", out var wh) && wh is JsonElement whEl)
+        if (arguments.TryGetValue("workHours", out var wh) && wh is JsonElement whEl && whEl.ValueKind == JsonValueKind.Number)
             resource.WorkHours = whEl.GetDecimal();
-        if (arguments.TryGetValue("percentAllocationDefault", out var alloc) && alloc is JsonElement allocEl)
+        if (arguments.TryGetValue("percentAllocationDefault", out var alloc) && alloc is JsonElement allocEl && allocEl.ValueKind == JsonValueKind.Number)
             resource.PercentAllocationDefault = allocEl.GetDecimal();
 
         var response = await _projectInsightApi.SaveTaskResourceAsync(resource, cancellationToken);
 
         if (!response.Success || response.Errors?.Count > 0)
         {
-            var errorMsg = response.Errors?.Count > 0 ? string.Join("; ", response.Errors) : response.Message ?? "Unknown error";
             return new McpToolResult
             {
-                Content = new List<McpContent> { new() { Type = "text", Text = $"Failed to add task resource: {errorMsg}" } },
+                Content = new List<McpContent> { new() { Type = "text", Text = FormatApiError("assign user to task", response.Message, response.Errors) } },
                 IsError = true
             };
         }
