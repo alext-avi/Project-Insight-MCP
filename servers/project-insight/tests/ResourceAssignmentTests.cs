@@ -148,4 +148,18 @@ public class ResourceAssignmentTests
         var saved = ReadJson<TaskResource>(handler.Requests[2].Body);
         Assert.Equal(8m, saved.WorkHours);
     }
+
+    [Fact]
+    public async Task AddProjectResource_maps_404_to_actionable_message()
+    {
+        var (mcp, _) = CreateServer(
+            Json(HttpStatusCode.NotFound, "resource not found"));
+
+        var result = await mcp.ExecuteToolAsync(
+            Call("add_project_resource", "{\"projectId\":\"bad-guid\",\"userId\":\"bad-guid\"}"),
+            CancellationToken.None);
+
+        Assert.True(result.IsError);
+        Assert.Contains("verify the IDs", result.Content[0].Text!);
+    }
 }

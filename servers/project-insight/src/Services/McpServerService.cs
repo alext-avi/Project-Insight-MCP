@@ -830,10 +830,9 @@ public class McpServerService
 
         if (!response.Success || response.Errors?.Count > 0)
         {
-            var errorMsg = response.Errors?.Count > 0 ? string.Join("; ", response.Errors) : response.Message ?? "Unknown error";
             return new McpToolResult
             {
-                Content = new List<McpContent> { new() { Type = "text", Text = $"Failed to update project resource: {errorMsg}" } },
+                Content = new List<McpContent> { new() { Type = "text", Text = FormatApiError("update the project assignment", response.Message, response.Errors) } },
                 IsError = true
             };
         }
@@ -868,10 +867,9 @@ public class McpServerService
 
         if (!response.Success)
         {
-            var errorMsg = response.Errors?.Count > 0 ? string.Join("; ", response.Errors) : response.Message ?? "Unknown error";
             return new McpToolResult
             {
-                Content = new List<McpContent> { new() { Type = "text", Text = $"Failed to remove project resource: {errorMsg}" } },
+                Content = new List<McpContent> { new() { Type = "text", Text = FormatApiError("unassign the user from the project", response.Message, response.Errors) } },
                 IsError = true
             };
         }
@@ -983,10 +981,9 @@ public class McpServerService
 
         if (!response.Success)
         {
-            var errorMsg = response.Errors?.Count > 0 ? string.Join("; ", response.Errors) : response.Message ?? "Unknown error";
             return new McpToolResult
             {
-                Content = new List<McpContent> { new() { Type = "text", Text = $"Failed to remove task resource: {errorMsg}" } },
+                Content = new List<McpContent> { new() { Type = "text", Text = FormatApiError("unassign the user from the task", response.Message, response.Errors) } },
                 IsError = true
             };
         }
