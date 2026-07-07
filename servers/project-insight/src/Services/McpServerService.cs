@@ -136,7 +136,7 @@ public class McpServerService
     /// <summary>
     /// Execute a specific tool
     /// </summary>
-    private async Task<McpToolResult> ExecuteToolAsync(McpToolCall toolCall, CancellationToken cancellationToken)
+    internal async Task<McpToolResult> ExecuteToolAsync(McpToolCall toolCall, CancellationToken cancellationToken)
     {
         try
         {
@@ -669,6 +669,25 @@ public class McpServerService
     }
 
     /// <summary>
+    /// Build an agent-actionable error string from an API response.
+    /// </summary>
+    private static string FormatApiError(string action, string? message, List<string>? errors)
+    {
+        var detail = errors is { Count: > 0 } ? string.Join("; ", errors) : (message ?? "unknown error");
+        var combined = $"{message} {detail}";
+
+        string hint;
+        if (combined.Contains("NotFound") || combined.Contains("404"))
+            hint = "Not found - verify the IDs with search_projects / get_project_tasks / search_users. ";
+        else if (combined.Contains("Forbidden") || combined.Contains("403") || combined.Contains("Unauthorized"))
+            hint = "Insufficient permissions to modify resources on this project. ";
+        else
+            hint = "";
+
+        return $"Failed to {action}. {hint}Details: {detail}";
+    }
+
+    /// <summary>
     /// Add a user as a resource to a project
     /// </summary>
     private async Task<McpToolResult> AddProjectResourceAsync(Dictionary<string, object> arguments, CancellationToken cancellationToken)
@@ -693,26 +712,86 @@ public class McpServerService
         var projectId = projectIdObj.ToString()!;
         var userId = userIdObj.ToString()!;
 
-        // Use the ensure-user-is-project-resource endpoint (idempotent)
-        var response = await _projectInsightApi.EnsureProjectResourceAsync(projectId, userId, cancellationToken);
-
-        if (!response.Success || response.Errors?.Count > 0)
+        // Step 1: ensure the user is a resource on the project (idempotent).
+        var ensure = await _projectInsightApi.EnsureProjectResourceAsync(projectId, userId, cancellationToken);
+        if (!ensure.Success || ensure.Errors?.Count > 0)
         {
-            var errorMsg = response.Errors?.Count > 0 ? string.Join("; ", response.Errors) : response.Message ?? "Unknown error";
             return new McpToolResult
             {
-                Content = new List<McpContent> { new() { Type = "text", Text = $"Failed to add project resource: {errorMsg}" } },
+                Content = new List<McpContent> { new() { Type = "text", Text = FormatApiError("assign user to project", ensure.Message, ensure.Errors) } },
                 IsError = true
             };
         }
 
-        var savedId = response.Data?.SavedId ?? "unknown";
+        var resourceId = ensure.Data?.SavedId;
+
+        // Step 2: if any role/allocation params were supplied, apply them via a follow-up save.
+        var wantsRoleOrAllocation =
+            arguments.ContainsKey("isProjectManager")
+            || arguments.ContainsKey("isProjectScheduler")
+            || arguments.ContainsKey("percentAllocationDefault")
+            || arguments.ContainsKey("resourceTypeDefaultId");
+
+        var setParts = new List<string>();
+
+        if (wantsRoleOrAllocation)
+        {
+            if (string.IsNullOrEmpty(resourceId))
+            {
+                // The user is on the project, but we don't have an id to attach the role/allocation to.
+                // Report honestly instead of pretending the role was set.
+                return new McpToolResult
+                {
+                    Content = new List<McpContent> { new() { Type = "text", Text = $"User {userId} was added to the project, but the role/allocation was NOT set because the resource id could not be determined. Call get_project_resources for project {projectId}, then update_project_resource with that id." } },
+                    IsError = true
+                };
+            }
+
+            var resource = new ProjectResource { Id = resourceId, ProjectId = projectId, UserId = userId };
+
+            if (arguments.TryGetValue("isProjectManager", out var isPm) && isPm is JsonElement isPmEl
+                && (isPmEl.ValueKind == JsonValueKind.True || isPmEl.ValueKind == JsonValueKind.False))
+            {
+                resource.IsProjectManager = isPmEl.GetBoolean();
+                if (resource.IsProjectManager == true) setParts.Add("Project Manager");
+            }
+            if (arguments.TryGetValue("isProjectScheduler", out var isSched) && isSched is JsonElement isSchedEl
+                && (isSchedEl.ValueKind == JsonValueKind.True || isSchedEl.ValueKind == JsonValueKind.False))
+            {
+                resource.IsProjectScheduler = isSchedEl.GetBoolean();
+                if (resource.IsProjectScheduler == true) setParts.Add("Scheduler");
+            }
+            if (arguments.TryGetValue("percentAllocationDefault", out var alloc) && alloc is JsonElement allocEl
+                && allocEl.ValueKind == JsonValueKind.Number)
+            {
+                resource.PercentAllocationDefault = allocEl.GetDecimal();
+                setParts.Add($"{resource.PercentAllocationDefault:0}% allocation");
+            }
+            if (arguments.TryGetValue("resourceTypeDefaultId", out var rtId) && !string.IsNullOrEmpty(rtId?.ToString()))
+            {
+                resource.ResourceTypeDefaultId = rtId.ToString();
+            }
+
+            var save = await _projectInsightApi.SaveProjectResourceAsync(resource, cancellationToken);
+            if (!save.Success || save.Errors?.Count > 0)
+            {
+                return new McpToolResult
+                {
+                    Content = new List<McpContent> { new() { Type = "text", Text = $"User {userId} was added to the project, but setting the role/allocation failed. {FormatApiError("update the project assignment", save.Message, save.Errors)}" } },
+                    IsError = true
+                };
+            }
+
+            resourceId = save.Data?.SavedId ?? resourceId;
+        }
+
+        var roleText = setParts.Count > 0 ? $" as {string.Join(", ", setParts)}" : "";
         return new McpToolResult
         {
             Content = new List<McpContent>
             {
-                new() { Type = "text", Text = $"Successfully added user {userId} to project {projectId}. Resource assignment ID: {savedId}" },
-                new() { Type = "text", Text = JsonSerializer.Serialize(response.Data, JsonOptions) }
+                new() { Type = "text", Text = $"Assigned user {userId} to project {projectId}{roleText}. Resource assignment ID: {resourceId ?? "unknown"}" },
+                new() { Type = "text", Text = JsonSerializer.Serialize(ensure.Data, JsonOptions) }
             },
             IsError = false
         };
