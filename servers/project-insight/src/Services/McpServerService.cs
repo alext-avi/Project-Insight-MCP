@@ -3418,7 +3418,7 @@ public class McpServerService
     /// <summary>
     /// Initialize available tools
     /// </summary>
-    private static List<McpTool> InitializeTools()
+    internal static List<McpTool> InitializeTools()
     {
         return new List<McpTool>
         {
@@ -3523,7 +3523,7 @@ public class McpServerService
             new()
             {
                 Name = "get_project_resources",
-                Description = "Get contributors/team members assigned to a project with roles, allocation %, hours, and task counts.",
+                Description = "List the users assigned to a project (team members, project managers, schedulers) with their roles, allocation %, hours, and task counts. Use this to see who is staffed on a project, or to get a resource assignment id for update_project_resource / remove_project_resource.",
                 InputSchema = new
                 {
                     type = "object",
@@ -3542,7 +3542,7 @@ public class McpServerService
             new()
             {
                 Name = "add_project_resource",
-                Description = "Add a user as a team member/contributor to a project. Use search_users to find the user ID and search_projects to find the project ID first.",
+                Description = "Assign (staff / allocate) a user to a project - as a team member, project manager, or scheduler, with an optional default allocation %. This is THE tool for putting a person on a project. Idempotent and safe to re-run. Pass projectId + userId (GUIDs); if you only have names, resolve them with search_projects / search_users first.",
                 InputSchema = new
                 {
                     type = "object",
@@ -3561,7 +3561,7 @@ public class McpServerService
             new()
             {
                 Name = "update_project_resource",
-                Description = "Update an existing project resource assignment (change role, allocation %, PM status, etc.). Get the resource ID from get_project_resources first.",
+                Description = "Change an existing project assignment: promote to/from project manager or scheduler, adjust allocation %, activate/deactivate, or set resource type. Needs the resource assignment id from get_project_resources.",
                 InputSchema = new
                 {
                     type = "object",
@@ -3580,7 +3580,7 @@ public class McpServerService
             new()
             {
                 Name = "remove_project_resource",
-                Description = "Remove a user from a project (delete the resource assignment). Get the resource ID from get_project_resources first.",
+                Description = "Unassign a user from a project (delete the assignment). Needs the resource assignment id from get_project_resources.",
                 InputSchema = new
                 {
                     type = "object",
@@ -3594,7 +3594,7 @@ public class McpServerService
             new()
             {
                 Name = "add_task_resource",
-                Description = "Assign a user to a specific task. The user should already be a project resource. Use get_project_tasks to find the task ID and search_users to find the user ID.",
+                Description = "Assign (staff) a user to a specific task, with optional planned work hours and allocation %. If the user isn't on the project yet, they are added to the project automatically. Pass taskId + userId (GUIDs); use get_project_tasks / search_users to resolve them.",
                 InputSchema = new
                 {
                     type = "object",
@@ -3611,7 +3611,7 @@ public class McpServerService
             new()
             {
                 Name = "remove_task_resource",
-                Description = "Remove a user from a task (delete the task resource assignment).",
+                Description = "Unassign a user from a task (delete the task assignment). Needs the task resource assignment id.",
                 InputSchema = new
                 {
                     type = "object",
