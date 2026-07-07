@@ -100,4 +100,52 @@ public class ResourceAssignmentTests
         Assert.Contains("ensure-user-is-project-resource/proj-9", handler.Requests[1].Uri.AbsolutePath);
         Assert.EndsWith("/api/task-resource", handler.Requests[2].Uri.AbsolutePath);
     }
+
+    [Fact]
+    public async Task AddTaskResource_returns_error_when_task_lookup_fails()
+    {
+        var (mcp, handler) = CreateServer(
+            Json(HttpStatusCode.NotFound, "task not found")); // get task fails
+
+        var result = await mcp.ExecuteToolAsync(
+            Call("add_task_resource",
+                 "{\"taskId\":\"task-missing\",\"userId\":\"user-1\"}"),
+            CancellationToken.None);
+
+        Assert.True(result.IsError);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task AddTaskResource_returns_error_when_task_has_no_project_id()
+    {
+        var (mcp, handler) = CreateServer(
+            Json(HttpStatusCode.OK, "{\"id\":\"task-1\"}")); // get task succeeds but no project_Id
+
+        var result = await mcp.ExecuteToolAsync(
+            Call("add_task_resource",
+                 "{\"taskId\":\"task-1\",\"userId\":\"user-1\"}"),
+            CancellationToken.None);
+
+        Assert.True(result.IsError);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task AddTaskResource_writes_work_hours_to_save_body()
+    {
+        var (mcp, handler) = CreateServer(
+            Json(HttpStatusCode.OK, "{\"id\":\"task-1\",\"project_Id\":\"proj-9\"}"), // get task
+            Json(HttpStatusCode.OK, "{\"savedId\":\"pr-1\",\"success\":true}"),        // ensure project resource
+            Json(HttpStatusCode.OK, "{\"savedId\":\"tr-1\",\"success\":true}"));       // save task resource
+
+        var result = await mcp.ExecuteToolAsync(
+            Call("add_task_resource",
+                 "{\"taskId\":\"task-1\",\"userId\":\"user-1\",\"workHours\":8}"),
+            CancellationToken.None);
+
+        Assert.False(result.IsError);
+        var saved = ReadJson<TaskResource>(handler.Requests[2].Body);
+        Assert.Equal(8m, saved.WorkHours);
+    }
 }
