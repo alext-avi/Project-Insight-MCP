@@ -46,6 +46,25 @@ public class ResourceAssignmentTests
     }
 
     [Fact]
+    public async Task AddProjectResource_with_resourceTypeDefaultId_sets_it_without_corruption()
+    {
+        var (mcp, handler) = CreateServer(
+            Json(HttpStatusCode.OK, "{\"savedId\":\"res-rt\",\"success\":true}"),  // ensure
+            Json(HttpStatusCode.OK, "{\"savedId\":\"res-rt\",\"success\":true}")); // follow-up save
+
+        var result = await mcp.ExecuteToolAsync(
+            Call("add_project_resource",
+                 "{\"projectId\":\"proj-rt\",\"userId\":\"user-rt\",\"resourceTypeDefaultId\":\"rt-guid-123\"}"),
+            CancellationToken.None);
+
+        Assert.False(result.IsError);
+        Assert.Equal(2, handler.Requests.Count);
+
+        var saved = ReadJson<ProjectInsightMCP.Models.ProjectResource>(handler.Requests[1].Body);
+        Assert.Equal("rt-guid-123", saved.ResourceTypeDefaultId);
+    }
+
+    [Fact]
     public async Task AddProjectResource_reports_partial_failure_when_role_save_fails()
     {
         var (mcp, handler) = CreateServer(

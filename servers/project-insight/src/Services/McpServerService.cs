@@ -767,9 +767,11 @@ public class McpServerService
                 resource.PercentAllocationDefault = allocEl.GetDecimal();
                 setParts.Add($"{resource.PercentAllocationDefault:0}% allocation");
             }
-            if (arguments.TryGetValue("resourceTypeDefaultId", out var rtId) && !string.IsNullOrEmpty(rtId?.ToString()))
+            if (arguments.TryGetValue("resourceTypeDefaultId", out var rtId) && rtId is JsonElement rtEl
+                && rtEl.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(rtEl.GetString()))
             {
-                resource.ResourceTypeDefaultId = rtId.ToString();
+                resource.ResourceTypeDefaultId = rtEl.GetString();
+                setParts.Add($"resource type {rtEl.GetString()}");
             }
 
             var save = await _projectInsightApi.SaveProjectResourceAsync(resource, cancellationToken);
