@@ -206,6 +206,10 @@ public class McpServerService
                     _logger.LogInformation("Executing remove_task_resource");
                     return await RemoveTaskResourceAsync(toolCall.Arguments, cancellationToken);
 
+                case "get_task_resources":
+                    _logger.LogInformation("Executing get_task_resources");
+                    return await GetTaskResourcesAsync(toolCall.Arguments, cancellationToken);
+
                 case "create_project":
                     _logger.LogInformation("Executing create_project");
                     return await CreateProjectAsync(toolCall.Arguments, cancellationToken);
@@ -967,16 +971,58 @@ public class McpServerService
     /// </summary>
     private async Task<McpToolResult> RemoveTaskResourceAsync(Dictionary<string, object> arguments, CancellationToken cancellationToken)
     {
-        if (!arguments.TryGetValue("id", out var idObj) || string.IsNullOrEmpty(idObj?.ToString()))
+        var resourceId = ExtractStringParameter(arguments, "id");
+
+        // If no assignment id was given, resolve it from taskId + userId so callers
+        // don't need the opaque handle (which is only surfaced when the assignment is created).
+        if (string.IsNullOrEmpty(resourceId))
         {
-            return new McpToolResult
+            var taskId = ExtractStringParameter(arguments, "taskId");
+            var userId = ExtractStringParameter(arguments, "userId");
+            if (string.IsNullOrEmpty(taskId) || string.IsNullOrEmpty(userId))
             {
-                Content = new List<McpContent> { new() { Type = "text", Text = "Error: id parameter is required (task resource ID)" } },
-                IsError = true
-            };
+                return new McpToolResult
+                {
+                    Content = new List<McpContent> { new() { Type = "text", Text = "Error: provide either 'id' (the task resource assignment ID), or both 'taskId' and 'userId' so it can be resolved." } },
+                    IsError = true
+                };
+            }
+
+            var list = await _projectInsightApi.GetTaskResourcesAsync(taskId, null, null, cancellationToken);
+            if (!list.Success)
+            {
+                return new McpToolResult
+                {
+                    Content = new List<McpContent> { new() { Type = "text", Text = FormatApiError("look up the task's assignments", list.Message, list.Errors) } },
+                    IsError = true
+                };
+            }
+
+            var matches = (list.Data ?? new List<TaskResource>())
+                .Where(r => r.UserId == userId && !string.IsNullOrEmpty(r.Id))
+                .ToList();
+
+            if (matches.Count == 0)
+            {
+                return new McpToolResult
+                {
+                    Content = new List<McpContent> { new() { Type = "text", Text = $"User {userId} is not assigned to task {taskId} - nothing to remove. Use get_task_resources to see who is assigned." } },
+                    IsError = true
+                };
+            }
+            if (matches.Count > 1)
+            {
+                var ids = string.Join(", ", matches.Select(m => m.Id));
+                return new McpToolResult
+                {
+                    Content = new List<McpContent> { new() { Type = "text", Text = $"User {userId} has multiple assignments on task {taskId} (ids: {ids}). Call remove_task_resource again with a specific 'id'." } },
+                    IsError = true
+                };
+            }
+
+            resourceId = matches[0].Id!;
         }
 
-        var resourceId = idObj.ToString()!;
         var response = await _projectInsightApi.DeleteTaskResourceAsync(resourceId, cancellationToken);
 
         if (!response.Success)
@@ -991,6 +1037,66 @@ public class McpServerService
         return new McpToolResult
         {
             Content = new List<McpContent> { new() { Type = "text", Text = $"Successfully removed task resource {resourceId}" } },
+            IsError = false
+        };
+    }
+
+    /// <summary>
+    /// Get task resources tool implementation - lists users assigned to a task with their assignment ids
+    /// </summary>
+    private async Task<McpToolResult> GetTaskResourcesAsync(Dictionary<string, object> arguments, CancellationToken cancellationToken)
+    {
+        var taskId = ExtractStringParameter(arguments, "taskId");
+        if (string.IsNullOrEmpty(taskId))
+        {
+            return new McpToolResult
+            {
+                Content = new List<McpContent> { new() { Type = "text", Text = "Error: taskId parameter is required" } },
+                IsError = true
+            };
+        }
+
+        bool? isActive = null;
+        if (arguments.TryGetValue("isActive", out var isActiveObj))
+        {
+            isActive = ExtractBoolParameter(isActiveObj);
+        }
+
+        var response = await _projectInsightApi.GetTaskResourcesAsync(taskId, isActive, null, cancellationToken);
+
+        if (!response.Success)
+        {
+            return new McpToolResult
+            {
+                Content = new List<McpContent> { new() { Type = "text", Text = FormatApiError("list task resources", response.Message, response.Errors) } },
+                IsError = true
+            };
+        }
+
+        var resources = response.Data ?? new List<TaskResource>();
+
+        var summaryLines = new List<string>
+        {
+            $"Found {resources.Count} user(s) assigned to task {taskId}:"
+        };
+
+        foreach (var resource in resources)
+        {
+            var userName = resource.User?.Name ?? resource.User?.Email ?? resource.UserId ?? "Unknown";
+            var hours = resource.WorkHours.HasValue ? $"{resource.WorkHours:0.#}h planned" : "no planned hours";
+            var allocation = resource.PercentAllocationDefault.HasValue ? $"{resource.PercentAllocationDefault:0}% allocation" : "N/A allocation";
+            summaryLines.Add($"  - {userName}: {hours}, {allocation} (assignment id: {resource.Id})");
+        }
+
+        var resourcesJson = JsonSerializer.Serialize(resources, JsonOptions);
+
+        return new McpToolResult
+        {
+            Content = new List<McpContent>
+            {
+                new() { Type = "text", Text = string.Join("\n", summaryLines) },
+                new() { Type = "text", Text = resourcesJson }
+            },
             IsError = false
         };
     }
@@ -3713,15 +3819,31 @@ public class McpServerService
             new()
             {
                 Name = "remove_task_resource",
-                Description = "Unassign a user from a task (delete the task assignment). Needs the task resource assignment id.",
+                Description = "Unassign a user from a task. Preferred: pass taskId + userId and it resolves the assignment automatically. Alternatively pass the task resource assignment id directly (from get_task_resources). Use get_task_resources to see who is on a task.",
                 InputSchema = new
                 {
                     type = "object",
                     properties = new
                     {
-                        id = new { type = "string", description = "The task resource assignment ID (GUID) to remove" }
+                        taskId = new { type = "string", description = "The task ID (GUID) the user is assigned to (use with userId; no need to know the assignment id)" },
+                        userId = new { type = "string", description = "The user ID (GUID) to unassign from the task (use with taskId)" },
+                        id = new { type = "string", description = "The task resource assignment ID (GUID) to remove directly. Optional if taskId + userId are given; get it from get_task_resources." }
+                    }
+                }
+            },
+            new()
+            {
+                Name = "get_task_resources",
+                Description = "List the users assigned to a specific task (with planned hours, allocation %, and each assignment's id). Use this to see who is staffed on a task, or to get the assignment id needed by remove_task_resource.",
+                InputSchema = new
+                {
+                    type = "object",
+                    properties = new
+                    {
+                        taskId = new { type = "string", description = "The task ID (GUID) to list assigned users for" },
+                        isActive = new { type = "boolean", description = "Optional: only return active assignments" }
                     },
-                    required = new[] { "id" }
+                    required = new[] { "taskId" }
                 }
             },
             // ============ TASK TOOLS ============
