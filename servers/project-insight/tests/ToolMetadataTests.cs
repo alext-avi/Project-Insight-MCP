@@ -18,6 +18,7 @@ public class ToolMetadataTests
     [InlineData("remove_project_resource", new[] { "unassign" })]
     [InlineData("remove_task_resource", new[] { "unassign" })]
     [InlineData("get_project_resources", new[] { "assigned" })]
+    [InlineData("get_task_resources", new[] { "assigned", "task" })]
     public void Description_contains_agent_matchable_vocabulary(string tool, string[] required)
     {
         var description = Description(tool);

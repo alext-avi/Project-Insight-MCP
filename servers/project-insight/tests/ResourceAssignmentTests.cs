@@ -162,4 +162,71 @@ public class ResourceAssignmentTests
         Assert.True(result.IsError);
         Assert.Contains("verify the IDs", result.Content[0].Text!);
     }
+
+    [Fact]
+    public async Task GetTaskResources_lists_users_assigned_to_a_task_with_their_assignment_ids()
+    {
+        var (mcp, handler) = CreateServer(
+            Json(HttpStatusCode.OK,
+                "[{\"id\":\"tr-django\",\"task_Id\":\"task-1\",\"user_Id\":\"django\",\"isActive\":true,\"workHours\":8}]"));
+
+        var result = await mcp.ExecuteToolAsync(
+            Call("get_task_resources", "{\"taskId\":\"task-1\"}"),
+            CancellationToken.None);
+
+        Assert.False(result.IsError);
+        Assert.Single(handler.Requests);
+        Assert.Contains("task-resource/search", handler.Requests[0].Uri.AbsolutePath);
+        // The task-resource assignment id must be discoverable in the output.
+        Assert.Contains("tr-django", result.Content[^1].Text!);
+    }
+
+    [Fact]
+    public async Task RemoveTaskResource_resolves_taskId_and_userId_to_the_assignment_id()
+    {
+        var (mcp, handler) = CreateServer(
+            Json(HttpStatusCode.OK,
+                "[{\"id\":\"tr-django\",\"task_Id\":\"task-1\",\"user_Id\":\"django\",\"isActive\":true}]"), // search
+            Json(HttpStatusCode.OK, "{}"));                                                                 // delete
+
+        var result = await mcp.ExecuteToolAsync(
+            Call("remove_task_resource", "{\"taskId\":\"task-1\",\"userId\":\"django\"}"),
+            CancellationToken.None);
+
+        Assert.False(result.IsError);
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Contains("task-resource/search", handler.Requests[0].Uri.AbsolutePath);
+        Assert.Equal(HttpMethod.Delete, handler.Requests[1].Method);
+        Assert.EndsWith("/api/task-resource/tr-django", handler.Requests[1].Uri.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task RemoveTaskResource_with_explicit_id_still_deletes_directly()
+    {
+        var (mcp, handler) = CreateServer(Json(HttpStatusCode.OK, "{}"));
+
+        var result = await mcp.ExecuteToolAsync(
+            Call("remove_task_resource", "{\"id\":\"tr-xyz\"}"),
+            CancellationToken.None);
+
+        Assert.False(result.IsError);
+        Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Delete, handler.Requests[0].Method);
+        Assert.EndsWith("/api/task-resource/tr-xyz", handler.Requests[0].Uri.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task RemoveTaskResource_errors_without_deleting_when_user_not_on_task()
+    {
+        var (mcp, handler) = CreateServer(
+            Json(HttpStatusCode.OK,
+                "[{\"id\":\"tr-other\",\"task_Id\":\"task-1\",\"user_Id\":\"someone-else\",\"isActive\":true}]"));
+
+        var result = await mcp.ExecuteToolAsync(
+            Call("remove_task_resource", "{\"taskId\":\"task-1\",\"userId\":\"django\"}"),
+            CancellationToken.None);
+
+        Assert.True(result.IsError);
+        Assert.Single(handler.Requests); // search only — no DELETE issued
+    }
 }

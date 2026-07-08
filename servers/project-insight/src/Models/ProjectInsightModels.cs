@@ -728,6 +728,9 @@ public class TaskResource
     [JsonPropertyName("user_Id")]
     public string? UserId { get; set; }
 
+    [JsonPropertyName("user")]
+    public User? User { get; set; }
+
     [JsonPropertyName("isActive")]
     public bool? IsActive { get; set; }
 

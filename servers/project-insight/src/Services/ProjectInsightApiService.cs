@@ -1001,6 +1001,146 @@ public class ProjectInsightApiService
     #region Task Resource Operations
 
     /// <summary>
+    /// List the resources (users) assigned to a specific task, including each
+    /// assignment's Id (needed to remove/update it). Mirrors GetProjectResourcesAsync:
+    /// tries /api/task-resource/search, then /api/taskresource/search, then the task's
+    /// TaskResources child collection.
+    /// </summary>
+    public async Task<ApiListResponse<TaskResource>> GetTaskResourcesAsync(string taskId, bool? isActive = null, string? modelProperties = null, CancellationToken cancellationToken = default)
+    {
+        EnsureConfigured();
+        try
+        {
+            var requestBody = new Dictionary<string, object>
+            {
+                ["task_Id"] = taskId
+            };
+            if (isActive.HasValue)
+                requestBody["isActive"] = isActive.Value;
+
+            var properties = modelProperties ?? "Id,Task_Id,User_Id,User,IsActive,WorkHours,PercentAllocationDefault";
+            var queryString = $"?modelProperties={Uri.EscapeDataString(properties)};User:Id,Name,FirstName,LastName,Email,Title";
+
+            _logger.LogInformation("Getting resources for task {TaskId}", taskId);
+
+            var json = JsonSerializer.Serialize(requestBody, JsonOptions);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await PostWithTokenAsync($"/api/task-resource/search{queryString}", content, cancellationToken);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                content = new StringContent(json, Encoding.UTF8, "application/json");
+                _logger.LogInformation("Trying alternate endpoint /api/taskresource/search");
+                response = await PostWithTokenAsync($"/api/taskresource/search{queryString}", content, cancellationToken);
+            }
+
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                _logger.LogInformation("Trying to get resources via task endpoint with TaskResources property");
+                var taskUrl = $"/api/task/{taskId}?modelProperties=Id,Name,TaskResources;TaskResource:Id,Task_Id,User_Id,User,IsActive,WorkHours,PercentAllocationDefault;User:Id,Name,FirstName,LastName,Email,Title";
+                var taskResponse = await GetWithTokenAsync(taskUrl, cancellationToken);
+
+                if (taskResponse.IsSuccessStatusCode)
+                {
+                    var taskContent = await taskResponse.Content.ReadAsStringAsync(cancellationToken);
+                    using var doc = JsonDocument.Parse(taskContent);
+
+                    if (doc.RootElement.TryGetProperty("taskResources", out var resourcesElement) ||
+                        doc.RootElement.TryGetProperty("TaskResources", out resourcesElement))
+                    {
+                        var resources = JsonSerializer.Deserialize<List<TaskResource>>(resourcesElement.GetRawText(), JsonOptions);
+
+                        if (isActive.HasValue && resources != null)
+                        {
+                            resources = resources.Where(r => r.IsActive == isActive.Value).ToList();
+                        }
+
+                        return new ApiListResponse<TaskResource>
+                        {
+                            Success = true,
+                            Data = resources ?? new List<TaskResource>(),
+                            TotalCount = resources?.Count ?? 0
+                        };
+                    }
+                }
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning("Failed to get task resources: {StatusCode} - {Error}", response.StatusCode, errorContent);
+                return new ApiListResponse<TaskResource>
+                {
+                    Success = false,
+                    Message = $"API returned {response.StatusCode}",
+                    Errors = new List<string> { errorContent }
+                };
+            }
+
+            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (responseContent.TrimStart().StartsWith("["))
+            {
+                var resources = JsonSerializer.Deserialize<List<TaskResource>>(responseContent, JsonOptions);
+                return new ApiListResponse<TaskResource>
+                {
+                    Success = true,
+                    Data = resources ?? new List<TaskResource>(),
+                    TotalCount = resources?.Count ?? 0
+                };
+            }
+            else
+            {
+                try
+                {
+                    var wrappedResponse = JsonSerializer.Deserialize<ApiListResponse<TaskResource>>(responseContent, JsonOptions);
+                    if (wrappedResponse != null)
+                    {
+                        wrappedResponse.Success = true;
+                        return wrappedResponse;
+                    }
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogWarning("Failed to deserialize as wrapped response: {Error}", ex.Message);
+                }
+
+                using var doc = JsonDocument.Parse(responseContent);
+                if (doc.RootElement.TryGetProperty("data", out var dataElement) ||
+                    doc.RootElement.TryGetProperty("Data", out dataElement))
+                {
+                    var resources = JsonSerializer.Deserialize<List<TaskResource>>(dataElement.GetRawText(), JsonOptions);
+                    return new ApiListResponse<TaskResource>
+                    {
+                        Success = true,
+                        Data = resources ?? new List<TaskResource>(),
+                        TotalCount = resources?.Count ?? 0
+                    };
+                }
+
+                _logger.LogWarning("Unable to parse task resources response format");
+                return new ApiListResponse<TaskResource>
+                {
+                    Success = true,
+                    Data = new List<TaskResource>(),
+                    TotalCount = 0
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting resources for task {TaskId}", taskId);
+            return new ApiListResponse<TaskResource>
+            {
+                Success = false,
+                Message = "Internal error occurred",
+                Errors = new List<string> { ex.Message }
+            };
+        }
+    }
+
+    /// <summary>
     /// Save (create or update) a task resource assignment
     /// </summary>
     public async Task<ApiResponse<TaskSaveResult>> SaveTaskResourceAsync(TaskResource resource, CancellationToken cancellationToken = default)
