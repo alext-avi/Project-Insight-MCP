@@ -12,7 +12,7 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>projectinsight-mcp</ToolCommandName>
     <PackageId>ProjectInsight.MCP</PackageId>
-    <Version>1.3.3</Version>
+    <Version>1.3.4</Version>
     <Authors>Applied Visions Inc</Authors>
     <Company>Applied Visions Inc</Company>
     <Description>MCP (Model Context Protocol) Server for Project Insight integration with AI assistants like GitHub Copilot, Claude, and VS Code.</Description>

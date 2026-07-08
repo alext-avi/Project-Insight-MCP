@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "project-insight",
   "display_name": "Project Insight",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "description": "Project management and time tracking via Project Insight.",
   "long_description": "Project Insight MCP server exposes projects, tasks, timesheets, time entries, rate cards, and users from Project Insight (https://www.projectinsight.com) to AI assistants. Authenticate per-user via SSO device activation by asking the assistant to 'link my Project Insight account', or use a static API token for service accounts. Token-efficient field selection (minimal / summary / standard / full or custom field lists) keeps responses small.",
   "author": {
