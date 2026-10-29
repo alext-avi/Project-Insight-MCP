@@ -51,15 +51,33 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
         if (claimed is null)
             return await LoadAsync(caller, draft.Id, ct); // another process claimed it first
 
-        var stale = await FindStaleDaysAsync(claimed, ct);
+        // From here the draft is claimed. The request token must not cut a commit short: a half-applied
+        // commit has to be rolled back and recorded, so every remaining step uses CancellationToken.None
+        // (each PI call is bounded by the HTTP client's own timeout).
+        List<string> stale;
+        try
+        {
+            stale = await FindStaleDaysAsync(claimed, ct);
+        }
+        catch
+        {
+            // Nothing was written: hand the draft (and its confirm token) back so it can be committed again.
+            await store.TryTransitionAsync(caller.Id, claimed.Id, DraftStatus.Committing, d =>
+            {
+                SetStatus(d, DraftStatus.Draft, time.GetUtcNow());
+                d.Channel = null;
+                d.ConfirmTokenUsed = false;
+            }, CancellationToken.None);
+            throw;
+        }
         if (stale.Count > 0)
-            return await FinishAsync(caller, claimed, d => { d.Status = DraftStatus.Stale; d.StaleDays = stale; }, ct);
+            return await FinishAsync(caller, claimed, d => { d.Status = DraftStatus.Stale; d.StaleDays = stale; });
 
         var applied = new List<DraftRow>();
         for (var i = 0; i < claimed.Rows.Count; i++)
         {
             var row = claimed.Rows[i];
-            var result = await SafeAsync(() => ApplyAsync(claimed, row, ct));
+            var result = await SafeAsync(() => ApplyAsync(claimed, row, CancellationToken.None));
             if (result.Success)
             {
                 row.Outcome = RowOutcome.Applied;
@@ -76,7 +94,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
             for (var j = applied.Count - 1; j >= 0; j--)
             {
                 var done = applied[j];
-                var reversed = await SafeAsync(() => ReverseAsync(claimed, done, ct));
+                var reversed = await SafeAsync(() => ReverseAsync(claimed, done, CancellationToken.None));
                 done.Outcome = reversed.Success ? RowOutcome.Reversed : RowOutcome.ReverseFailed;
                 if (!reversed.Success)
                     done.Error = reversed.Error;
@@ -84,16 +102,16 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
                     done.SavedId = reversed.SavedId; // recreated under a new id
             }
             var error = $"Project Insight rejected change {i + 1} of {claimed.Rows.Count}: {result.Error}";
-            return await FinishAsync(caller, claimed, d => { d.Status = DraftStatus.Failed; d.Error = error; }, ct);
+            return await FinishAsync(caller, claimed, d => { d.Status = DraftStatus.Failed; d.Error = error; });
         }
 
         var committed = await FinishAsync(caller, claimed, d =>
         {
             d.Status = DraftStatus.Committed;
             d.CommittedAt = time.GetUtcNow();
-        }, ct);
+        });
         if (committed.UndoOf is { } receiptId)
-            await store.TryTransitionAsync(caller.Id, receiptId, DraftStatus.Committed, r => r.RevertedBy = committed.Id, ct);
+            await store.TryTransitionAsync(caller.Id, receiptId, DraftStatus.Committed, r => r.RevertedBy = committed.Id, CancellationToken.None);
         return committed;
     }
 
@@ -165,13 +183,13 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
         {
             return await write();
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex)
         {
             return new PiWrite(false, null, ex.Message);
         }
     }
 
-    private async Task<Draft> FinishAsync(PiUser caller, Draft working, Action<Draft> outcome, CancellationToken ct)
+    private async Task<Draft> FinishAsync(PiUser caller, Draft working, Action<Draft> outcome)
     {
         var now = time.GetUtcNow();
         return await store.TryTransitionAsync(caller.Id, working.Id, DraftStatus.Committing, d =>
@@ -179,7 +197,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
             d.Rows = working.Rows;
             outcome(d);
             d.StatusChangedAt = now;
-        }, ct) ?? throw new InvalidOperationException($"Draft {working.Id} left 'committing' while it was being committed.");
+        }, CancellationToken.None) ?? throw new InvalidOperationException($"Draft {working.Id} left 'committing' while it was being committed.");
     }
 
     private static void SetStatus(Draft d, string status, DateTimeOffset now)

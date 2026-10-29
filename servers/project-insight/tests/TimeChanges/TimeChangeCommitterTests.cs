@@ -230,6 +230,61 @@ public sealed class TimeChangeCommitterTests : IDisposable
     }
 
     [Fact]
+    public async Task Cancelling_the_request_mid_commit_still_rolls_back()
+    {
+        var (draft, _) = await Plan();
+        using var cts = new CancellationTokenSource();
+        _pi.AfterWrite = n => { if (n == 1) cts.Cancel(); };
+        _pi.FailWrite = (op, id) => op == "delete" && id == "te-4" ? "Task is closed to time entry." : null;
+
+        var result = await _committer.CommitAsync(Alex, draft.Id, CommitChannel.Agent, null, cts.Token);
+
+        Assert.Equal(DraftStatus.Failed, result.Status);
+        Assert.Equal([RowOutcome.Reversed, RowOutcome.Reversed, RowOutcome.Rejected], result.Rows.Select(r => r.Outcome));
+        Assert.Equal(["create:te-100", "update:te-1", "update:te-1", "delete:te-100"], _pi.Writes);
+        Assert.Equal(1.0m, Entry("te-1")!.Hours);
+        Assert.Null(Entry("te-100"));
+        var reloaded = await _committer.LoadAsync(Alex, draft.Id, default);
+        Assert.Equal(DraftStatus.Failed, reloaded.Status);
+        Assert.Equal([RowOutcome.Reversed, RowOutcome.Reversed, RowOutcome.Rejected], reloaded.Rows.Select(r => r.Outcome));
+    }
+
+    [Fact]
+    public async Task A_gateway_that_throws_on_a_write_is_treated_as_a_failed_write()
+    {
+        var (draft, _) = await Plan();
+        _pi.ThrowOnWrite = (op, id) => op == "delete" && id == "te-4" ? new HttpRequestException("connection reset") : null;
+
+        var result = await Commit(draft.Id);
+
+        Assert.Equal(DraftStatus.Failed, result.Status);
+        Assert.Contains("connection reset", result.Error);
+        Assert.Equal([RowOutcome.Reversed, RowOutcome.Reversed, RowOutcome.Rejected], result.Rows.Select(r => r.Outcome));
+        Assert.Equal(1.0m, Entry("te-1")!.Hours);
+        Assert.Null(Entry("te-100"));
+    }
+
+    [Fact]
+    public async Task A_pi_read_failure_during_commit_leaves_the_draft_committable()
+    {
+        var (draft, token) = await Plan();
+        _pi.SearchEntriesThrows = new TimeChangeException("pi_unavailable", "PI is down");
+
+        var ex = await Assert.ThrowsAsync<TimeChangeException>(() =>
+            _committer.CommitAsync(Alex, draft.Id, CommitChannel.ConfirmedInChat, token, default));
+
+        Assert.Equal("pi_unavailable", ex.Code);
+        Assert.Empty(_pi.Writes);
+        var reloaded = await _committer.LoadAsync(Alex, draft.Id, default);
+        Assert.Equal(DraftStatus.Draft, reloaded.Status);
+        Assert.False(reloaded.ConfirmTokenUsed);
+
+        _pi.SearchEntriesThrows = null;
+        var receipt = await _committer.CommitAsync(Alex, draft.Id, CommitChannel.ConfirmedInChat, token, default);
+        Assert.Equal(DraftStatus.Committed, receipt.Status);
+    }
+
+    [Fact]
     public async Task Committing_an_undo_restores_pi_and_marks_the_receipt_reverted()
     {
         var (draft, _) = await Plan();
