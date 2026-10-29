@@ -138,4 +138,25 @@ public class TimeEntryGatewayTests
         Assert.Contains("/api/user/list", listUrl);
         Assert.Contains("IsActive", listUrl);
     }
+
+    [Fact]
+    public async Task Search_time_sheets_throws_when_pi_fails_instead_of_reporting_none()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.InternalServerError, "boom"));
+
+        var ex = await Assert.ThrowsAsync<TimeChangeException>(
+            () => gw.SearchTimeSheetsAsync("u-1", new DateOnly(2026, 10, 26), new DateOnly(2026, 11, 1), default));
+
+        Assert.Equal("pi_unavailable", ex.Code);
+    }
+
+    [Fact]
+    public async Task Get_entry_throws_on_server_error_but_returns_null_on_not_found()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.InternalServerError, "boom"), Json(HttpStatusCode.NotFound, "{}"));
+
+        var ex = await Assert.ThrowsAsync<TimeChangeException>(() => gw.GetEntryAsync("te-1", default));
+        Assert.Equal("pi_unavailable", ex.Code);
+        Assert.Null(await gw.GetEntryAsync("te-9", default));
+    }
 }

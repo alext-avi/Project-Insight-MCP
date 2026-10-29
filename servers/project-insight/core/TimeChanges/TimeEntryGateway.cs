@@ -55,12 +55,16 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
     public async Task<PiUser?> GetUserAsync(string userId, CancellationToken ct)
     {
         var response = await api.GetUserAsync(userId, "Id,Name", ct);
-        return response.Success && response.Data?.Id is { } id ? new PiUser(id, response.Data.Name ?? id) : null;
+        if (!response.Success)
+            return MissingOrThrow<PiUser>(response.Message, response.Errors, "read the user");
+        return response.Data?.Id is { } id ? new PiUser(id, response.Data.Name ?? id) : null;
     }
 
     public async Task<IReadOnlyList<PiUser>> FindUsersAsync(string name, CancellationToken ct)
     {
         var response = await api.ListAllUsersAsync(isActive: true, nameFilter: name, modelProperties: "Id,Name,FirstName,LastName,IsActive", cancellationToken: ct);
+        if (!response.Success)
+            throw Unavailable("find users", response.Message, response.Errors);
         return (response.Data ?? new()).Where(u => u.Id is not null)
             .Select(u => new PiUser(u.Id!, u.Name ?? u.Id!)).ToList();
     }
@@ -69,6 +73,8 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
     {
         var response = await api.SearchProjectsAsync(
             new ProjectSearchRequest { IsActive = true, IsOpen = true, ModelProperties = "Id,Name" }, ct);
+        if (!response.Success)
+            throw Unavailable("list projects", response.Message, response.Errors);
         return (response.Data ?? new()).Where(p => p.Id is not null)
             .Select(p => new PiNamed(p.Id!, p.Name ?? p.Id!)).ToList();
     }
@@ -76,6 +82,8 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
     public async Task<IReadOnlyList<PiNamed>> ListTasksAsync(string projectId, CancellationToken ct)
     {
         var response = await api.GetProjectTasksAsync(projectId, "Id,Name", ct);
+        if (!response.Success)
+            throw Unavailable("list tasks", response.Message, response.Errors);
         return (response.Data ?? new()).Where(t => t.Id is not null)
             .Select(t => new PiNamed(t.Id!, t.Name ?? t.Id!)).ToList();
     }
@@ -83,9 +91,13 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
     public async Task<PiTask?> GetTaskAsync(string taskId, CancellationToken ct)
     {
         var task = await api.GetTaskAsync(taskId, "Id,Name,Project_Id", ct);
-        if (!task.Success || task.Data?.Id is null || task.Data.ProjectId is null)
+        if (!task.Success)
+            return MissingOrThrow<PiTask>(task.Message, task.Errors, "read the task");
+        if (task.Data?.Id is null || task.Data.ProjectId is null)
             return null;
         var project = await api.GetProjectAsync(task.Data.ProjectId, "Id,Name", ct);
+        if (!project.Success && !IsNotFound(project.Message, project.Errors))
+            throw Unavailable("read the task's project", project.Message, project.Errors);
         return new PiTask(task.Data.Id, task.Data.Name ?? task.Data.Id, task.Data.ProjectId,
             project.Data?.Name ?? task.Data.ProjectId);
     }
@@ -93,7 +105,9 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
     public async Task<PiEntry?> GetEntryAsync(string timeEntryId, CancellationToken ct)
     {
         var response = await api.GetTimeEntryAsync(timeEntryId, ct);
-        return response.Success && response.Data is { } e ? ToEntry(e) : null;
+        if (!response.Success)
+            return MissingOrThrow<PiEntry>(response.Message, response.Errors, "read the time entry");
+        return response.Data is { } e ? ToEntry(e) : null;
     }
 
     public async Task<IReadOnlyList<PiEntry>> SearchEntriesAsync(string userId, DateOnly start, DateOnly end, CancellationToken ct)
@@ -115,6 +129,8 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
             EndDate = end.ToDateTime(TimeOnly.MinValue),
             ModelProperties = "Id,StartDate,EndDate,IsSubmitted,IsApproved,IsLocked,UrlFull"
         }, ct);
+        if (!response.Success)
+            throw Unavailable("read timesheets", response.Message, response.Errors);
         return (response.Data ?? new())
             .Where(s => s.Id is not null && s.StartDate.HasValue && s.EndDate.HasValue)
             .Select(s => new PiTimeSheet(s.Id!, DateOnly.FromDateTime(s.StartDate!.Value), DateOnly.FromDateTime(s.EndDate!.Value),
@@ -161,6 +177,17 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
             e.Description, e.TaskId, e.TaskRef?.Name ?? e.TaskId, e.ProjectId ?? e.ProjectRef?.Id ?? "",
             e.ProjectRef?.Name ?? e.ProjectId ?? "", e.TimeSheetId);
     }
+
+    private static TimeChangeException Unavailable(string what, string? message, List<string>? errors)
+        => new("pi_unavailable", $"Could not {what} in Project Insight. " + Describe(message, errors));
+
+    // The API service reports failures as "API returned NotFound" / "API call failed: BadRequest".
+    // PI answering 404 (gone) or 400 (rejected id) means "no such record"; anything else is an outage.
+    private static bool IsNotFound(string? message, List<string>? errors)
+        => message is not null && (message.Contains("NotFound") || message.Contains("BadRequest"));
+
+    private static T? MissingOrThrow<T>(string? message, List<string>? errors, string what) where T : class
+        => IsNotFound(message, errors) ? null : throw Unavailable(what, message, errors);
 
     private static string Describe(string? message, List<string>? errors)
         => string.Join(" ", new[] { message }.Concat(errors ?? new()).Where(s => !string.IsNullOrWhiteSpace(s)));
