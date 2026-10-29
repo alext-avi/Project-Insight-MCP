@@ -148,4 +148,63 @@ public sealed class TimeChangeServiceTests : IDisposable
         Assert.Contains("No draft or receipt", r.Text);
         Assert.Single(Directory.EnumerateFiles(_dir.Root, "*.json", SearchOption.AllDirectories));
     }
+
+    [Fact]
+    public async Task Failed_and_fully_reversed_text_says_nothing_changed_with_a_next_step()
+    {
+        var plan = await _service.PlanAsync("Log Tuesday", TypicalChanges(), default);
+        _pi.FailWrite = (op, id) => op == "delete" && id == "te-4" ? "Task is closed to time entry." : null;
+
+        var r = await _service.CommitAsync(plan.View.Draft!.Id, default);
+
+        Assert.Equal(DraftStatus.Failed, r.View.Draft!.Status);
+        Assert.Contains("Nothing was changed", r.Text);
+        Assert.Contains("every change already made was reversed", r.Text);
+        Assert.Contains("Task is closed to time entry.", r.Text);
+        Assert.Contains("draft the changes again", r.Text);
+        Assert.DoesNotContain("Nothing was kept", r.Text);
+    }
+
+    [Fact]
+    public async Task Failed_with_unreversed_changes_warns_and_never_says_nothing_changed()
+    {
+        var plan = await _service.PlanAsync("Log Tuesday", TypicalChanges(), default);
+        _pi.FailWrite = (op, _) => op == "delete" ? "Locked" : null;
+
+        var r = await _service.CommitAsync(plan.View.Draft!.Id, default);
+
+        Assert.Contains("could not be reversed", r.Text);
+        Assert.Contains("partly changed", r.Text);
+        Assert.Contains("check these entries in Project Insight", r.Text);
+        Assert.DoesNotContain("Nothing was", r.Text);
+    }
+
+    [Fact]
+    public async Task Failed_without_an_error_has_no_dangling_text()
+    {
+        var plan = await _service.PlanAsync("Log Tuesday", TypicalChanges(), default);
+        _pi.FailWrite = (op, id) => op == "delete" ? "x" : null;
+        var failed = (await _service.CommitAsync(plan.View.Draft!.Id, default)).View.Draft!;
+        var view = new TimeChangesView { Kind = "draft", Draft = DraftView.From(new Draft
+        {
+            Id = failed.Id, Status = DraftStatus.Failed, Intent = "i", ProposedBy = "u-1", ProposedByName = "A", ConfirmTokenHash = "h",
+            ProposedAt = failed.ProposedAt, ExpiresAt = failed.ExpiresAt, Rows = [], Weeks = [], Totals = failed.Totals, Error = null
+        }, Drafts.T0) };
+
+        var first = TimeChangeText.For(view).Split('\n')[0];
+
+        Assert.DoesNotContain(".  ", first);
+        Assert.False(first.EndsWith(' '));
+    }
+
+    [Fact]
+    public async Task Cancelled_text_has_a_next_step()
+    {
+        var plan = await _service.PlanAsync("Log Tuesday", TypicalChanges(), default);
+
+        var r = await _service.CancelAsync(plan.View.Draft!.Id, default);
+
+        Assert.Contains("Nothing was changed", r.Text);
+        Assert.Contains("Draft again if the user still wants these changes", r.Text);
+    }
 }

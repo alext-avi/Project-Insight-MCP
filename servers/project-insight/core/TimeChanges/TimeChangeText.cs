@@ -30,6 +30,7 @@ public static class TimeChangeText
     private static string Draft(DraftView d)
     {
         var t = d.Totals;
+        var reverseFailed = d.Rows.Where(r => r.Outcome == RowOutcome.ReverseFailed).ToList();
         var sb = new StringBuilder();
         sb.Append(d.Status switch
         {
@@ -48,18 +49,24 @@ public static class TimeChangeText
             DraftStatus.Stale =>
                 $"Nothing was changed: Project Insight changed after draft {d.Id} was made ({string.Join(", ", d.StaleDays ?? new())}). " +
                 "Read the current entries and draft the changes again.",
-            DraftStatus.Failed => $"Nothing was kept from draft {d.Id}. {d.Error}",
-            DraftStatus.Cancelled => $"Draft {d.Id} was cancelled. Nothing was changed.",
+            DraftStatus.Failed when reverseFailed.Count > 0 =>
+                $"Draft {d.Id} failed and {Count(reverseFailed.Count, "change", "changes")} could not be reversed, so Project Insight is partly changed." +
+                (string.IsNullOrWhiteSpace(d.Error) ? "" : $" {d.Error}"),
+            DraftStatus.Failed =>
+                $"Nothing was changed: draft {d.Id} failed and every change already made was reversed." +
+                (string.IsNullOrWhiteSpace(d.Error) ? "" : $" {d.Error}") +
+                " Tell the user what failed; draft the changes again if they still want them.",
+            DraftStatus.Cancelled => $"Draft {d.Id} was cancelled. Nothing was changed. Draft again if the user still wants these changes.",
             DraftStatus.Expired => $"Draft {d.Id} expired without being confirmed. Nothing was changed. Draft the changes again if they are still wanted.",
             _ => $"Draft {d.Id} is {d.Status}."
         });
         sb.Append($"\nIntent: {d.Intent}");
         foreach (var r in d.Rows)
             sb.Append('\n').Append(Row(r, d));
-        var reverseFailed = d.Rows.Where(r => r.Outcome == RowOutcome.ReverseFailed).ToList();
         if (reverseFailed.Count > 0)
-            sb.Append("\nThese could not be reversed and need checking in Project Insight: ")
-              .Append(string.Join("; ", reverseFailed.Select(r => $"change {r.Index + 1} ({r.TimeEntryId ?? r.SavedId})")));
+            sb.Append("\nThese could not be reversed: ")
+              .Append(string.Join("; ", reverseFailed.Select(r => $"change {r.Index + 1} ({r.TimeEntryId ?? r.SavedId})")))
+              .Append(". Tell the user to check these entries in Project Insight.");
         return sb.ToString();
     }
 
