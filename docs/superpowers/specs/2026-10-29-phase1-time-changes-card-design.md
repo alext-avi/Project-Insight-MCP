@@ -1,6 +1,6 @@
 # Phase 1: reviewable time-entry changes with an MCP Apps card
 
-**Status:** design approved, not started · **Issue:** #3 · **Release:** 2.1.0
+**Status:** implemented on branch `phase1-time-changes` (PR pending live test) · **Issue:** #3 · **Release:** 2.1.0
 **Builds on:** Phase 0 (2.0.0, SDK on .NET 10) · **Related:** #4 (remote host), #5 (SDK-style tools)
 
 ## Goal
@@ -73,7 +73,7 @@ The committer is always the proposer (only the proposer can commit), so no separ
 
 ## Store
 
-`IDraftStore` with `Get(id)`, `Create(draft)`, `TryTransition(id, expectedStatus, update)` and `Prune()`.
+`IDraftStore` with `GetAsync`, `CreateAsync`, `TryTransitionAsync`, `PruneAsync(ownerId)` and `PruneAllAsync()`.
 
 The local `FileDraftStore`:
 

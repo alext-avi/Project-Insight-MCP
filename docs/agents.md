@@ -36,6 +36,16 @@ This is a **Model Context Protocol (MCP) server** that integrates with the **Pro
 - **Response**: Array of project objects with comprehensive metadata
 - **Fields Returned**: ID, Name, Status, Manager, Dates, Budget, etc.
 
+### Time-change drafts (`plan_time_changes` → `commit_time_changes`)
+
+Prefer drafts over direct `create/update/delete_time_entry` calls when changing several entries or
+anyone else's time. `plan_time_changes` takes an `intent` and up to 100 `changes`, writes nothing,
+and returns a draft (or a `needs_clarification` result listing candidates when a project, task or person name is
+ambiguous). Summarize the draft and ask the user; commit with `commit_time_changes` only after they
+agree, or let them press Confirm on the card. A stale result means the affected days changed in
+Project Insight since planning: read them again and re-plan. `undo_time_changes` drafts the reverse
+of a commit for 24 hours.
+
 ## 🚀 Getting Started
 
 ### Prerequisites
