@@ -220,6 +220,42 @@ public sealed class TimeChangePlannerTests : IDisposable
     }
 
     [Fact]
+    public async Task Moving_an_entry_out_of_a_locked_week_warns()
+    {
+        _pi.Sheets["u-1"] = [new PiTimeSheet("ts-1", Mon, new DateOnly(2026, 11, 1), false, false, true, "https://pi.test/ts-1")];
+        var draft = (await _planner.PlanAsync("Move",
+            [new() { Action = "update", TimeEntryId = "te-5", Date = "2026-11-03" }], default)).Draft!;
+
+        Assert.Equal([WarningCode.TimesheetLocked], draft.Rows[0].Warnings.Select(w => w.Code));
+        Assert.Equal(1, draft.Totals.Warnings);
+    }
+
+    [Fact]
+    public async Task Only_a_committed_receipt_can_be_undone()
+    {
+        var planned = (await _planner.PlanAsync("Log Tuesday", TypicalChanges(), default)).Draft!;
+        planned.Status = DraftStatus.Failed;
+
+        var ex = await Assert.ThrowsAsync<TimeChangeException>(() => _planner.PlanUndoAsync(planned, default));
+        Assert.Equal("not_undoable", ex.Code);
+    }
+
+    [Fact]
+    public async Task Undo_skips_rows_that_were_not_applied()
+    {
+        var planned = (await _planner.PlanAsync("Log Tuesday", TypicalChanges(), default)).Draft!;
+        planned.Status = DraftStatus.Committed;
+        planned.Rows[0].Outcome = RowOutcome.Rejected;
+        planned.Rows[1].Outcome = RowOutcome.Applied;
+        planned.Rows[2].Outcome = RowOutcome.Reversed;
+        _pi.Entries[_pi.Entries.FindIndex(e => e.Id == "te-1")] = _pi.Entries.First(e => e.Id == "te-1") with { Hours = 1.5m };
+
+        var undo = (await _planner.PlanUndoAsync(planned, default)).Draft!;
+
+        Assert.Equal(["update"], undo.Rows.Select(r => r.Action));
+    }
+
+    [Fact]
     public async Task Undo_draft_reverses_each_action()
     {
         // A receipt as the committer leaves it: te-100 was created, te-1 updated 1.0 → 1.5, te-4 deleted.

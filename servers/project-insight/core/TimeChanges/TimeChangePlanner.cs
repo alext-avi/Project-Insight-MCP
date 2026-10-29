@@ -25,7 +25,9 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
     /// <summary>A new draft that reverses a committed receipt's rows.</summary>
     public Task<PlanResult> PlanUndoAsync(Draft receipt, CancellationToken ct)
     {
-        var changes = receipt.Rows.Select(r => r.Action switch
+        if (receipt.Status != DraftStatus.Committed)
+            throw new TimeChangeException("not_undoable", "Only committed changes can be undone.");
+        var changes = receipt.Rows.Where(r => r.Outcome is null or RowOutcome.Applied).Select(r => r.Action switch
         {
             ChangeAction.Create => new ChangeInput { Action = ChangeAction.Delete, TimeEntryId = r.SavedId },
             ChangeAction.Update => new ChangeInput
@@ -287,9 +289,11 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             var week = weeks.First(w => w.Contains(row.UserId, date));
             var day = draft.Weeks.First(v => v.UserId == row.UserId && v.Start == week.Start).Days.First(d => d.Date == date);
 
-            if (week.Sheet?.Locked == true) Warn(row, WarningCode.TimesheetLocked, "Timesheet is locked");
-            else if (week.Sheet?.Approved == true) Warn(row, WarningCode.TimesheetApproved, "Timesheet already approved");
-            else if (week.Sheet?.Submitted == true) Warn(row, WarningCode.TimesheetSubmitted, "Timesheet already submitted");
+            var sheets = new[] { row.Before?.Date, row.After?.Date }.OfType<DateOnly>()
+                .Select(d => weeks.First(w => w.Contains(row.UserId, d)).Sheet).OfType<PiTimeSheet>().ToList();
+            if (sheets.Any(t => t.Locked)) Warn(row, WarningCode.TimesheetLocked, "Timesheet is locked");
+            else if (sheets.Any(t => t.Approved)) Warn(row, WarningCode.TimesheetApproved, "Timesheet already approved");
+            else if (sheets.Any(t => t.Submitted)) Warn(row, WarningCode.TimesheetSubmitted, "Timesheet already submitted");
 
             if (row.After is { } after)
             {
