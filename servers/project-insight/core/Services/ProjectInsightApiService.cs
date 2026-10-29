@@ -1821,6 +1821,84 @@ public class ProjectInsightApiService
         }
     }
 
+    /// <summary>
+    /// Search one user's time entries in a date range, with task and project names.
+    /// Requests only the fields time-change drafts use (no rates or totals).
+    /// </summary>
+    public async Task<ApiListResponse<TimeEntryWithNames>> SearchTimeEntriesWithNamesAsync(
+        string userId, DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = "/api/time-entry/search" +
+                $"?userList={Uri.EscapeDataString(userId)}" +
+                $"&startDate={startDate:yyyy-MM-dd}&endDate={endDate:yyyy-MM-dd}" +
+                $"&modelProperties={Uri.EscapeDataString(TimeEntryWithNames.ModelProperties)}";
+            var response = await GetWithTokenAsync(url, cancellationToken);
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Failed to search time entries with names: {StatusCode} - {Error}", response.StatusCode, content);
+                return new ApiListResponse<TimeEntryWithNames>
+                {
+                    Success = false,
+                    Message = $"API returned {response.StatusCode}",
+                    Errors = new List<string> { content }
+                };
+            }
+
+            var entries = JsonSerializer.Deserialize<List<TimeEntryWithNames>>(content, JsonOptions) ?? new();
+            return new ApiListResponse<TimeEntryWithNames> { Success = true, Data = entries, TotalCount = entries.Count };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error searching time entries with names");
+            return new ApiListResponse<TimeEntryWithNames>
+            {
+                Success = false,
+                Message = "Internal error occurred",
+                Errors = new List<string> { ex.Message }
+            };
+        }
+    }
+
+    /// <summary>Get one time entry by id, with task and project names.</summary>
+    public async Task<ApiResponse<TimeEntryWithNames>> GetTimeEntryAsync(string timeEntryId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = $"/api/time-entry/{Uri.EscapeDataString(timeEntryId)}" +
+                $"?modelProperties={Uri.EscapeDataString(TimeEntryWithNames.ModelProperties)}";
+            var response = await GetWithTokenAsync(url, cancellationToken);
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new ApiResponse<TimeEntryWithNames>
+                {
+                    Success = false,
+                    Message = $"API returned {response.StatusCode}",
+                    Errors = new List<string> { content }
+                };
+            }
+
+            return new ApiResponse<TimeEntryWithNames>
+            {
+                Success = true,
+                Data = JsonSerializer.Deserialize<TimeEntryWithNames>(content, JsonOptions)
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting time entry {TimeEntryId}", timeEntryId);
+            return new ApiResponse<TimeEntryWithNames>
+            {
+                Success = false,
+                Message = "Internal error occurred",
+                Errors = new List<string> { ex.Message }
+            };
+        }
+    }
+
     #endregion
 
     #region User Operations

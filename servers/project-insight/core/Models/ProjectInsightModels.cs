@@ -540,6 +540,32 @@ public class TimeEntrySearchRequest
     public string? ModelProperties { get; set; }
 }
 
+/// <summary>Id and name of a related record, as PI returns it for nested modelProperties.</summary>
+public class NamedRef
+{
+    [JsonPropertyName("Id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+}
+
+/// <summary>
+/// A time entry read together with its task and project names. Separate from <see cref="TimeEntry"/>
+/// so existing tools' output is unchanged.
+/// </summary>
+public class TimeEntryWithNames : TimeEntry
+{
+    public const string ModelProperties =
+        "Id,Date,ActualHours,IsBillable,Description,Task_Id,Project_Id,User_Id,TimeSheet_Id,Task,Project;Task:Id,Name;Project:Id,Name";
+
+    [JsonPropertyName("Task")]
+    public NamedRef? TaskRef { get; set; }
+
+    [JsonPropertyName("Project")]
+    public NamedRef? ProjectRef { get; set; }
+}
+
 /// <summary>
 /// ProjectResource model - represents a user assigned to a project
 /// </summary>
