@@ -278,4 +278,29 @@ public sealed class TimeChangePlannerTests : IDisposable
         Assert.Equal(("t-1", 2.0m, "API integration"), (undo.Rows[2].After!.TaskId, undo.Rows[2].After!.Hours, undo.Rows[2].After!.Description));
         Assert.Equal(0m, undo.Totals.NetHours + planned.Totals.NetHours);
     }
+
+    [Fact]
+    public async Task Undo_can_recreate_a_deleted_zero_hour_entry_and_restore_zero_hours()
+    {
+        _pi.Add("te-0", "u-1", Wed, 0m, "t-5", billable: false);
+        _pi.Add("te-z", "u-1", Wed, 0m, "t-6", billable: false);
+        var planned = (await _planner.PlanAsync("Tidy Wednesday",
+            [new() { Action = "delete", TimeEntryId = "te-0" }, new() { Action = "update", TimeEntryId = "te-z", Hours = 1m }], default)).Draft!;
+        _pi.Entries.RemoveAll(e => e.Id == "te-0");
+        _pi.Entries[_pi.Entries.FindIndex(e => e.Id == "te-z")] = _pi.Entries.First(e => e.Id == "te-z") with { Hours = 1m };
+        planned.Status = DraftStatus.Committed;
+        planned.CommittedAt = Drafts.T0;
+
+        var undo = (await _planner.PlanUndoAsync(planned, default)).Draft!;
+
+        Assert.Equal([("create", 0m), ("update", 0m)], undo.Rows.Select(r => (r.Action, r.After!.Hours)));
+    }
+
+    [Fact]
+    public async Task A_user_supplied_update_still_needs_more_than_zero_hours()
+    {
+        var ex = await Assert.ThrowsAsync<TimeChangeException>(() =>
+            _planner.PlanAsync("x", [new() { Action = "update", TimeEntryId = "te-1", Hours = 0m }], default));
+        Assert.Contains("hours must be more than 0", ex.Message);
+    }
 }

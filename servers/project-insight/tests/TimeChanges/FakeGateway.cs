@@ -30,6 +30,9 @@ public sealed class FakeGateway : ITimeEntryGateway
     /// <summary>Given (operation, entry id or null for create), returns an error to fail that write.</summary>
     public Func<string, string?, string?>? FailWrite { get; set; }
 
+    /// <summary>Given (operation, entry id or null for create), returns an error to report that write as unanswered (uncertain).</summary>
+    public Func<string, string?, string?>? UncertainWrite { get; set; }
+
     /// <summary>Every SearchEntriesAsync call, in order, so tests can assert each person-week is read once.</summary>
     public List<(string UserId, DateOnly Start, DateOnly End)> SearchEntriesCalls { get; } = new();
 
@@ -106,6 +109,7 @@ public sealed class FakeGateway : ITimeEntryGateway
         if (ThrowOnWrite?.Invoke("create", null) is { } thrown) throw thrown;
         if (ct.IsCancellationRequested) return new PiWrite(false, null, "The operation was canceled.");
         if (FailWrite?.Invoke("create", null) is { } error) return new PiWrite(false, null, error);
+        if (UncertainWrite?.Invoke("create", null) is { } unsure) return new PiWrite(false, null, unsure, Uncertain: true);
         var id = $"te-{_next++}";
         var task = GetTask(w.TaskId)!;
         Entries.Add(new PiEntry(id, w.UserId, w.Date, w.Hours, w.Billable, w.Description, task.Id, task.Name, task.ProjectId, task.ProjectName, w.TimeSheetId));
@@ -120,6 +124,7 @@ public sealed class FakeGateway : ITimeEntryGateway
         if (ThrowOnWrite?.Invoke("update", timeEntryId) is { } thrown) throw thrown;
         if (ct.IsCancellationRequested) return new PiWrite(false, null, "The operation was canceled.");
         if (FailWrite?.Invoke("update", timeEntryId) is { } error) return new PiWrite(false, null, error);
+        if (UncertainWrite?.Invoke("update", timeEntryId) is { } unsure) return new PiWrite(false, null, unsure, Uncertain: true);
         var i = Entries.FindIndex(e => e.Id == timeEntryId);
         if (i < 0) return new PiWrite(false, null, "Not found");
         var task = GetTask(w.TaskId)!;
@@ -139,6 +144,7 @@ public sealed class FakeGateway : ITimeEntryGateway
         if (ThrowOnWrite?.Invoke("delete", timeEntryId) is { } thrown) throw thrown;
         if (ct.IsCancellationRequested) return new PiWrite(false, null, "The operation was canceled.");
         if (FailWrite?.Invoke("delete", timeEntryId) is { } error) return new PiWrite(false, null, error);
+        if (UncertainWrite?.Invoke("delete", timeEntryId) is { } unsure) return new PiWrite(false, null, unsure, Uncertain: true);
         if (Entries.RemoveAll(e => e.Id == timeEntryId) == 0) return new PiWrite(false, null, "Not found");
         Writes.Add($"delete:{timeEntryId}");
         AfterWrite?.Invoke(Writes.Count);

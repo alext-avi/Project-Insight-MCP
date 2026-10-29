@@ -159,4 +159,85 @@ public class TimeEntryGatewayTests
         Assert.Equal("pi_unavailable", ex.Code);
         Assert.Null(await gw.GetEntryAsync("te-9", default));
     }
+
+    private static ProjectInsightTimeEntryGateway Unanswered(Exception failure, string? apiToken = "t")
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["ProjectInsight:BaseUrl"] = "https://pi.test" })
+            .Build();
+        var token = new ApiTokenAccessor { ApiToken = apiToken };
+        var api = new ProjectInsightApiService(new HttpClient(new FailingHandler(failure)), NullLogger<ProjectInsightApiService>.Instance, config, token);
+        return new ProjectInsightTimeEntryGateway(api, token);
+    }
+
+    private sealed class FailingHandler(Exception failure) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromException<HttpResponseMessage>(failure);
+    }
+
+    [Fact]
+    public async Task A_write_pi_never_answered_is_uncertain()
+    {
+        var gw = Unanswered(new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing."));
+        var values = new EntryWrite("u-1", "t-1", new DateOnly(2026, 10, 27), 4m, true, null, null);
+
+        var results = new[]
+        {
+            await gw.CreateEntryAsync(values, default),
+            await gw.UpdateEntryAsync("te-1", values, default),
+            await gw.DeleteEntryAsync("te-1", default)
+        };
+
+        Assert.All(results, r =>
+        {
+            Assert.False(r.Success);
+            Assert.True(r.Uncertain);
+            Assert.Contains("Timeout", r.Error);
+        });
+    }
+
+    [Fact]
+    public async Task A_write_pi_refused_is_not_uncertain()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.BadRequest, "Task is closed to time entry."),
+            Json(HttpStatusCode.OK, """{"success":false,"errors":[{"errorMessage":"Hours exceed the limit."}]}"""));
+
+        var deleted = await gw.DeleteEntryAsync("te-1", default);
+        var saved = await gw.CreateEntryAsync(new EntryWrite("u-1", "t-1", new DateOnly(2026, 10, 27), 4m, true, null, null), default);
+
+        Assert.False(deleted.Success);
+        Assert.False(deleted.Uncertain);
+        Assert.False(saved.Success);
+        Assert.False(saved.Uncertain);
+        Assert.Contains("Hours exceed the limit.", saved.Error);
+    }
+
+    [Fact]
+    public async Task Long_pi_error_text_is_cut_short()
+    {
+        var page = "<html><body>" + new string('x', 5000) + "</body></html>";
+        var (gw, _) = Create(Json(HttpStatusCode.InternalServerError, page), Json(HttpStatusCode.InternalServerError, page));
+
+        var write = await gw.DeleteEntryAsync("te-1", default);
+        var read = await Assert.ThrowsAsync<TimeChangeException>(() => gw.SearchEntriesAsync("u-1", new DateOnly(2026, 10, 26), new DateOnly(2026, 11, 1), default));
+
+        Assert.True(write.Error!.Length <= 301, $"write error was {write.Error.Length} characters");
+        Assert.EndsWith("…", write.Error);
+        Assert.StartsWith("API returned InternalServerError", write.Error);
+        Assert.True(read.Message.Length < 400, $"read error was {read.Message.Length} characters");
+        Assert.EndsWith("…", read.Message);
+    }
+
+    [Fact]
+    public async Task Without_a_token_the_current_user_is_not_signed_in_and_no_header_is_mentioned()
+    {
+        var gw = Unanswered(new InvalidOperationException("should not be sent"), apiToken: null);
+
+        var ex = await Assert.ThrowsAsync<TimeChangeException>(() => gw.GetCurrentUserAsync(default));
+
+        Assert.Equal("not_signed_in", ex.Code);
+        Assert.Contains("not signed in to Project Insight", ex.Message);
+        Assert.DoesNotContain("X-PI-Token", ex.Message);
+    }
 }

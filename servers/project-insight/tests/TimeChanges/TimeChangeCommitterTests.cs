@@ -214,6 +214,7 @@ public sealed class TimeChangeCommitterTests : IDisposable
         Assert.Equal(DraftStatus.Failed, loaded.Status);
         Assert.Contains("interrupted", loaded.Error);
         Assert.Contains("You · Mon 26 Oct", loaded.Error);
+        Assert.True(loaded.OutcomeUnknown);
     }
 
     [Fact]
@@ -250,7 +251,7 @@ public sealed class TimeChangeCommitterTests : IDisposable
     }
 
     [Fact]
-    public async Task A_gateway_that_throws_on_a_write_is_treated_as_a_failed_write()
+    public async Task A_gateway_that_throws_on_a_write_leaves_that_change_unknown()
     {
         var (draft, _) = await Plan();
         _pi.ThrowOnWrite = (op, id) => op == "delete" && id == "te-4" ? new HttpRequestException("connection reset") : null;
@@ -258,10 +259,71 @@ public sealed class TimeChangeCommitterTests : IDisposable
         var result = await Commit(draft.Id);
 
         Assert.Equal(DraftStatus.Failed, result.Status);
+        Assert.True(result.OutcomeUnknown);
         Assert.Contains("connection reset", result.Error);
-        Assert.Equal([RowOutcome.Reversed, RowOutcome.Reversed, RowOutcome.Rejected], result.Rows.Select(r => r.Outcome));
+        Assert.Contains("didn't answer for change 3 (You · Tue 27 Oct)", result.Error);
+        Assert.Contains("may have been saved", result.Error);
+        Assert.Equal([RowOutcome.Reversed, RowOutcome.Reversed, RowOutcome.Unknown], result.Rows.Select(r => r.Outcome));
         Assert.Equal(1.0m, Entry("te-1")!.Hours);
         Assert.Null(Entry("te-100"));
+    }
+
+    [Fact]
+    public async Task A_write_pi_did_not_answer_is_unknown_and_earlier_changes_are_still_reversed()
+    {
+        var (draft, _) = await Plan();
+        _pi.UncertainWrite = (op, id) => op == "delete" && id == "te-4" ? "Internal error occurred The request timed out." : null;
+
+        var result = await Commit(draft.Id);
+
+        Assert.Equal(DraftStatus.Failed, result.Status);
+        Assert.True(result.OutcomeUnknown);
+        Assert.Equal([RowOutcome.Reversed, RowOutcome.Reversed, RowOutcome.Unknown], result.Rows.Select(r => r.Outcome));
+        Assert.Equal(["create:te-100", "update:te-1", "update:te-1", "delete:te-100"], _pi.Writes);
+        Assert.Contains("didn't answer for change 3 (You · Tue 27 Oct)", result.Error);
+        Assert.Contains("Check that day in Project Insight", result.Error);
+        Assert.DoesNotContain("rejected", result.Error);
+        var stored = (await _store.GetAsync("u-1", draft.Id))!;
+        Assert.True(stored.OutcomeUnknown);
+        Assert.Equal(RowOutcome.Unknown, stored.Rows[2].Outcome);
+    }
+
+    [Fact]
+    public async Task A_definite_rejection_is_not_an_unknown_outcome()
+    {
+        var (draft, _) = await Plan();
+        _pi.FailWrite = (op, id) => op == "delete" && id == "te-4" ? "Task is closed to time entry." : null;
+
+        var result = await Commit(draft.Id);
+
+        Assert.False(result.OutcomeUnknown);
+        Assert.Equal(RowOutcome.Rejected, result.Rows[2].Outcome);
+    }
+
+    [Fact]
+    public async Task Failing_to_mark_the_receipt_reverted_does_not_fail_a_committed_undo()
+    {
+        var (draft, _) = await Plan();
+        var receipt = await Commit(draft.Id);
+        var undo = (await _planner.PlanUndoAsync(receipt, default)).Draft!;
+        var committer = new TimeChangeCommitter(_pi, new ReceiptWriteFails(_store, receipt.Id), _time);
+
+        var result = await committer.CommitAsync(Alex, undo.Id, CommitChannel.Agent, null, default);
+
+        Assert.Equal(DraftStatus.Committed, result.Status);
+        Assert.Null(Entry("te-100"));
+        Assert.Equal(1.0m, Entry("te-1")!.Hours);
+    }
+
+    /// <summary>A store whose write to one receipt fails, as a full disk or a lock timeout would.</summary>
+    private sealed class ReceiptWriteFails(IDraftStore inner, string receiptId) : IDraftStore
+    {
+        public Task<Draft?> GetAsync(string ownerId, string id, CancellationToken ct = default) => inner.GetAsync(ownerId, id, ct);
+        public Task CreateAsync(Draft draft, CancellationToken ct = default) => inner.CreateAsync(draft, ct);
+        public Task<Draft?> TryTransitionAsync(string ownerId, string id, string expectedStatus, Action<Draft> update, CancellationToken ct = default)
+            => id == receiptId ? throw new IOException("disk full") : inner.TryTransitionAsync(ownerId, id, expectedStatus, update, ct);
+        public Task PruneAsync(string ownerId, CancellationToken ct = default) => inner.PruneAsync(ownerId, ct);
+        public Task PruneAllAsync(CancellationToken ct = default) => inner.PruneAllAsync(ct);
     }
 
     [Fact]

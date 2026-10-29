@@ -11,12 +11,13 @@ public sealed class TimeChangeServiceTests : IDisposable
     private readonly TempDraftRoot _dir = new();
     private readonly ManualTimeProvider _time = new(Drafts.T0);
     private readonly FakeGateway _pi = Seeded();
+    private readonly FileDraftStore _store;
     private readonly TimeChangeService _service;
 
     public TimeChangeServiceTests()
     {
-        var store = new FileDraftStore(_dir.Root, _time);
-        _service = new TimeChangeService(_pi, new TimeChangePlanner(_pi, store, _time), new TimeChangeCommitter(_pi, store, _time), _time);
+        _store = new FileDraftStore(_dir.Root, _time);
+        _service = new TimeChangeService(_pi, new TimeChangePlanner(_pi, _store, _time), new TimeChangeCommitter(_pi, _store, _time), _time);
     }
 
     public void Dispose()
@@ -206,5 +207,51 @@ public sealed class TimeChangeServiceTests : IDisposable
 
         Assert.Contains("Nothing was changed", r.Text);
         Assert.Contains("Draft again if the user still wants these changes", r.Text);
+    }
+
+    [Fact]
+    public async Task Failed_with_an_unanswered_write_says_pi_may_be_changed_and_names_the_day()
+    {
+        var plan = await _service.PlanAsync("Log Tuesday", TypicalChanges(), default);
+        _pi.UncertainWrite = (op, id) => op == "delete" && id == "te-4" ? "Internal error occurred The request timed out." : null;
+
+        var r = await _service.CommitAsync(plan.View.Draft!.Id, default);
+
+        Assert.True(r.View.Draft!.OutcomeUnknown);
+        Assert.DoesNotContain("Nothing was", r.Text);
+        Assert.DoesNotContain("draft the changes again if", r.Text);
+        Assert.Contains("may be partly changed", r.Text);
+        Assert.Contains("change 3 (You · Tue 27 Oct)", r.Text);
+        Assert.Contains("Tell the user to check these entries in Project Insight.", r.Text);
+    }
+
+    [Fact]
+    public async Task An_interrupted_commit_never_says_nothing_changed()
+    {
+        var plan = await _service.PlanAsync("Log Tuesday", TypicalChanges(), default);
+        var id = plan.View.Draft!.Id;
+        await _store.TryTransitionAsync("u-1", id, DraftStatus.Draft, d => d.Status = DraftStatus.Committing);
+        _time.Now = Drafts.T0.AddMinutes(11);
+
+        var r = await _service.GetAsync(id, default);
+
+        Assert.Equal(DraftStatus.Failed, r.View.Draft!.Status);
+        Assert.True(r.View.Draft.OutcomeUnknown);
+        Assert.DoesNotContain("Nothing was", r.Text);
+        Assert.Contains("may be partly changed", r.Text);
+        Assert.Contains("You · Mon 26 Oct", r.Text);
+        Assert.Contains("You · Tue 27 Oct", r.Text);
+        Assert.Contains("Tell the user to check these entries in Project Insight.", r.Text);
+    }
+
+    [Fact]
+    public async Task Outcome_unknown_is_omitted_from_results_unless_true()
+    {
+        var plan = await _service.PlanAsync("Log Tuesday", TypicalChanges(), default);
+
+        var json = JsonSerializer.Serialize(plan.View, new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull });
+
+        Assert.DoesNotContain("outcomeUnknown", json);
     }
 }

@@ -134,6 +134,31 @@ public class McpServerService
     }
 
     /// <summary>
+    /// With no PI token, starts the sign-in flow that fits the host and returns what to tell the user;
+    /// null when a token is present. Every tool that needs PI runs this first, so all of them guide
+    /// sign-in the same way.
+    /// </summary>
+    public async Task<McpToolResult?> SignInIfNeededAsync(CancellationToken cancellationToken)
+    {
+        if (_apiTokenAccessor.HasToken)
+            return null;
+
+        // Copilot context (Entra user, Key Vault available) → account linking
+        if (_apiTokenAccessor.HasEntraIdentity && _keyVaultTokenService != null)
+            return await LinkPiAccountAsync(cancellationToken);
+
+        // Local stdio context → device activation
+        if (_deviceActivation != null)
+            return await TriggerAuthFlowAsync(cancellationToken);
+
+        return new McpToolResult
+        {
+            Content = new List<McpContent> { new() { Type = "text", Text = "Error: No API token configured. Set ProjectInsight__ApiToken in your MCP server environment variables, or restart without it to use interactive authentication." } },
+            IsError = true
+        };
+    }
+
+    /// <summary>
     /// Execute a specific tool
     /// </summary>
     public async Task<McpToolResult> ExecuteToolAsync(McpToolCall toolCall, CancellationToken cancellationToken)
@@ -151,22 +176,8 @@ public class McpServerService
                 return await CompletePiLinkAsync(toolCall.Arguments, cancellationToken);
 
             // If no PI token, trigger the appropriate auth flow
-            if (!_apiTokenAccessor.HasToken)
-            {
-                // Copilot context (Entra user, Key Vault available) → account linking
-                if (_apiTokenAccessor.HasEntraIdentity && _keyVaultTokenService != null)
-                    return await LinkPiAccountAsync(cancellationToken);
-
-                // Local stdio context → device activation
-                if (_deviceActivation != null)
-                    return await TriggerAuthFlowAsync(cancellationToken);
-
-                return new McpToolResult
-                {
-                    Content = new List<McpContent> { new() { Type = "text", Text = "Error: No API token configured. Set ProjectInsight__ApiToken in your MCP server environment variables, or restart without it to use interactive authentication." } },
-                    IsError = true
-                };
-            }
+            if (await SignInIfNeededAsync(cancellationToken) is { } signIn)
+                return signIn;
 
             switch (toolCall.Name)
             {

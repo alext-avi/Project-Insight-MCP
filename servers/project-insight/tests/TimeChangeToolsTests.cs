@@ -96,7 +96,7 @@ public sealed class TimeChangeToolsTests : IAsyncLifetime
             Assert.Equal(["model", "app"], Visibility(name));
         Assert.True(tools["commit_time_changes"].Annotations!.DestructiveHint);
         Assert.True(tools["confirm_time_changes"].Annotations!.DestructiveHint);
-        foreach (var name in new[] { "plan_time_changes", "undo_time_changes", "get_time_changes" })
+        foreach (var name in new[] { "plan_time_changes", "cancel_time_changes", "undo_time_changes", "get_time_changes" })
             Assert.True(tools[name].Annotations!.ReadOnlyHint);
     }
 
@@ -208,4 +208,72 @@ public sealed class TimeChangeToolsTests : IAsyncLifetime
 
     private static string SnapshotPath([CallerFilePath] string thisFile = "")
         => Path.Combine(Path.GetDirectoryName(thisFile)!, "Snapshots", "time-change-tools.json");
+}
+
+/// <summary>
+/// With no Project Insight token, the time-change tools start sign-in exactly as the legacy tools do,
+/// rather than pointing at the remote host's X-PI-Token header.
+/// </summary>
+public sealed class TimeChangeToolsSignInTests : IAsyncLifetime
+{
+    // PI refuses to start an activation, so no browser is opened; both kinds of tool report the same failure.
+    private readonly StubHttpMessageHandler _activation = new(Enumerable.Range(0, 8)
+        .Select(_ => McpServerTestHarness.Json(System.Net.HttpStatusCode.InternalServerError, "{}")));
+    private readonly string _drafts = Path.Combine(Path.GetTempPath(), "pi-signin-" + Guid.NewGuid().ToString("N"));
+    private IHost _host = null!;
+    private McpClient _client = null!;
+
+    public async Task InitializeAsync()
+    {
+        var clientToServer = new Pipe();
+        var serverToClient = new Pipe();
+        var builder = Host.CreateEmptyApplicationBuilder(settings: null);
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ProjectInsight:BaseUrl"] = "https://pi.test",
+            ["ProjectInsight:DraftsPath"] = _drafts
+        });
+        builder.Services.AddLogging();
+        builder.Services.AddProjectInsightServices(builder.Configuration);
+        // No token, and never the developer's stored credentials.
+        builder.Services.AddSingleton(new ProjectInsightMCP.Services.ApiTokenAccessor());
+        builder.Services.AddSingleton(sp => new ProjectInsightMCP.Services.DeviceActivationService(
+            new HttpClient(_activation), NullLogger<ProjectInsightMCP.Services.DeviceActivationService>.Instance,
+            sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<ProjectInsightMCP.Services.CredentialStorageService>()));
+        builder.Services.AddProjectInsightMcp().WithDrainingStreamServerTransport(
+            () => clientToServer.Reader.AsStream(), () => serverToClient.Writer.AsStream());
+        _host = builder.Build();
+        await _host.StartAsync();
+        _client = await McpClient.CreateAsync(new StreamClientTransport(
+            clientToServer.Writer.AsStream(), serverToClient.Reader.AsStream(), NullLoggerFactory.Instance));
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _client.DisposeAsync();
+        await _host.StopAsync();
+        _host.Dispose();
+        if (Directory.Exists(_drafts)) Directory.Delete(_drafts, recursive: true);
+    }
+
+    private static string Text(CallToolResult r) => string.Join("\n", r.Content.OfType<TextContentBlock>().Select(c => c.Text));
+
+    [Fact]
+    public async Task Without_a_token_time_change_tools_start_sign_in_like_the_legacy_tools()
+    {
+        var legacy = await _client.CallToolAsync("search_projects", new Dictionary<string, object?>());
+        var timeChange = await _client.CallToolAsync("get_time_changes", new Dictionary<string, object?> { ["id"] = "d_none" });
+        var plan = await _client.CallToolAsync("plan_time_changes", new Dictionary<string, object?>
+        {
+            ["intent"] = "Log Tuesday",
+            ["changes"] = new object[] { new { action = "delete", timeEntryId = "te-1" } }
+        });
+
+        Assert.Contains("authentication", Text(legacy));
+        Assert.Equal(Text(legacy), Text(timeChange));
+        Assert.Equal(Text(legacy), Text(plan));
+        Assert.True(timeChange.IsError);
+        Assert.DoesNotContain("X-PI-Token", Text(timeChange));
+        Assert.Equal(3, _activation.Requests.Count(r => r.Uri.AbsolutePath == "/device-activation/create-request"));
+    }
 }

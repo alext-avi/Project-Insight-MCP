@@ -479,6 +479,12 @@
                 "null"
               ]
             },
+            "outcomeUnknown": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
             "staleDays": {
               "type": [
                 "array",
@@ -965,6 +971,12 @@
             "error": {
               "type": [
                 "string",
+                "null"
+              ]
+            },
+            "outcomeUnknown": {
+              "type": [
+                "boolean",
                 "null"
               ]
             },
@@ -1462,6 +1474,12 @@
                 "null"
               ]
             },
+            "outcomeUnknown": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
             "staleDays": {
               "type": [
                 "array",
@@ -1951,6 +1969,12 @@
                 "null"
               ]
             },
+            "outcomeUnknown": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
             "staleDays": {
               "type": [
                 "array",
@@ -2024,6 +2048,9 @@
       "required": [
         "kind"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": true
     },
     "_meta": {
       "ui": {
@@ -2435,6 +2462,12 @@
             "error": {
               "type": [
                 "string",
+                "null"
+              ]
+            },
+            "outcomeUnknown": {
+              "type": [
+                "boolean",
                 "null"
               ]
             },
@@ -2925,6 +2958,12 @@
             "error": {
               "type": [
                 "string",
+                "null"
+              ]
+            },
+            "outcomeUnknown": {
+              "type": [
+                "boolean",
                 "null"
               ]
             },

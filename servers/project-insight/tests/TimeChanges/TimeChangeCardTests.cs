@@ -62,4 +62,13 @@ public class TimeChangeCardTests
         Assert.Contains("300000", Html);
         Assert.Contains("commit_time_changes", Html);
     }
+
+    [Fact]
+    public void Card_treats_an_unknown_outcome_like_a_failed_reversal()
+    {
+        Assert.Contains("d.outcomeUnknown", Html);
+        Assert.Contains("unknown: \"", Html);
+        Assert.Contains("r.outcome === \"unknown\"", Html);
+        Assert.Contains(".st-unknown", Html);
+    }
 }

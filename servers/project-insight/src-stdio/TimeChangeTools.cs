@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Extensions.Apps;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using ProjectInsightMCP.Services;
 using ProjectInsightMCP.TimeChanges;
 
 namespace ProjectInsightMCP.Stdio;
@@ -53,8 +54,9 @@ internal static class TimeChangeTools
         Tool("commit_time_changes", CommitDescription, Commit, Model, destructive: true),
         Tool("confirm_time_changes", "Used by the review card's Confirm button. Agents use commit_time_changes instead.",
             Confirm, App, destructive: true),
+        // Cancel only changes the stored draft, never Project Insight data: read-only, like plan and undo.
         Tool("cancel_time_changes", "Cancel a time-change draft so it can't be committed. Nothing in Project Insight changes.",
-            Cancel, ModelAndApp),
+            Cancel, ModelAndApp, readOnly: true),
         Tool("undo_time_changes", UndoDescription, Undo, ModelAndApp, readOnly: true),
         Tool("get_time_changes", "Show a time-change draft or receipt by id, with its current status.", Get, ModelAndApp, readOnly: true)
     ];
@@ -105,33 +107,42 @@ internal static class TimeChangeTools
         [Description("One line saying what these changes are for, e.g. \"Log Tuesday from H4T\".")] string intent,
         [Description("The changes to draft, 1 to 100.")] List<ChangeInput> changes,
         RequestContext<CallToolRequestParams> context, CancellationToken cancellationToken)
-        => ToResult(await Service(context).PlanAsync(intent, changes, cancellationToken));
+        => await SignedIn(context, cancellationToken) ?? ToResult(await Service(context).PlanAsync(intent, changes, cancellationToken));
 
     private static async Task<CallToolResult> Commit(
         [Description("Draft id from plan_time_changes or undo_time_changes.")] string draftId,
         RequestContext<CallToolRequestParams> context, CancellationToken cancellationToken)
-        => ToResult(await Service(context).CommitAsync(draftId, cancellationToken));
+        => await SignedIn(context, cancellationToken) ?? ToResult(await Service(context).CommitAsync(draftId, cancellationToken));
 
     private static async Task<CallToolResult> Confirm(
         [Description("Draft id.")] string draftId,
         [Description("The one-time token from the draft's result metadata.")] string confirmToken,
         RequestContext<CallToolRequestParams> context, CancellationToken cancellationToken)
-        => ToResult(await Service(context).ConfirmAsync(draftId, confirmToken, cancellationToken));
+        => await SignedIn(context, cancellationToken) ?? ToResult(await Service(context).ConfirmAsync(draftId, confirmToken, cancellationToken));
 
     private static async Task<CallToolResult> Cancel(
         [Description("Draft id.")] string draftId,
         RequestContext<CallToolRequestParams> context, CancellationToken cancellationToken)
-        => ToResult(await Service(context).CancelAsync(draftId, cancellationToken));
+        => await SignedIn(context, cancellationToken) ?? ToResult(await Service(context).CancelAsync(draftId, cancellationToken));
 
     private static async Task<CallToolResult> Undo(
         [Description("Id of the committed draft to reverse.")] string receiptId,
         RequestContext<CallToolRequestParams> context, CancellationToken cancellationToken)
-        => ToResult(await Service(context).UndoAsync(receiptId, cancellationToken));
+        => await SignedIn(context, cancellationToken) ?? ToResult(await Service(context).UndoAsync(receiptId, cancellationToken));
 
     private static async Task<CallToolResult> Get(
         [Description("Draft or receipt id.")] string id,
         RequestContext<CallToolRequestParams> context, CancellationToken cancellationToken)
-        => ToResult(await Service(context).GetAsync(id, cancellationToken));
+        => await SignedIn(context, cancellationToken) ?? ToResult(await Service(context).GetAsync(id, cancellationToken));
+
+    /// <summary>
+    /// Without a PI token, starts sign-in exactly as the legacy tools do (<see cref="McpServerService.SignInIfNeededAsync"/>)
+    /// and returns that result; null when signed in.
+    /// </summary>
+    private static async Task<CallToolResult?> SignedIn(RequestContext<CallToolRequestParams> context, CancellationToken cancellationToken)
+        => await context.Services!.GetRequiredService<McpServerService>().SignInIfNeededAsync(cancellationToken) is { } signIn
+            ? ProjectInsightServer.ToSdkResult(signIn)
+            : null;
 
     private static TimeChangeService Service(RequestContext<CallToolRequestParams> context)
         => context.Services!.GetRequiredService<TimeChangeService>();

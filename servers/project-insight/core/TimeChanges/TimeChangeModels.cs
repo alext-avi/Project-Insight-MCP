@@ -27,6 +27,8 @@ public static class RowOutcome
     public const string Rejected = "rejected";
     public const string NotAttempted = "not_attempted";
     public const string ReverseFailed = "reverse_failed";
+    /// <summary>PI didn't answer the write (timeout, dropped connection), so it may have been applied.</summary>
+    public const string Unknown = "unknown";
 }
 
 public static class CommitChannel
@@ -193,6 +195,11 @@ public sealed class Draft
     public Dictionary<string, string> DayFingerprints { get; set; } = new();
     public DraftTotals Totals { get; set; } = new();
     public string? Error { get; set; }
+    /// <summary>
+    /// True when a failed commit may have left changes in PI that weren't reversed: a write PI didn't
+    /// answer, or a commit interrupted midway.
+    /// </summary>
+    public bool OutcomeUnknown { get; set; }
     public List<string> StaleDays { get; set; } = new();
 }
 

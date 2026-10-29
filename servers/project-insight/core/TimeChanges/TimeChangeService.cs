@@ -31,6 +31,8 @@ public sealed class DraftView
     public required List<WeekView> Weeks { get; init; }
     public required DraftTotals Totals { get; init; }
     public string? Error { get; init; }
+    /// <summary>True (else omitted) when a failed commit may have left unreversed changes in PI.</summary>
+    public bool? OutcomeUnknown { get; init; }
     public List<string>? StaleDays { get; init; }
 
     public static DraftView From(Draft d, DateTimeOffset now) => new()
@@ -54,6 +56,7 @@ public sealed class DraftView
         Weeks = d.Weeks,
         Totals = d.Totals,
         Error = d.Error,
+        OutcomeUnknown = d.OutcomeUnknown ? true : null,
         StaleDays = d.StaleDays.Count > 0 ? d.StaleDays : null
     };
 }

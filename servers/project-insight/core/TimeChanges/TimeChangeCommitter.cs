@@ -22,6 +22,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
             return await store.TryTransitionAsync(caller.Id, draft.Id, DraftStatus.Committing, d =>
             {
                 SetStatus(d, DraftStatus.Failed, now);
+                d.OutcomeUnknown = true;
                 d.Error = "The commit was interrupted, so the outcome is unknown. Check these days in Project Insight: "
                           + string.Join(", ", ChangedDayLabels(d)) + ".";
             }, ct) ?? await LoadAsync(caller, draft.Id, ct);
@@ -87,7 +88,10 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
                 continue;
             }
 
-            row.Outcome = RowOutcome.Rejected;
+            // No answer from PI (timeout, dropped connection) means the write may have been applied:
+            // it can't be reversed or reported as rejected, only flagged for the user to check.
+            var unknown = result.Uncertain;
+            row.Outcome = unknown ? RowOutcome.Unknown : RowOutcome.Rejected;
             row.Error = result.Error;
             foreach (var later in claimed.Rows.Skip(i + 1))
                 later.Outcome = RowOutcome.NotAttempted;
@@ -101,8 +105,15 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
                 else if (done.Action == ChangeAction.Delete)
                     done.SavedId = reversed.SavedId; // recreated under a new id
             }
-            var error = $"Project Insight rejected change {i + 1} of {claimed.Rows.Count}: {result.Error}";
-            return await FinishAsync(caller, claimed, d => { d.Status = DraftStatus.Failed; d.Error = error; });
+            var error = unknown
+                ? UnansweredError(claimed, row, result.Error)
+                : $"Project Insight rejected change {i + 1} of {claimed.Rows.Count}: {result.Error}";
+            return await FinishAsync(caller, claimed, d =>
+            {
+                d.Status = DraftStatus.Failed;
+                d.Error = error;
+                d.OutcomeUnknown = unknown;
+            });
         }
 
         var committed = await FinishAsync(caller, claimed, d =>
@@ -111,7 +122,18 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
             d.CommittedAt = time.GetUtcNow();
         });
         if (committed.UndoOf is { } receiptId)
-            await store.TryTransitionAsync(caller.Id, receiptId, DraftStatus.Committed, r => r.RevertedBy = committed.Id, CancellationToken.None);
+        {
+            try
+            {
+                await store.TryTransitionAsync(caller.Id, receiptId, DraftStatus.Committed, r => r.RevertedBy = committed.Id, CancellationToken.None);
+            }
+            catch (Exception)
+            {
+                // The undo is committed in PI; failing to note that on the old receipt must not turn it into
+                // an error, which could prompt a second undo. The receipt then still offers undo, and a second
+                // undo draft would show the entries as already reverted or flag likely duplicates.
+            }
+        }
         return committed;
     }
 
@@ -133,6 +155,17 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
             var week = d.Weeks.FirstOrDefault(w => w.UserId == userId);
             return Weeks.DayLabel(week is null ? userId : week.IsCaller ? "You" : week.UserName, date);
         });
+
+    private static string UnansweredError(Draft draft, DraftRow row, string? detail)
+    {
+        var week = draft.Weeks.FirstOrDefault(w => w.UserId == row.UserId);
+        var who = week is { IsCaller: true } ? "You" : row.UserName;
+        var days = new[] { row.Before?.Date, row.After?.Date }.OfType<DateOnly>().Distinct().Order()
+            .Select(date => Weeks.DayLabel(who, date)).ToList();
+        return $"Project Insight didn't answer for change {row.Index + 1} ({string.Join(", ", days)}), so it may have been saved. " +
+               $"Check {(days.Count == 1 ? "that day" : "those days")} in Project Insight." +
+               (string.IsNullOrWhiteSpace(detail) ? "" : $" ({detail})");
+    }
 
     private async Task<List<string>> FindStaleDaysAsync(Draft draft, CancellationToken ct)
     {
@@ -185,7 +218,8 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
         }
         catch (Exception ex)
         {
-            return new PiWrite(false, null, ex.Message);
+            // A write that threw got no answer from PI, so it may have been applied.
+            return new PiWrite(false, null, ProjectInsightTimeEntryGateway.Clip(ex.Message), Uncertain: true);
         }
     }
 

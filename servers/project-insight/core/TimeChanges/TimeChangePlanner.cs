@@ -127,7 +127,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         if (action == ChangeAction.Create)
         {
             var date = ParseDate(n, c.Date);
-            var hours = ParseHours(n, c.Hours);
+            var hours = ParseHours(n, c.Hours, isUndo);
             var user = await resolver.UserAsync(i, c.User, caller, ct);
             var task = await resolver.TaskAsync(i, c.TaskId, c.Project, c.Task, ct);
             if (user.Clarification is { } uc) clarifications.Add(uc);
@@ -175,7 +175,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             throw Invalid(n, "an update can't change whose time it is. Delete the entry and create a new one for the other person.");
         var after = before.Clone();
         if (c.Date is not null) after.Date = ParseDate(n, c.Date);
-        if (c.Hours is not null) after.Hours = ParseHours(n, c.Hours);
+        if (c.Hours is not null) after.Hours = ParseHours(n, c.Hours, isUndo);
         if (c.Billable is not null) after.Billable = c.Billable.Value;
         if (c.Description is not null) after.Description = Blank(c.Description);
         if (c.TaskId is not null || c.Project is not null || c.Task is not null)
@@ -338,8 +338,14 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             ? d
             : throw Invalid(n, "date must be yyyy-MM-dd.");
 
-    private static decimal ParseHours(int n, decimal? value)
-        => value is > 0m and <= 24m ? value.Value : throw Invalid(n, "hours must be more than 0 and at most 24.");
+    /// <summary>
+    /// An undo restores an entry's earlier hours, which PI may hold as 0; anything the agent asks for
+    /// must be more than 0.
+    /// </summary>
+    private static decimal ParseHours(int n, decimal? value, bool isUndo)
+        => value is > 0m and <= 24m || (isUndo && value == 0m)
+            ? value!.Value
+            : throw Invalid(n, "hours must be more than 0 and at most 24.");
 
     private static TimeChangeException Invalid(int n, string message) => new("invalid_change", $"Change {n}: {message}");
 }

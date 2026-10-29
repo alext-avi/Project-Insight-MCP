@@ -10,7 +10,11 @@ public sealed record PiEntry(string Id, string UserId, DateOnly Date, decimal Ho
     string TaskId, string TaskName, string ProjectId, string ProjectName, string? TimeSheetId);
 public sealed record PiTimeSheet(string Id, DateOnly Start, DateOnly End, bool Submitted, bool Approved, bool Locked, string? Url);
 public sealed record EntryWrite(string UserId, string TaskId, DateOnly Date, decimal Hours, bool Billable, string? Description, string? TimeSheetId);
-public sealed record PiWrite(bool Success, string? SavedId, string? Error);
+/// <summary>
+/// A write's result. <paramref name="Uncertain"/> is true when PI gave no answer (timeout, dropped
+/// connection), so the write may or may not have been applied.
+/// </summary>
+public sealed record PiWrite(bool Success, string? SavedId, string? Error, bool Uncertain = false);
 
 /// <summary>The Project Insight operations time-change drafts need, and nothing else.</summary>
 public interface ITimeEntryGateway
@@ -36,6 +40,10 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
 
     public async Task<PiUser> GetCurrentUserAsync(CancellationToken ct)
     {
+        if (!token.HasToken)
+            // The stdio host starts sign-in before any time-change tool runs; this is the fallback.
+            throw new TimeChangeException("not_signed_in",
+                "You're not signed in to Project Insight. Call any other Project Insight tool to start sign-in, then try again.");
         var current = token.ApiToken;
         lock (_lock)
             if (_caller is { } cached && cached.Token == current)
@@ -145,7 +153,7 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
     public async Task<PiWrite> DeleteEntryAsync(string timeEntryId, CancellationToken ct)
     {
         var response = await api.DeleteTimeEntryAsync(timeEntryId, ct);
-        return response.Success ? new PiWrite(true, null, null) : new PiWrite(false, null, Describe(response.Message, response.Errors));
+        return response.Success ? new PiWrite(true, null, null) : Failed(response.Message, response.Errors);
     }
 
     private async Task<PiWrite> SaveAsync(string? id, EntryWrite values, CancellationToken ct)
@@ -166,8 +174,16 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
         var response = await api.SaveTimeEntryAsync(entry, ct);
         return response.Success
             ? new PiWrite(true, response.Data?.SavedId ?? id, null)
-            : new PiWrite(false, null, Describe(response.Message, response.Errors));
+            : Failed(response.Message, response.Errors);
     }
+
+    // The API service turns any exception (timeout, dropped connection) into this message. Then PI gave
+    // no answer, so the write may have been applied; "API returned <status>" or a success:false body is
+    // a definite refusal.
+    private const string NoAnswer = "Internal error occurred";
+
+    private static PiWrite Failed(string? message, List<string>? errors)
+        => new(false, null, Describe(message, errors), Uncertain: message == NoAnswer);
 
     private static PiEntry? ToEntry(TimeEntryWithNames e)
     {
@@ -189,6 +205,12 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
     private static T? MissingOrThrow<T>(string? message, List<string>? errors, string what) where T : class
         => IsNotFound(message, errors) ? null : throw Unavailable(what, message, errors);
 
+    /// <summary>Longest PI error text passed on; PI can answer with a whole HTML error page.</summary>
+    public const int MaxErrorLength = 300;
+
     private static string Describe(string? message, List<string>? errors)
-        => string.Join(" ", new[] { message }.Concat(errors ?? new()).Where(s => !string.IsNullOrWhiteSpace(s)));
+        => Clip(string.Join(" ", new[] { message }.Concat(errors ?? new()).Where(s => !string.IsNullOrWhiteSpace(s))));
+
+    public static string Clip(string text)
+        => text.Length <= MaxErrorLength ? text : text[..MaxErrorLength].TrimEnd() + "…";
 }

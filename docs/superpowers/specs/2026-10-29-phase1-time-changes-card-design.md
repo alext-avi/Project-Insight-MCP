@@ -57,10 +57,10 @@ Draft {
   id, status, intent, proposedBy (PI user id), proposedAt, expiresAt (= proposedAt + 24h),
   committedAt?, channel? (agent | confirmed_in_chat), undoOf?, undoOfCommittedAt?, revertedBy?,
   confirmTokenHash, rows[], weeks[], dayFingerprints{(userId, date) → hash}, totals,
-  error? (failed commits)
+  error? (failed commits), outcomeUnknown? (failed commits that may have left changes in PI)
 }
 Row  { index, action, userId, userName, timeEntryId?, savedId?, date, project, task,
-       before?, after?, warnings[], outcome? (applied | reversed | rejected | not_attempted | reverse_failed) }
+       before?, after?, warnings[], outcome? (applied | reversed | rejected | not_attempted | reverse_failed | unknown) }
 Week { userId, userName, start, end, timesheetUrl?, days[{date, totalBefore, totalAfter, entries[] (context rows)}] }
 Status: draft | committed | stale | expired | cancelled | failed
 ```
@@ -95,7 +95,9 @@ The local `FileDraftStore`:
    Mark the draft `failed` with PI's error and a per-row outcome. A reversal that itself fails is `reverse_failed` and is shown in red with a link to the entry.
 6. On success, mark the draft `committed`.
 
-A draft left in `committing` for over 10 minutes (e.g. the process died mid-commit) is reported as `failed` with outcome unknown. The card and text name the touched days so the user can check them in PI.
+A write whose result PI didn't report (a timeout or connection failure, as opposed to an HTTP error or a `success: false` answer) may have been applied. That row is marked `unknown`, not `rejected`. The earlier rows are still reversed. The draft is marked `failed` with `outcomeUnknown`, and the error names the change and its day(s). The text and card never say "nothing was changed"; they tell the user to check the named days in PI before drafting again.
+
+A draft left in `committing` for over 10 minutes (e.g. the process died mid-commit) is reported as `failed` with `outcomeUnknown`. The card and text name the touched days so the user can check them in PI.
 
 Fingerprint = hash over the day's entries (id, task, hours, billable, description, sorted by id) plus the timesheet's submitted, approved and locked flags.
 
@@ -138,7 +140,7 @@ Layout (mockups approved in brainstorming):
 | draft | Draft · nothing changed yet | — | Confirm N changes, Cancel |
 | committed | Committed · confirmed in chat / by the agent | — | Draft an undo (until expiry) |
 | stale | Out of date · nothing was changed | Names the changed days; "ask the agent to draft again" | Cancel draft |
-| failed | Failed · rolled back | PI's error; per-row outcome | — |
+| failed | Failed · rolled back, or Failed · check Project Insight when `outcomeUnknown` or a row is `reverse_failed`/`unknown` | PI's error; per-row outcome | — |
 | cancelled / expired | Cancelled / Expired | — | — |
 | undo draft | Draft · undo of <time> changes | — | as draft |
 

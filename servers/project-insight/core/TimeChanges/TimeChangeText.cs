@@ -31,6 +31,12 @@ public static class TimeChangeText
     {
         var t = d.Totals;
         var reverseFailed = d.Rows.Where(r => r.Outcome == RowOutcome.ReverseFailed).ToList();
+        // Changes that may be in PI after a failed commit: a reversal PI refused, a write PI didn't
+        // answer, or, after an interrupted commit, any row without a recorded outcome.
+        var toCheck = d.Status != DraftStatus.Failed ? new List<DraftRow>()
+            : d.Rows.Where(r => r.Outcome is RowOutcome.ReverseFailed or RowOutcome.Unknown
+                                || (d.OutcomeUnknown == true && r.Outcome is null or RowOutcome.Applied)).ToList();
+        var mayBeChanged = d.OutcomeUnknown == true || toCheck.Count > 0;
         var sb = new StringBuilder();
         sb.Append(d.Status switch
         {
@@ -49,8 +55,9 @@ public static class TimeChangeText
             DraftStatus.Stale =>
                 $"Nothing was changed: Project Insight changed after draft {d.Id} was made ({string.Join(", ", d.StaleDays ?? new())}). " +
                 "Read the current entries and draft the changes again.",
-            DraftStatus.Failed when reverseFailed.Count > 0 =>
-                $"Draft {d.Id} failed and {Count(reverseFailed.Count, "change", "changes")} could not be reversed, so Project Insight is partly changed." +
+            DraftStatus.Failed when mayBeChanged =>
+                $"Draft {d.Id} failed, and Project Insight may be partly changed." +
+                (reverseFailed.Count > 0 ? $" {Count(reverseFailed.Count, "change", "changes")} could not be reversed." : "") +
                 (string.IsNullOrWhiteSpace(d.Error) ? "" : $" {d.Error}"),
             DraftStatus.Failed =>
                 $"Nothing was changed: draft {d.Id} failed and every change already made was reversed." +
@@ -63,11 +70,26 @@ public static class TimeChangeText
         sb.Append($"\nIntent: {d.Intent}");
         foreach (var r in d.Rows)
             sb.Append('\n').Append(Row(r, d));
-        if (reverseFailed.Count > 0)
-            sb.Append("\nThese could not be reversed: ")
-              .Append(string.Join("; ", reverseFailed.Select(r => $"change {r.Index + 1} ({r.TimeEntryId ?? r.SavedId})")))
-              .Append(". Tell the user to check these entries in Project Insight.");
+        if (mayBeChanged)
+        {
+            sb.Append("\nCheck in Project Insight: ");
+            sb.Append(toCheck.Count > 0
+                ? string.Join("; ", toCheck.Select(r => $"change {r.Index + 1} ({Where(r, d)})"))
+                : "the days named above");
+            sb.Append(". Tell the user to check these entries in Project Insight. Don't draft these changes again " +
+                      "until they have, or the time may be entered twice.");
+        }
         return sb.ToString();
+    }
+
+    /// <summary>"You · Tue 27 Oct, entry te-1": the day(s) a row touches and, if known, its entry.</summary>
+    private static string Where(DraftRow r, DraftView d)
+    {
+        var who = d.Weeks.Any(w => w.UserId == r.UserId && w.IsCaller) ? "You" : r.UserName;
+        var days = new[] { r.Before?.Date, r.After?.Date }.OfType<DateOnly>().Distinct().Order()
+            .Select(date => Weeks.DayLabel(who, date));
+        var entry = r.SavedId ?? r.TimeEntryId;
+        return string.Join(", ", days) + (entry is null ? "" : $", entry {entry}");
     }
 
     private static string Row(DraftRow r, DraftView d)
@@ -91,7 +113,8 @@ public static class TimeChangeText
         }
         foreach (var w in r.Warnings) line.Append($" [warning: {w.Message}]");
         if (r.Outcome is { } outcome && outcome != RowOutcome.Applied)
-            line.Append($" [{outcome.Replace('_', ' ')}{(r.Error is null ? "" : ": " + r.Error)}]");
+            line.Append($" [{(outcome == RowOutcome.Unknown ? "no answer from Project Insight, may have been saved" : outcome.Replace('_', ' '))}" +
+                        $"{(r.Error is null ? "" : ": " + r.Error)}]");
         return line.ToString();
     }
 

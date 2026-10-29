@@ -77,7 +77,7 @@
   .bill { font-size: 10px; padding: 0 5px; border-radius: 4px; border: 1px solid var(--line); color: var(--mut); margin-left: 4px; }
   .w { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--warnbg); color: var(--warn); margin: 2px 4px 0 0; }
   .st { display: inline-block; font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; margin-left: 4px; background: var(--mutebg); color: var(--mutefg); }
-  .st-rejected, .st-reverse_failed { background: var(--failbg); color: var(--failfg); }
+  .st-rejected, .st-reverse_failed, .st-unknown { background: var(--failbg); color: var(--failfg); }
   .err { color: var(--failfg); }
   .btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
   .btn { border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 6px; padding: 5px 12px; font: inherit; font-weight: 600; cursor: pointer; }
@@ -296,7 +296,8 @@
     reversed: "reversed",
     rejected: "rejected",
     not_attempted: "not attempted",
-    reverse_failed: "could not reverse — check this entry"
+    reverse_failed: "could not reverse — check this entry",
+    unknown: "no answer from Project Insight — may have been saved, check this day"
   };
 
   function render() {
@@ -326,7 +327,8 @@
     let [label, cls] = PILL[d.status] || [d.status, "p-mute"];
     if (d.status === "failed") {
       const rows = d.rows || [];
-      const unsure = rows.some((r) => r.outcome === "reverse_failed") || !rows.some((r) => r.outcome);
+      const unsure = d.outcomeUnknown ||
+        rows.some((r) => r.outcome === "reverse_failed" || r.outcome === "unknown") || !rows.some((r) => r.outcome);
       if (unsure) label = "Failed · check Project Insight";
     }
     if (d.status === "committed") {
@@ -434,7 +436,7 @@
       (r.warnings || []).map((x) => el("span", "w", "⚠ " + x.message)),
       r.outcome && r.outcome !== "applied" ? el("span", "st st-" + r.outcome, OUTCOME[r.outcome] || r.outcome) : null,
       r.outcome && r.outcome !== "applied" && r.error ? el("small", "err", r.error) : null,
-      r.outcome === "reverse_failed" ? failedEntry(r, w) : null);
+      r.outcome === "reverse_failed" || r.outcome === "unknown" ? failedEntry(r, w) : null);
     return el("div", "row chg" + (removing ? " del" : ""),
       el("span", "act " + symbolClass, symbol), task,
       el("span", "hrs", from + " → ", el("b", "", to)),
