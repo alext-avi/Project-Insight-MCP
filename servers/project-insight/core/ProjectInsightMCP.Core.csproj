@@ -24,6 +24,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="TimeChanges/Card/time-changes.html" LogicalName="ProjectInsightMCP.TimeChanges.Card.time-changes.html" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="ProjectInsightMCP.Tests" />
   </ItemGroup>
 
