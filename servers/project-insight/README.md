@@ -71,7 +71,7 @@ A **Model Context Protocol (MCP)** server for integrating with the **Project Ins
 
 ## 🔧 Prerequisites
 
-- **.NET 8.0** SDK or later
+- **.NET 10** SDK (builds both the stdio host and the .NET 8 Azure Functions host)
 - **Azure Functions Core Tools v4** (for local development)
 - **Project Insight** API access with valid API token
 - **Azure subscription** (for cloud deployment)

@@ -8,7 +8,7 @@ This guide will help you deploy the Project Insight MCP server to Azure Function
 
 1. **Azure CLI** installed and configured
 2. **Azure Functions Core Tools v4** installed
-3. **.NET 8.0 SDK** installed
+3. **.NET 10 SDK** installed (the Function app targets .NET 8; the shared Core library also builds for .NET 10)
 4. **jq** (JSON processor) - Install with `brew install jq` on macOS
 
 ### Verify Prerequisites

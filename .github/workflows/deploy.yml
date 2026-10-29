@@ -1,23 +1,8 @@
 name: Deploy Project Insight MCP Server
 
+# Manual-only until the remote host is rebuilt on .NET 10 + the MCP SDK (Phase 2, issue #4).
+# Previously every push to main redeployed infrastructure and the Function app to staging.
 on:
-    push:
-        branches:
-            - main
-            - develop
-        paths:
-            - "servers/project-insight/src/**"
-            - "shared/**"
-            - "bicep/**"
-            - ".github/workflows/**"
-    pull_request:
-        branches:
-            - main
-        paths:
-            - "servers/project-insight/src/**"
-            - "shared/**"
-            - "bicep/**"
-            - ".github/workflows/**"
     workflow_dispatch:
         inputs:
             environment:
@@ -31,7 +16,7 @@ on:
                     - prod
 
 env:
-    DOTNET_VERSION: "8.0.x"
+    DOTNET_VERSION: "10.0.x" # SDK only; the Function app still targets net8.0
     AZURE_FUNCTIONAPP_PACKAGE_PATH: "servers/project-insight/src"
 
 jobs:
@@ -84,7 +69,7 @@ jobs:
                     --parameters @bicep/parameters/dev.parameters.json
 
     deploy-dev:
-        if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev')
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'
         runs-on: ubuntu-latest
         needs: [build, validate-bicep]
         environment: dev
@@ -145,7 +130,7 @@ jobs:
                   done
 
     deploy-staging:
-        if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging'
         runs-on: ubuntu-latest
         needs: [build, validate-bicep]
         environment: staging

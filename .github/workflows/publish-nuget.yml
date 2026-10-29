@@ -5,14 +5,13 @@ on:
         branches:
             - main
         paths:
-            - "servers/project-insight/src/**"
+            - "servers/project-insight/core/**"
             - "servers/project-insight/src-stdio/**"
-            - "shared/**"
             - ".github/workflows/publish-nuget.yml"
     workflow_dispatch:
 
 env:
-    DOTNET_VERSION: "8.0.x"
+    DOTNET_VERSION: "10.0.x"
     PROJECT_PATH: "servers/project-insight/src-stdio/ProjectInsightMCP.Stdio.csproj"
 
 jobs:

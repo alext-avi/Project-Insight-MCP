@@ -2,7 +2,7 @@
 
 ## Overview
 
-This is a **Model Context Protocol (MCP) server** that integrates with the **Project Insight API** to provide AI agents with project management capabilities. The server is built using **.NET 8.0** and **Azure Functions** for cloud deployment and local development.
+This is a **Model Context Protocol (MCP) server** that integrates with the **Project Insight API** to provide AI agents with project management capabilities. The local (stdio) server runs on **.NET 10** with the official MCP C# SDK; the remote server is an **Azure Functions** app on **.NET 8.0** (in-process).
 
 ## 🏗️ Architecture
 
@@ -39,7 +39,7 @@ This is a **Model Context Protocol (MCP) server** that integrates with the **Pro
 ## 🚀 Getting Started
 
 ### Prerequisites
-- .NET 8.0 SDK
+- .NET 10 SDK (plus the .NET 8 runtime to run the Functions host locally)
 - Azure Functions Core Tools v4
 - Project Insight API credentials
 
