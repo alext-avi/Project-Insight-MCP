@@ -1,0 +1,45 @@
+version: 2
+
+# Weekly version updates, grouped so each ecosystem opens at most a couple of PRs.
+# Security updates are enabled in the repo settings and are not limited by the groups below.
+updates:
+    # Local stdio server (.NET 10) and its tests.
+    - package-ecosystem: nuget
+      directories:
+          - "/servers/project-insight/src-stdio"
+          - "/servers/project-insight/tests"
+      schedule:
+          interval: weekly
+      groups:
+          minor-and-patch:
+              update-types: [minor, patch]
+
+    # Core (net8.0;net10.0) and the in-process Functions host (net8.0). In-process
+    # Functions binds to the host's 8.x Microsoft.Extensions assemblies, so major
+    # bumps of those would break it. Lift this once the host moves (#4).
+    - package-ecosystem: nuget
+      directories:
+          - "/servers/project-insight/core"
+          - "/servers/project-insight/src"
+      schedule:
+          interval: weekly
+      ignore:
+          - dependency-name: "Microsoft.Extensions.*"
+            update-types: ["version-update:semver-major"]
+          - dependency-name: "System.Text.Json"
+            update-types: ["version-update:semver-major"]
+          - dependency-name: "Microsoft.AspNetCore.*"
+            update-types: ["version-update:semver-major"]
+          - dependency-name: "Microsoft.NET.Sdk.Functions"
+            update-types: ["version-update:semver-major"]
+      groups:
+          minor-and-patch:
+              update-types: [minor, patch]
+
+    - package-ecosystem: github-actions
+      directory: "/"
+      schedule:
+          interval: weekly
+      groups:
+          actions:
+              patterns: ["*"]
