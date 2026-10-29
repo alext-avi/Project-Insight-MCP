@@ -105,14 +105,14 @@
 
   function notify(method, params) { send({ jsonrpc: "2.0", method, params }); }
 
-  function request(method, params) {
+  function request(method, params, timeoutMs) {
     const id = nextId++;
     return new Promise((resolve, reject) => {
       pending.set(id, { resolve, reject });
       send({ jsonrpc: "2.0", id, method, params });
       setTimeout(() => {
         if (pending.delete(id)) reject(new Error("The host did not reply."));
-      }, 60000);
+      }, timeoutMs || 60000);
     });
   }
 
@@ -207,20 +207,26 @@
 
   async function act(name, args) {
     if (state.busy) return;
+    let failed = false;
+    const id = args.draftId || args.receiptId;
     state.busy = true;
     state.error = null;
     render();
     try {
-      const result = await request("tools/call", { name, arguments: args });
+      const slow = name === "confirm_time_changes" || name === "commit_time_changes";
+      const result = await request("tools/call", { name, arguments: args }, slow ? 300000 : 60000);
       takeToken(result);
       const view = readView(result);
       if (view && view.kind === "draft") state.view = view;
-      else state.error = (view && view.message) || textOf(result) || "Something went wrong.";
+      else { state.error = (view && view.message) || textOf(result) || "Something went wrong."; failed = true; }
     } catch (e) {
       state.error = e.message;
+      failed = true;
     }
     state.busy = false;
     render();
+    // The server may have acted despite the error (e.g. a timeout): re-read the real status.
+    if (failed && id) refresh(id);
   }
 
   function openLink(url) {
@@ -318,6 +324,11 @@
 
   function header(d) {
     let [label, cls] = PILL[d.status] || [d.status, "p-mute"];
+    if (d.status === "failed") {
+      const rows = d.rows || [];
+      const unsure = rows.some((r) => r.outcome === "reverse_failed") || !rows.some((r) => r.outcome);
+      if (unsure) label = "Failed · check Project Insight";
+    }
     if (d.status === "committed") {
       label = d.channel === "agent" ? "Committed by the agent" : "Committed · confirmed in chat";
       cls = "p-ok";
@@ -387,7 +398,7 @@
     if (!open) return [line];
     const rows = el("div", "rows");
     for (const c of dv.context || []) rows.append(contextRow(c));
-    for (const i of dv.rowIndexes || []) if (d.rows[i]) rows.append(changeRow(d.rows[i], dv.date));
+    for (const i of dv.rowIndexes || []) if (d.rows[i]) rows.append(changeRow(d.rows[i], dv.date, w));
     if (!rows.childNodes.length) rows.append(el("div", "row ctx", el("span", ""), el("span", "task", "No entries"), el("span", ""), el("span", "")));
     return [line, rows];
   }
@@ -401,7 +412,7 @@
       el("span", ""));
   }
 
-  function changeRow(r, date) {
+  function changeRow(r, date, w) {
     const moved = r.action === "update" && r.before && r.after && r.before.date !== r.after.date;
     const away = moved && r.before.date === date;   // this day loses the entry
     const into = moved && r.after.date === date;     // this day gains it
@@ -422,11 +433,24 @@
       into ? el("small", "", "moved from " + day(r.before.date, { weekday: "short", day: "numeric", month: "short" })) : null,
       (r.warnings || []).map((x) => el("span", "w", "⚠ " + x.message)),
       r.outcome && r.outcome !== "applied" ? el("span", "st st-" + r.outcome, OUTCOME[r.outcome] || r.outcome) : null,
-      r.outcome && r.outcome !== "applied" && r.error ? el("small", "err", r.error) : null);
+      r.outcome && r.outcome !== "applied" && r.error ? el("small", "err", r.error) : null,
+      r.outcome === "reverse_failed" ? failedEntry(r, w) : null);
     return el("div", "row chg" + (removing ? " del" : ""),
       el("span", "act " + symbolClass, symbol), task,
       el("span", "hrs", from + " → ", el("b", "", to)),
       delta(diff));
+  }
+
+  function failedEntry(r, w) {
+    const entryId = r.savedId || r.timeEntryId;
+    const box = el("small", "err", entryId ? "Entry " + entryId : "Entry id unknown");
+    if (w && w.timesheetUrl) {
+      const link = el("a", "link", "open in PI ↗");
+      link.href = "#";
+      link.addEventListener("click", (e) => { e.preventDefault(); openLink(w.timesheetUrl); });
+      box.append(link);
+    }
+    return box;
   }
 
   function actions(d) {

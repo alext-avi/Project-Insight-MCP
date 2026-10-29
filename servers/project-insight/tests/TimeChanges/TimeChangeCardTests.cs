@@ -48,4 +48,18 @@ public class TimeChangeCardTests
         Assert.Contains("confirmed by you", Html);
         Assert.Contains("committed by the agent", Html);
     }
+
+    [Fact]
+    public void Card_flags_unsure_failures_links_reverse_failed_entries_and_rereads_after_errors()
+    {
+        Assert.Contains("Failed · check Project Insight", Html);
+        Assert.Contains("Failed · rolled back", Html);
+        Assert.Contains("r.outcome === \"reverse_failed\"", Html);
+        Assert.Contains("failedEntry(r, w)", Html);
+        Assert.Contains("r.savedId || r.timeEntryId", Html);
+        Assert.Contains("if (failed && id) refresh(id);", Html);
+        Assert.Contains("failed = true;", Html);
+        Assert.Contains("300000", Html);
+        Assert.Contains("commit_time_changes", Html);
+    }
 }
