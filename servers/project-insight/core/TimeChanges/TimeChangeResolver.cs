@@ -40,7 +40,7 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
         var query = user.Trim();
         if (query == caller.Id)
             return new(caller, null);
-        if (await UserByIdAsync(query, ct) is { } byId)
+        if (await TryUserByIdAsync(query, ct) is { } byId)
             return new(byId, null);
 
         var match = NameMatch.Find(await pi.FindUsersAsync(query, ct), u => u.Name, query);
@@ -51,6 +51,20 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
                 ? $"No active user matches \"{query}\"."
                 : $"{match.Candidates.Count} users match \"{query}\". Use one of their ids.",
             match.Candidates.Select(u => new Candidate { Id = u.Id, Name = u.Name })));
+    }
+
+    // The query may be a name, which PI can reject as an id with a non-404 error; treat that as
+    // "not an id" and let the name search run (it throws on its own if PI is really down).
+    private async Task<PiUser?> TryUserByIdAsync(string query, CancellationToken ct)
+    {
+        try
+        {
+            return await UserByIdAsync(query, ct);
+        }
+        catch (TimeChangeException e) when (e.Code == "pi_unavailable")
+        {
+            return null;
+        }
     }
 
     public async Task<PiUser?> UserByIdAsync(string userId, CancellationToken ct)

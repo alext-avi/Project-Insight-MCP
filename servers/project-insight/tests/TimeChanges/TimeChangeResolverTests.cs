@@ -23,6 +23,15 @@ public class TimeChangeResolverTests
         => Assert.Equal("u-2", (await Resolver().UserAsync(0, query, _pi.Caller, default)).Value!.Id);
 
     [Fact]
+    public async Task User_name_resolves_even_when_pi_rejects_it_as_an_id()
+    {
+        _pi.UnknownUserIdThrows = true;
+        var r = await Resolver().UserAsync(0, "Jane", _pi.Caller, default);
+        Assert.Equal("u-2", r.Value!.Id);
+        Assert.Equal("Jane Doe", r.Value.Name);
+    }
+
+    [Fact]
     public async Task Ambiguous_user_returns_candidates()
     {
         _pi.Users.Add(new PiUser("u-3", "Jane Smith"));

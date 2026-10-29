@@ -36,6 +36,9 @@ public sealed class FakeGateway : ITimeEntryGateway
     /// <summary>Every SearchTimeSheetsAsync call, in order.</summary>
     public List<(string UserId, DateOnly Start, DateOnly End)> SearchTimeSheetsCalls { get; } = new();
 
+    /// <summary>When true, GetUserAsync for an id not in Users throws pi_unavailable (PI rejecting a name as an id).</summary>
+    public bool UnknownUserIdThrows { get; set; }
+
     public TimeSpan Delay { get; set; }
     public int MaxConcurrent => _max;
     private int _inFlight, _max, _next = 100;
@@ -52,7 +55,13 @@ public sealed class FakeGateway : ITimeEntryGateway
     public async Task<PiUser> GetCurrentUserAsync(CancellationToken ct) { await Enter(); return Caller; }
 
     public async Task<PiUser?> GetUserAsync(string userId, CancellationToken ct)
-    { await Enter(); return Users.FirstOrDefault(u => u.Id == userId); }
+    {
+        await Enter();
+        var user = Users.FirstOrDefault(u => u.Id == userId);
+        if (user is null && UnknownUserIdThrows)
+            throw new TimeChangeException("pi_unavailable", "API returned InternalServerError");
+        return user;
+    }
 
     public async Task<IReadOnlyList<PiUser>> FindUsersAsync(string name, CancellationToken ct)
     { await Enter(); return Users.Where(u => u.Name.Contains(name, StringComparison.OrdinalIgnoreCase)).ToList(); }
