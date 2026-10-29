@@ -85,6 +85,20 @@ public class McpTool
 
     [JsonPropertyName("inputSchema")]
     public object InputSchema { get; set; } = new object();
+
+    [JsonPropertyName("annotations")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public McpToolAnnotations? Annotations { get; set; }
+}
+
+/// <summary>MCP tool annotations: hints for clients and harnesses deciding what to allow.</summary>
+public class McpToolAnnotations
+{
+    public static McpToolAnnotations Destructive => new() { DestructiveHint = true };
+
+    [JsonPropertyName("destructiveHint")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? DestructiveHint { get; set; }
 }
 
 /// <summary>

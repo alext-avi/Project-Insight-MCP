@@ -7,6 +7,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>projectinsight-mcp</AssemblyName>
     <RootNamespace>ProjectInsightMCP.Stdio</RootNamespace>
+    <!-- ModelContextProtocol.Extensions.Apps is marked experimental (MCPEXP003). -->
+    <NoWarn>$(NoWarn);MCPEXP003</NoWarn>
     
     <!-- .NET Tool Configuration -->
     <PackAsTool>true</PackAsTool>
@@ -35,6 +37,7 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.14" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.14" />
     <PackageReference Include="ModelContextProtocol" Version="2.3.0" />
+    <PackageReference Include="ModelContextProtocol.Extensions.Apps" Version="2.3.0" />
   </ItemGroup>
 
   <ItemGroup>

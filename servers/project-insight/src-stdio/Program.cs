@@ -54,6 +54,8 @@ public class Program
             Environment.Exit(1);
         }
 
+        await ProjectInsightServer.PruneDraftsAtStartupAsync(app.Services);
+
         await app.RunAsync();
     }
 }

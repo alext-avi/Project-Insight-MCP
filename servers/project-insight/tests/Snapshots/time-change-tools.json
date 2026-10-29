@@ -1,0 +1,3018 @@
+[
+  {
+    "name": "plan_time_changes",
+    "description": "Draft changes to Project Insight time entries for the user to review. Writes nothing to Project Insight: returns a draft (shown to the user as a review card where supported), or a clarification when a name is ambiguous. Each change is one of: create {date, hours, taskId or project \u002B task names, description?, billable?, user?}, update {timeEntryId plus only the fields to change}, delete {timeEntryId}. After planning, summarize the draft and ask the user to confirm; only commit when they agree.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "intent": {
+          "description": "One line saying what these changes are for, e.g. \u0022Log Tuesday from H4T\u0022.",
+          "type": "string"
+        },
+        "changes": {
+          "description": "The changes to draft, 1 to 100.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "description": "create, update or delete.",
+                "type": "string"
+              },
+              "timeEntryId": {
+                "description": "update/delete: the time entry id (GUID).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "date": {
+                "description": "create: required. update: new date. Format yyyy-MM-dd.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "hours": {
+                "description": "create: required. update: new hours. Use 0.25 increments.",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "taskId": {
+                "description": "Task id (GUID). Or give project and task names instead.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "project": {
+                "description": "Project name, used with task when taskId is not known.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "task": {
+                "description": "Task name within project, used when taskId is not known.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "description": {
+                "description": "Work description. update: an empty string clears it.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "billable": {
+                "description": "Whether the time is billable. create: defaults to false.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "user": {
+                "description": "create only: whose time (user id or name). Defaults to the signed-in user.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "intent",
+        "changes"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "draft": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "intent": {
+              "type": "string"
+            },
+            "proposedByName": {
+              "type": "string"
+            },
+            "proposedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "committedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "channel": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoOf": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoOfCommittedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "revertedBy": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoUntil": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "index": {
+                    "type": "integer"
+                  },
+                  "action": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  },
+                  "userName": {
+                    "type": "string"
+                  },
+                  "timeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "savedId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "before": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "taskId": {
+                        "type": "string"
+                      },
+                      "taskName": {
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "projectName": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "hours": {
+                        "type": "number"
+                      },
+                      "billable": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "taskId",
+                      "taskName",
+                      "projectId",
+                      "projectName",
+                      "date",
+                      "hours"
+                    ]
+                  },
+                  "after": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "taskId": {
+                        "type": "string"
+                      },
+                      "taskName": {
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "projectName": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "hours": {
+                        "type": "number"
+                      },
+                      "billable": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "taskId",
+                      "taskName",
+                      "projectId",
+                      "projectName",
+                      "date",
+                      "hours"
+                    ]
+                  },
+                  "warnings": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "outcome": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "error": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "index",
+                  "action",
+                  "userId",
+                  "userName"
+                ]
+              }
+            },
+            "weeks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "userId": {
+                    "type": "string"
+                  },
+                  "userName": {
+                    "type": "string"
+                  },
+                  "isCaller": {
+                    "type": "boolean"
+                  },
+                  "start": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "end": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "timesheetId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "timesheetUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "submitted": {
+                    "type": "boolean"
+                  },
+                  "approved": {
+                    "type": "boolean"
+                  },
+                  "locked": {
+                    "type": "boolean"
+                  },
+                  "totalBefore": {
+                    "type": "number"
+                  },
+                  "totalAfter": {
+                    "type": "number"
+                  },
+                  "days": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "date": {
+                          "type": "string",
+                          "format": "date"
+                        },
+                        "totalBefore": {
+                          "type": "number"
+                        },
+                        "totalAfter": {
+                          "type": "number"
+                        },
+                        "hasChanges": {
+                          "type": "boolean"
+                        },
+                        "rowIndexes": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "context": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "timeEntryId": {
+                                "type": "string"
+                              },
+                              "projectName": {
+                                "type": "string"
+                              },
+                              "taskName": {
+                                "type": "string"
+                              },
+                              "hours": {
+                                "type": "number"
+                              },
+                              "billable": {
+                                "type": "boolean"
+                              },
+                              "description": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "timeEntryId",
+                              "projectName",
+                              "taskName",
+                              "hours"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "date"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "userId",
+                  "userName",
+                  "start",
+                  "end"
+                ]
+              }
+            },
+            "totals": {
+              "type": "object",
+              "properties": {
+                "netHours": {
+                  "type": "number"
+                },
+                "billableDelta": {
+                  "type": "number"
+                },
+                "nonBillableDelta": {
+                  "type": "number"
+                },
+                "changes": {
+                  "type": "integer"
+                },
+                "days": {
+                  "type": "integer"
+                },
+                "people": {
+                  "type": "integer"
+                },
+                "warnings": {
+                  "type": "integer"
+                }
+              }
+            },
+            "error": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "staleDays": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "id",
+            "status",
+            "intent",
+            "proposedByName",
+            "proposedAt",
+            "expiresAt",
+            "rows",
+            "weeks",
+            "totals"
+          ]
+        },
+        "clarifications": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "changeIndex": {
+                "type": "integer"
+              },
+              "field": {
+                "type": "string"
+              },
+              "query": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "candidates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "changeIndex",
+              "field",
+              "query",
+              "message"
+            ]
+          }
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": true
+    },
+    "_meta": {
+      "ui": {
+        "resourceUri": "ui://project-insight/time-changes.html",
+        "visibility": [
+          "model"
+        ]
+      }
+    }
+  },
+  {
+    "name": "commit_time_changes",
+    "description": "Apply a draft from plan_time_changes or undo_time_changes to Project Insight, all or nothing. Only call this after the user has agreed to the draft. Refused if the affected days changed in Project Insight since the draft was made (draft again) or if the draft expired (24 hours).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "draftId": {
+          "description": "Draft id from plan_time_changes or undo_time_changes.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "draftId"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "draft": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "intent": {
+              "type": "string"
+            },
+            "proposedByName": {
+              "type": "string"
+            },
+            "proposedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "committedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "channel": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoOf": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoOfCommittedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "revertedBy": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoUntil": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "index": {
+                    "type": "integer"
+                  },
+                  "action": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  },
+                  "userName": {
+                    "type": "string"
+                  },
+                  "timeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "savedId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "before": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "taskId": {
+                        "type": "string"
+                      },
+                      "taskName": {
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "projectName": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "hours": {
+                        "type": "number"
+                      },
+                      "billable": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "taskId",
+                      "taskName",
+                      "projectId",
+                      "projectName",
+                      "date",
+                      "hours"
+                    ]
+                  },
+                  "after": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "taskId": {
+                        "type": "string"
+                      },
+                      "taskName": {
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "projectName": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "hours": {
+                        "type": "number"
+                      },
+                      "billable": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "taskId",
+                      "taskName",
+                      "projectId",
+                      "projectName",
+                      "date",
+                      "hours"
+                    ]
+                  },
+                  "warnings": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "outcome": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "error": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "index",
+                  "action",
+                  "userId",
+                  "userName"
+                ]
+              }
+            },
+            "weeks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "userId": {
+                    "type": "string"
+                  },
+                  "userName": {
+                    "type": "string"
+                  },
+                  "isCaller": {
+                    "type": "boolean"
+                  },
+                  "start": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "end": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "timesheetId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "timesheetUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "submitted": {
+                    "type": "boolean"
+                  },
+                  "approved": {
+                    "type": "boolean"
+                  },
+                  "locked": {
+                    "type": "boolean"
+                  },
+                  "totalBefore": {
+                    "type": "number"
+                  },
+                  "totalAfter": {
+                    "type": "number"
+                  },
+                  "days": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "date": {
+                          "type": "string",
+                          "format": "date"
+                        },
+                        "totalBefore": {
+                          "type": "number"
+                        },
+                        "totalAfter": {
+                          "type": "number"
+                        },
+                        "hasChanges": {
+                          "type": "boolean"
+                        },
+                        "rowIndexes": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "context": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "timeEntryId": {
+                                "type": "string"
+                              },
+                              "projectName": {
+                                "type": "string"
+                              },
+                              "taskName": {
+                                "type": "string"
+                              },
+                              "hours": {
+                                "type": "number"
+                              },
+                              "billable": {
+                                "type": "boolean"
+                              },
+                              "description": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "timeEntryId",
+                              "projectName",
+                              "taskName",
+                              "hours"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "date"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "userId",
+                  "userName",
+                  "start",
+                  "end"
+                ]
+              }
+            },
+            "totals": {
+              "type": "object",
+              "properties": {
+                "netHours": {
+                  "type": "number"
+                },
+                "billableDelta": {
+                  "type": "number"
+                },
+                "nonBillableDelta": {
+                  "type": "number"
+                },
+                "changes": {
+                  "type": "integer"
+                },
+                "days": {
+                  "type": "integer"
+                },
+                "people": {
+                  "type": "integer"
+                },
+                "warnings": {
+                  "type": "integer"
+                }
+              }
+            },
+            "error": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "staleDays": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "id",
+            "status",
+            "intent",
+            "proposedByName",
+            "proposedAt",
+            "expiresAt",
+            "rows",
+            "weeks",
+            "totals"
+          ]
+        },
+        "clarifications": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "changeIndex": {
+                "type": "integer"
+              },
+              "field": {
+                "type": "string"
+              },
+              "query": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "candidates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "changeIndex",
+              "field",
+              "query",
+              "message"
+            ]
+          }
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": true
+    },
+    "_meta": {
+      "ui": {
+        "resourceUri": "ui://project-insight/time-changes.html",
+        "visibility": [
+          "model"
+        ]
+      }
+    }
+  },
+  {
+    "name": "confirm_time_changes",
+    "description": "Used by the review card\u0027s Confirm button. Agents use commit_time_changes instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "draftId": {
+          "description": "Draft id.",
+          "type": "string"
+        },
+        "confirmToken": {
+          "description": "The one-time token from the draft\u0027s result metadata.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "draftId",
+        "confirmToken"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "draft": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "intent": {
+              "type": "string"
+            },
+            "proposedByName": {
+              "type": "string"
+            },
+            "proposedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "committedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "channel": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoOf": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoOfCommittedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "revertedBy": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoUntil": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "index": {
+                    "type": "integer"
+                  },
+                  "action": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  },
+                  "userName": {
+                    "type": "string"
+                  },
+                  "timeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "savedId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "before": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "taskId": {
+                        "type": "string"
+                      },
+                      "taskName": {
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "projectName": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "hours": {
+                        "type": "number"
+                      },
+                      "billable": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "taskId",
+                      "taskName",
+                      "projectId",
+                      "projectName",
+                      "date",
+                      "hours"
+                    ]
+                  },
+                  "after": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "taskId": {
+                        "type": "string"
+                      },
+                      "taskName": {
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "projectName": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "hours": {
+                        "type": "number"
+                      },
+                      "billable": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "taskId",
+                      "taskName",
+                      "projectId",
+                      "projectName",
+                      "date",
+                      "hours"
+                    ]
+                  },
+                  "warnings": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "outcome": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "error": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "index",
+                  "action",
+                  "userId",
+                  "userName"
+                ]
+              }
+            },
+            "weeks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "userId": {
+                    "type": "string"
+                  },
+                  "userName": {
+                    "type": "string"
+                  },
+                  "isCaller": {
+                    "type": "boolean"
+                  },
+                  "start": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "end": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "timesheetId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "timesheetUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "submitted": {
+                    "type": "boolean"
+                  },
+                  "approved": {
+                    "type": "boolean"
+                  },
+                  "locked": {
+                    "type": "boolean"
+                  },
+                  "totalBefore": {
+                    "type": "number"
+                  },
+                  "totalAfter": {
+                    "type": "number"
+                  },
+                  "days": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "date": {
+                          "type": "string",
+                          "format": "date"
+                        },
+                        "totalBefore": {
+                          "type": "number"
+                        },
+                        "totalAfter": {
+                          "type": "number"
+                        },
+                        "hasChanges": {
+                          "type": "boolean"
+                        },
+                        "rowIndexes": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "context": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "timeEntryId": {
+                                "type": "string"
+                              },
+                              "projectName": {
+                                "type": "string"
+                              },
+                              "taskName": {
+                                "type": "string"
+                              },
+                              "hours": {
+                                "type": "number"
+                              },
+                              "billable": {
+                                "type": "boolean"
+                              },
+                              "description": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "timeEntryId",
+                              "projectName",
+                              "taskName",
+                              "hours"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "date"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "userId",
+                  "userName",
+                  "start",
+                  "end"
+                ]
+              }
+            },
+            "totals": {
+              "type": "object",
+              "properties": {
+                "netHours": {
+                  "type": "number"
+                },
+                "billableDelta": {
+                  "type": "number"
+                },
+                "nonBillableDelta": {
+                  "type": "number"
+                },
+                "changes": {
+                  "type": "integer"
+                },
+                "days": {
+                  "type": "integer"
+                },
+                "people": {
+                  "type": "integer"
+                },
+                "warnings": {
+                  "type": "integer"
+                }
+              }
+            },
+            "error": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "staleDays": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "id",
+            "status",
+            "intent",
+            "proposedByName",
+            "proposedAt",
+            "expiresAt",
+            "rows",
+            "weeks",
+            "totals"
+          ]
+        },
+        "clarifications": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "changeIndex": {
+                "type": "integer"
+              },
+              "field": {
+                "type": "string"
+              },
+              "query": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "candidates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "changeIndex",
+              "field",
+              "query",
+              "message"
+            ]
+          }
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": true
+    },
+    "_meta": {
+      "ui": {
+        "resourceUri": "ui://project-insight/time-changes.html",
+        "visibility": [
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "cancel_time_changes",
+    "description": "Cancel a time-change draft so it can\u0027t be committed. Nothing in Project Insight changes.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "draftId": {
+          "description": "Draft id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "draftId"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "draft": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "intent": {
+              "type": "string"
+            },
+            "proposedByName": {
+              "type": "string"
+            },
+            "proposedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "committedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "channel": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoOf": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoOfCommittedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "revertedBy": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoUntil": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "index": {
+                    "type": "integer"
+                  },
+                  "action": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  },
+                  "userName": {
+                    "type": "string"
+                  },
+                  "timeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "savedId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "before": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "taskId": {
+                        "type": "string"
+                      },
+                      "taskName": {
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "projectName": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "hours": {
+                        "type": "number"
+                      },
+                      "billable": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "taskId",
+                      "taskName",
+                      "projectId",
+                      "projectName",
+                      "date",
+                      "hours"
+                    ]
+                  },
+                  "after": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "taskId": {
+                        "type": "string"
+                      },
+                      "taskName": {
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "projectName": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "hours": {
+                        "type": "number"
+                      },
+                      "billable": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "taskId",
+                      "taskName",
+                      "projectId",
+                      "projectName",
+                      "date",
+                      "hours"
+                    ]
+                  },
+                  "warnings": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "outcome": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "error": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "index",
+                  "action",
+                  "userId",
+                  "userName"
+                ]
+              }
+            },
+            "weeks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "userId": {
+                    "type": "string"
+                  },
+                  "userName": {
+                    "type": "string"
+                  },
+                  "isCaller": {
+                    "type": "boolean"
+                  },
+                  "start": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "end": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "timesheetId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "timesheetUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "submitted": {
+                    "type": "boolean"
+                  },
+                  "approved": {
+                    "type": "boolean"
+                  },
+                  "locked": {
+                    "type": "boolean"
+                  },
+                  "totalBefore": {
+                    "type": "number"
+                  },
+                  "totalAfter": {
+                    "type": "number"
+                  },
+                  "days": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "date": {
+                          "type": "string",
+                          "format": "date"
+                        },
+                        "totalBefore": {
+                          "type": "number"
+                        },
+                        "totalAfter": {
+                          "type": "number"
+                        },
+                        "hasChanges": {
+                          "type": "boolean"
+                        },
+                        "rowIndexes": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "context": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "timeEntryId": {
+                                "type": "string"
+                              },
+                              "projectName": {
+                                "type": "string"
+                              },
+                              "taskName": {
+                                "type": "string"
+                              },
+                              "hours": {
+                                "type": "number"
+                              },
+                              "billable": {
+                                "type": "boolean"
+                              },
+                              "description": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "timeEntryId",
+                              "projectName",
+                              "taskName",
+                              "hours"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "date"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "userId",
+                  "userName",
+                  "start",
+                  "end"
+                ]
+              }
+            },
+            "totals": {
+              "type": "object",
+              "properties": {
+                "netHours": {
+                  "type": "number"
+                },
+                "billableDelta": {
+                  "type": "number"
+                },
+                "nonBillableDelta": {
+                  "type": "number"
+                },
+                "changes": {
+                  "type": "integer"
+                },
+                "days": {
+                  "type": "integer"
+                },
+                "people": {
+                  "type": "integer"
+                },
+                "warnings": {
+                  "type": "integer"
+                }
+              }
+            },
+            "error": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "staleDays": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "id",
+            "status",
+            "intent",
+            "proposedByName",
+            "proposedAt",
+            "expiresAt",
+            "rows",
+            "weeks",
+            "totals"
+          ]
+        },
+        "clarifications": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "changeIndex": {
+                "type": "integer"
+              },
+              "field": {
+                "type": "string"
+              },
+              "query": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "candidates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "changeIndex",
+              "field",
+              "query",
+              "message"
+            ]
+          }
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    "_meta": {
+      "ui": {
+        "resourceUri": "ui://project-insight/time-changes.html",
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "undo_time_changes",
+    "description": "Draft the reverse of a committed draft (pass its id as receiptId). Returns a new draft that must be confirmed or committed like any other. Available for 24 hours after commit.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "receiptId": {
+          "description": "Id of the committed draft to reverse.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "receiptId"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "draft": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "intent": {
+              "type": "string"
+            },
+            "proposedByName": {
+              "type": "string"
+            },
+            "proposedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "committedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "channel": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoOf": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoOfCommittedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "revertedBy": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoUntil": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "index": {
+                    "type": "integer"
+                  },
+                  "action": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  },
+                  "userName": {
+                    "type": "string"
+                  },
+                  "timeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "savedId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "before": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "taskId": {
+                        "type": "string"
+                      },
+                      "taskName": {
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "projectName": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "hours": {
+                        "type": "number"
+                      },
+                      "billable": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "taskId",
+                      "taskName",
+                      "projectId",
+                      "projectName",
+                      "date",
+                      "hours"
+                    ]
+                  },
+                  "after": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "taskId": {
+                        "type": "string"
+                      },
+                      "taskName": {
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "projectName": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "hours": {
+                        "type": "number"
+                      },
+                      "billable": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "taskId",
+                      "taskName",
+                      "projectId",
+                      "projectName",
+                      "date",
+                      "hours"
+                    ]
+                  },
+                  "warnings": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "outcome": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "error": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "index",
+                  "action",
+                  "userId",
+                  "userName"
+                ]
+              }
+            },
+            "weeks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "userId": {
+                    "type": "string"
+                  },
+                  "userName": {
+                    "type": "string"
+                  },
+                  "isCaller": {
+                    "type": "boolean"
+                  },
+                  "start": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "end": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "timesheetId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "timesheetUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "submitted": {
+                    "type": "boolean"
+                  },
+                  "approved": {
+                    "type": "boolean"
+                  },
+                  "locked": {
+                    "type": "boolean"
+                  },
+                  "totalBefore": {
+                    "type": "number"
+                  },
+                  "totalAfter": {
+                    "type": "number"
+                  },
+                  "days": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "date": {
+                          "type": "string",
+                          "format": "date"
+                        },
+                        "totalBefore": {
+                          "type": "number"
+                        },
+                        "totalAfter": {
+                          "type": "number"
+                        },
+                        "hasChanges": {
+                          "type": "boolean"
+                        },
+                        "rowIndexes": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "context": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "timeEntryId": {
+                                "type": "string"
+                              },
+                              "projectName": {
+                                "type": "string"
+                              },
+                              "taskName": {
+                                "type": "string"
+                              },
+                              "hours": {
+                                "type": "number"
+                              },
+                              "billable": {
+                                "type": "boolean"
+                              },
+                              "description": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "timeEntryId",
+                              "projectName",
+                              "taskName",
+                              "hours"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "date"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "userId",
+                  "userName",
+                  "start",
+                  "end"
+                ]
+              }
+            },
+            "totals": {
+              "type": "object",
+              "properties": {
+                "netHours": {
+                  "type": "number"
+                },
+                "billableDelta": {
+                  "type": "number"
+                },
+                "nonBillableDelta": {
+                  "type": "number"
+                },
+                "changes": {
+                  "type": "integer"
+                },
+                "days": {
+                  "type": "integer"
+                },
+                "people": {
+                  "type": "integer"
+                },
+                "warnings": {
+                  "type": "integer"
+                }
+              }
+            },
+            "error": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "staleDays": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "id",
+            "status",
+            "intent",
+            "proposedByName",
+            "proposedAt",
+            "expiresAt",
+            "rows",
+            "weeks",
+            "totals"
+          ]
+        },
+        "clarifications": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "changeIndex": {
+                "type": "integer"
+              },
+              "field": {
+                "type": "string"
+              },
+              "query": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "candidates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "changeIndex",
+              "field",
+              "query",
+              "message"
+            ]
+          }
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": true
+    },
+    "_meta": {
+      "ui": {
+        "resourceUri": "ui://project-insight/time-changes.html",
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "get_time_changes",
+    "description": "Show a time-change draft or receipt by id, with its current status.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Draft or receipt id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "draft": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "intent": {
+              "type": "string"
+            },
+            "proposedByName": {
+              "type": "string"
+            },
+            "proposedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "committedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "channel": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoOf": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoOfCommittedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "revertedBy": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoUntil": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "index": {
+                    "type": "integer"
+                  },
+                  "action": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  },
+                  "userName": {
+                    "type": "string"
+                  },
+                  "timeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "savedId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "before": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "taskId": {
+                        "type": "string"
+                      },
+                      "taskName": {
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "projectName": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "hours": {
+                        "type": "number"
+                      },
+                      "billable": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "taskId",
+                      "taskName",
+                      "projectId",
+                      "projectName",
+                      "date",
+                      "hours"
+                    ]
+                  },
+                  "after": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "taskId": {
+                        "type": "string"
+                      },
+                      "taskName": {
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "projectName": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "hours": {
+                        "type": "number"
+                      },
+                      "billable": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "taskId",
+                      "taskName",
+                      "projectId",
+                      "projectName",
+                      "date",
+                      "hours"
+                    ]
+                  },
+                  "warnings": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "outcome": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "error": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "index",
+                  "action",
+                  "userId",
+                  "userName"
+                ]
+              }
+            },
+            "weeks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "userId": {
+                    "type": "string"
+                  },
+                  "userName": {
+                    "type": "string"
+                  },
+                  "isCaller": {
+                    "type": "boolean"
+                  },
+                  "start": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "end": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "timesheetId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "timesheetUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "submitted": {
+                    "type": "boolean"
+                  },
+                  "approved": {
+                    "type": "boolean"
+                  },
+                  "locked": {
+                    "type": "boolean"
+                  },
+                  "totalBefore": {
+                    "type": "number"
+                  },
+                  "totalAfter": {
+                    "type": "number"
+                  },
+                  "days": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "date": {
+                          "type": "string",
+                          "format": "date"
+                        },
+                        "totalBefore": {
+                          "type": "number"
+                        },
+                        "totalAfter": {
+                          "type": "number"
+                        },
+                        "hasChanges": {
+                          "type": "boolean"
+                        },
+                        "rowIndexes": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "context": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "timeEntryId": {
+                                "type": "string"
+                              },
+                              "projectName": {
+                                "type": "string"
+                              },
+                              "taskName": {
+                                "type": "string"
+                              },
+                              "hours": {
+                                "type": "number"
+                              },
+                              "billable": {
+                                "type": "boolean"
+                              },
+                              "description": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "timeEntryId",
+                              "projectName",
+                              "taskName",
+                              "hours"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "date"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "userId",
+                  "userName",
+                  "start",
+                  "end"
+                ]
+              }
+            },
+            "totals": {
+              "type": "object",
+              "properties": {
+                "netHours": {
+                  "type": "number"
+                },
+                "billableDelta": {
+                  "type": "number"
+                },
+                "nonBillableDelta": {
+                  "type": "number"
+                },
+                "changes": {
+                  "type": "integer"
+                },
+                "days": {
+                  "type": "integer"
+                },
+                "people": {
+                  "type": "integer"
+                },
+                "warnings": {
+                  "type": "integer"
+                }
+              }
+            },
+            "error": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "staleDays": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "id",
+            "status",
+            "intent",
+            "proposedByName",
+            "proposedAt",
+            "expiresAt",
+            "rows",
+            "weeks",
+            "totals"
+          ]
+        },
+        "clarifications": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "changeIndex": {
+                "type": "integer"
+              },
+              "field": {
+                "type": "string"
+              },
+              "query": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "candidates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "changeIndex",
+              "field",
+              "query",
+              "message"
+            ]
+          }
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": true
+    },
+    "_meta": {
+      "ui": {
+        "resourceUri": "ui://project-insight/time-changes.html",
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  }
+]

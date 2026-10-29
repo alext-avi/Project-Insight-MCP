@@ -55,7 +55,7 @@ The existing `ToolCallGate` is moved from the adapter's call handler into an SDK
 ```
 Draft {
   id, status, intent, proposedBy (PI user id), proposedAt, expiresAt (= proposedAt + 24h),
-  committedBy?, committedAt?, channel? (agent | confirmed_in_chat), undoOf?, revertedBy?,
+  committedAt?, channel? (agent | confirmed_in_chat), undoOf?, undoOfCommittedAt?, revertedBy?,
   confirmTokenHash, rows[], weeks[], dayFingerprints{(userId, date) → hash}, totals,
   error? (failed commits)
 }
@@ -64,6 +64,7 @@ Row  { index, action, userId, userName, timeEntryId?, savedId?, date, project, t
 Week { userId, userName, start, end, timesheetUrl?, days[{date, totalBefore, totalAfter, entries[] (context rows)}] }
 Status: draft | committed | stale | expired | cancelled | failed
 ```
+The committer is always the proposer (only the proposer can commit), so no separate committedBy is stored.
 
 - A **receipt** is the committed draft. It keeps the same id and adds `committed*`, `channel` and the PI-saved ids.
 - **Redaction:** drafts, receipts and the card hold hours, project, task, description and billable flag only. `RateBill`, `RateBurden`, `BillableTotal` and `ActualTotal` are never requested into a draft or stored.
@@ -147,12 +148,14 @@ The card also has a busy state while a call runs, and inline errors.
 
 ```
 core/TimeChanges/
-  TimeChangeTools.cs        SDK tool definitions (six tools), typed inputs/outputs
   TimeChangePlanner.cs      resolve names → ids, read weeks, build rows/warnings/totals/fingerprints
   TimeChangeCommitter.cs    checks, stale detection, apply + reverse, receipts
   Drafts/IDraftStore.cs, FileDraftStore.cs, Draft.cs
   Card/time-changes.html    embedded resource
 src-stdio/ProjectInsightServer.cs   register tools, resource, Apps extension; gate as call filter
+src-stdio/TimeChangeTools.cs        SDK tool definitions (six tools), typed inputs/outputs, card resource
+                                    (SDK registration lives in the stdio host so Core stays SDK-free:
+                                    the net8.0 Functions host references Core)
 ```
 
 Planner and committer depend on `ProjectInsightApiService` and `IDraftStore` through interfaces, so tests use fakes.
@@ -171,7 +174,7 @@ Planner and committer depend on `ProjectInsightApiService` and `IDraftStore` thr
   - a stuck `committing` draft is reported as failed
   - undo for each action
 - **Security:** a non-proposer can't read, commit, confirm, cancel or undo; a bad or reused confirm token is rejected.
-- **File store:** atomic writes; a concurrent `TryTransition` across two processes yields exactly one winner; pruning.
+- **File store:** atomic writes; concurrent `TryTransition` calls from separate store instances (contending on the same OS file lock that separates processes) yield exactly one winner; pruning.
 - **Contract:**
   - every tool's `structuredContent` validates against its `outputSchema` (type, required, properties, items, recursively), with null-writing and null-omitting serializer settings
   - the resource is listed, readable and has the right MIME type, and is linked from all six tools

@@ -4170,6 +4170,7 @@ public class McpServerService
             new()
             {
                 Name = "create_time_entry",
+                Annotations = McpToolAnnotations.Destructive,
                 Description = "Create a new time entry against a project task. Requires a task ID, date, hours, and optionally a description and billable flag. The time entry will be created for the authenticated user. NOTE: If you get an error about a submitted timesheet blocking the entry, use search_timesheets to find the blocking timesheet for that date range, then use unsubmit_timesheet to reset it to draft before retrying.",
                 InputSchema = new
                 {
@@ -4197,6 +4198,7 @@ public class McpServerService
             new()
             {
                 Name = "delete_time_entry",
+                Annotations = McpToolAnnotations.Destructive,
                 Description = "Delete a time entry by ID. This permanently removes the time entry. Use search_time_entries or get_project_time_entries to find entry IDs.",
                 InputSchema = new
                 {
@@ -4211,6 +4213,7 @@ public class McpServerService
             new()
             {
                 Name = "update_time_entry",
+                Annotations = McpToolAnnotations.Destructive,
                 Description = "Update an existing time entry. Only the specified fields will be modified. Use search_time_entries or get_project_time_entries to find entry IDs.",
                 InputSchema = new
                 {
