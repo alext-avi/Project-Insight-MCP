@@ -31,6 +31,8 @@ Download the latest **`.mcpb`** from the [**Releases page**](https://github.com/
 dotnet tool install -g ProjectInsight.MCP
 ```
 
+Requires the [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (version 2.0.0 and later).
+
 Then point your client's MCP config at the `projectinsight-mcp` command — see the [server guide](./servers/project-insight/README.md) for ready-to-paste config.
 
 ### ☁️ Remote server — claude.ai connector / Copilot (self-host on Azure)
@@ -58,11 +60,12 @@ To link via SSO, just ask the assistant **"link my Project Insight account"**, o
 ```
 Project-Insight-MCP/
 ├── servers/project-insight/
+│   ├── core/         # PI API client, auth helpers, MCP tool definitions/handlers
 │   ├── src/          # Azure Functions remote server (+ OAuth 2.1/PKCE bridge)
-│   ├── src-stdio/    # stdio host → .mcpb bundle + ProjectInsight.MCP NuGet tool
+│   ├── src-stdio/    # stdio host (official MCP C# SDK) → .mcpb bundle + ProjectInsight.MCP NuGet tool
+│   ├── tests/        # xUnit tests, incl. end-to-end through the MCP SDK client
 │   ├── mcpb/         # bundle manifest + build staging
 │   └── docs/         # setup, auth, and deployment guides
-├── shared/           # shared MCP protocol + utilities
 ├── bicep/            # Azure infrastructure-as-code (self-host)
 ├── docs/             # general integration guides
 └── examples/         # usage examples

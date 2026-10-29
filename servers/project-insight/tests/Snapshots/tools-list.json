@@ -1,0 +1,1201 @@
+[
+  {
+    "name": "complete_authentication",
+    "description": "Complete Project Insight authentication by providing the activation code shown after signing in via your browser. Use this after being prompted to authenticate.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "activationCode": {
+          "type": "string",
+          "description": "The activation code displayed after signing into Project Insight in the browser"
+        }
+      },
+      "required": [
+        "activationCode"
+      ]
+    }
+  },
+  {
+    "name": "link_pi_account",
+    "description": "Link your Project Insight account. Opens a sign-in page where you authenticate with your organization\u0027s SSO. After signing in, you\u0027ll receive an activation code to provide back.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "complete_pi_link",
+    "description": "Complete Project Insight account linking by providing the activation code shown after signing in. Use this after link_pi_account.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "activationCode": {
+          "type": "string",
+          "description": "The activation code displayed after signing into Project Insight"
+        }
+      },
+      "required": [
+        "activationCode"
+      ]
+    }
+  },
+  {
+    "name": "search_projects",
+    "description": "Search for projects in Project Insight. IMPORTANT: Use \u0027fields\u0027 parameter to control response size - default is \u0027summary\u0027. Use \u0027minimal\u0027 for lists, \u0027summary\u0027 for overview, \u0027standard\u0027/\u0027full\u0027 only when needed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "fields": {
+          "type": "string",
+          "description": "Controls response fields. PRESETS: \u0027minimal\u0027|\u0027summary\u0027|\u0027standard\u0027|\u0027full\u0027. CUSTOM: comma-separated fields. AVAILABLE PROJECT FIELDS: Id, Name, Description, ItemNumber, IsActive, IsOpen, IsBillable, WorkPercentComplete, StartDateTimeUTC, EndDateTimeUTC, ActualStartDateTimeUTC, ActualEndDateTimeUTC, BaselineStartDateTimeUTC, BaselineEndDateTimeUTC, PrimaryProjectManager_Id, ProjectStatus_Id, Priority_Id, Client_Id, WorkHours, ActualWorkHours, BudgetHours, RemainingWorkHours, UrlFull, CreatedByUser_Id, CreatedDateTimeUTC, ModifiedDateTimeUTC. Default: \u0027summary\u0027"
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Filter by active status. true = only active, false = only inactive, omit = all"
+        },
+        "isOpen": {
+          "type": "boolean",
+          "description": "Filter by open/closed status"
+        },
+        "projectManagerId": {
+          "type": "string",
+          "description": "Filter by project manager\u0027s user ID (GUID)"
+        },
+        "projectStatusId": {
+          "type": "string",
+          "description": "Filter by project status ID (GUID)"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "get_project",
+    "description": "Get project details by ID. Use \u0027fields\u0027 parameter to control response size - default is \u0027summary\u0027.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "description": "The project ID (GUID)"
+        },
+        "fields": {
+          "type": "string",
+          "description": "Controls response fields. PRESETS: \u0027minimal\u0027|\u0027summary\u0027|\u0027standard\u0027|\u0027full\u0027. CUSTOM: comma-separated. AVAILABLE: Id, Name, Description, ItemNumber, IsActive, IsOpen, WorkPercentComplete, StartDateTimeUTC, EndDateTimeUTC, PrimaryProjectManager_Id, ProjectStatus_Id, WorkHours, ActualWorkHours, UrlFull. Default: \u0027summary\u0027"
+        }
+      },
+      "required": [
+        "projectId"
+      ]
+    }
+  },
+  {
+    "name": "get_project_tasks",
+    "description": "Get tasks for a project. Use \u0027fields\u0027 parameter to control response size - default is \u0027summary\u0027. For large projects, use \u0027minimal\u0027 first.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "description": "The project ID (GUID)"
+        },
+        "fields": {
+          "type": "string",
+          "description": "Controls response fields. PRESETS: \u0027minimal\u0027|\u0027summary\u0027|\u0027standard\u0027|\u0027full\u0027. CUSTOM: comma-separated. AVAILABLE TASK FIELDS: Id, Name, Description, ItemNumber, Project_Id, Parent_Id, IsActive, IsMilestone, IsSummary, WorkPercentComplete, StartDateTimeUTC, EndDateTimeUTC, ActualStartDateTimeUTC, ActualEndDateTimeUTC, WorkHours, ActualWorkHours, RemainingWorkHours, AssignedTo_Id, TaskStatus_Id, Priority_Id, UrlFull, IsTaskCaptureTimeBillableDefaultCheckedOn, IsTaskCaptureTimeBillableResourceAllowedToToggle, BillableRate, BillableHours, BillableTotal, BillableTimeTotal. Default: \u0027summary\u0027"
+        }
+      },
+      "required": [
+        "projectId"
+      ]
+    }
+  },
+  {
+    "name": "get_project_resources",
+    "description": "List the users assigned to a project (team members, project managers, schedulers) with their roles, allocation %, hours, and task counts. Use this to see who is staffed on a project, or to get a resource assignment id for update_project_resource / remove_project_resource.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "description": "The project ID (GUID)"
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Filter active assignments only"
+        },
+        "fields": {
+          "type": "string",
+          "description": "CUSTOM: comma-separated. AVAILABLE RESOURCE FIELDS: Id, ProjectId, UserId, User (nested: Id,Name,Email,FirstName,LastName), IsActive, IsProjectManager, IsPrimaryProjectManager, IsProjectScheduler, PercentAllocationDefault, ProjectResourceRoleDescription, ActualHours, TaskCount, OpenTaskCount, TaskBehindScheduleCount"
+        }
+      },
+      "required": [
+        "projectId"
+      ]
+    }
+  },
+  {
+    "name": "add_project_resource",
+    "description": "Assign (staff / allocate) a user to a project - as a team member, project manager, or scheduler, with an optional default allocation %. This is THE tool for putting a person on a project. Idempotent and safe to re-run. Pass projectId \u002B userId (GUIDs); if you only have names, resolve them with search_projects / search_users first.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "description": "The project ID (GUID) to add the user to"
+        },
+        "userId": {
+          "type": "string",
+          "description": "The user ID (GUID) to assign to the project"
+        },
+        "isProjectManager": {
+          "type": "boolean",
+          "description": "Whether the user is a project manager on this project"
+        },
+        "isProjectScheduler": {
+          "type": "boolean",
+          "description": "Whether the user is a project scheduler"
+        },
+        "percentAllocationDefault": {
+          "type": "number",
+          "description": "Default allocation percentage (0-100)"
+        },
+        "resourceTypeDefaultId": {
+          "type": "string",
+          "description": "Resource type classification ID (GUID). Use get_resource_types to resolve."
+        }
+      },
+      "required": [
+        "projectId",
+        "userId"
+      ]
+    }
+  },
+  {
+    "name": "update_project_resource",
+    "description": "Change an existing project assignment: promote to/from project manager or scheduler, adjust allocation %, activate/deactivate, or set resource type. Needs the resource assignment id from get_project_resources.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The project resource assignment ID (GUID) - get this from get_project_resources"
+        },
+        "isProjectManager": {
+          "type": "boolean",
+          "description": "Update PM status"
+        },
+        "isProjectScheduler": {
+          "type": "boolean",
+          "description": "Update scheduler status"
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Activate or deactivate the assignment"
+        },
+        "percentAllocationDefault": {
+          "type": "number",
+          "description": "Update allocation percentage (0-100)"
+        },
+        "resourceTypeDefaultId": {
+          "type": "string",
+          "description": "Update resource type classification ID (GUID)"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "remove_project_resource",
+    "description": "Unassign a user from a project (delete the assignment). Needs the resource assignment id from get_project_resources.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The project resource assignment ID (GUID) to remove - get this from get_project_resources"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "add_task_resource",
+    "description": "Assign (staff) a user to a specific task, with optional planned work hours and allocation %. If the user isn\u0027t on the project yet, they are added to the project automatically. Pass taskId \u002B userId (GUIDs); use get_project_tasks / search_users to resolve them.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "description": "The task ID (GUID) to assign the user to"
+        },
+        "userId": {
+          "type": "string",
+          "description": "The user ID (GUID) to assign to the task"
+        },
+        "workHours": {
+          "type": "number",
+          "description": "Planned work hours for this assignment"
+        },
+        "percentAllocationDefault": {
+          "type": "number",
+          "description": "Allocation percentage (0-100)"
+        }
+      },
+      "required": [
+        "taskId",
+        "userId"
+      ]
+    }
+  },
+  {
+    "name": "remove_task_resource",
+    "description": "Unassign a user from a task. Preferred: pass taskId \u002B userId and it resolves the assignment automatically. Alternatively pass the task resource assignment id directly (from get_task_resources). Use get_task_resources to see who is on a task.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "description": "The task ID (GUID) the user is assigned to (use with userId; no need to know the assignment id)"
+        },
+        "userId": {
+          "type": "string",
+          "description": "The user ID (GUID) to unassign from the task (use with taskId)"
+        },
+        "id": {
+          "type": "string",
+          "description": "The task resource assignment ID (GUID) to remove directly. Optional if taskId \u002B userId are given; get it from get_task_resources."
+        }
+      }
+    }
+  },
+  {
+    "name": "get_task_resources",
+    "description": "List the users assigned to a specific task (with planned hours, allocation %, and each assignment\u0027s id). Use this to see who is staffed on a task, or to get the assignment id needed by remove_task_resource.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "description": "The task ID (GUID) to list assigned users for"
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Optional: only return active assignments"
+        }
+      },
+      "required": [
+        "taskId"
+      ]
+    }
+  },
+  {
+    "name": "get_task",
+    "description": "Get task details by ID. Use \u0027fields\u0027 parameter to control response size - default is \u0027summary\u0027.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "description": "The task ID (GUID)"
+        },
+        "fields": {
+          "type": "string",
+          "description": "Controls response fields. PRESETS: \u0027minimal\u0027|\u0027summary\u0027|\u0027standard\u0027|\u0027full\u0027. CUSTOM: comma-separated. AVAILABLE TASK FIELDS: Id, Name, Description, ItemNumber, Project_Id, Parent_Id, IsActive, IsMilestone, IsSummary, WorkPercentComplete, StartDateTimeUTC, EndDateTimeUTC, ActualStartDateTimeUTC, ActualEndDateTimeUTC, WorkHours, ActualWorkHours, RemainingWorkHours, AssignedTo_Id, TaskStatus_Id, Priority_Id, UrlFull, IsTaskCaptureTimeBillableDefaultCheckedOn, IsTaskCaptureTimeBillableResourceAllowedToToggle, BillableRate, BillableHours, BillableTotal, BillableTimeTotal. Default: \u0027summary\u0027"
+        }
+      },
+      "required": [
+        "taskId"
+      ]
+    }
+  },
+  {
+    "name": "create_project",
+    "description": "Create a new project in Project Insight. Returns the created project with its assigned ID.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "object",
+          "description": "The project object to create",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Project name (required)"
+            },
+            "description": {
+              "type": "string",
+              "description": "Project description"
+            },
+            "isActive": {
+              "type": "boolean",
+              "description": "Whether project is active (default: true)"
+            }
+          },
+          "required": [
+            "name"
+          ]
+        }
+      },
+      "required": [
+        "project"
+      ]
+    }
+  },
+  {
+    "name": "update_project",
+    "description": "Update an existing project\u0027s properties. Only the specified fields will be modified; other fields remain unchanged.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "description": "The project ID (GUID) to update"
+        },
+        "project": {
+          "type": "object",
+          "description": "Project properties to update. Only include fields you want to change.",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Project name"
+            },
+            "description": {
+              "type": "string",
+              "description": "Project description"
+            },
+            "isActive": {
+              "type": "boolean",
+              "description": "Whether project is active"
+            },
+            "isOpen": {
+              "type": "boolean",
+              "description": "Whether project is open"
+            }
+          }
+        }
+      },
+      "required": [
+        "projectId",
+        "project"
+      ]
+    }
+  },
+  {
+    "name": "create_task",
+    "description": "Create a new task within a project. The task will be added to the specified project\u0027s task list.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "type": "object",
+          "description": "The task object to create",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Task name (required)"
+            },
+            "project_Id": {
+              "type": "string",
+              "description": "Parent project ID (required, GUID)"
+            },
+            "description": {
+              "type": "string",
+              "description": "Task description"
+            },
+            "startDateTimeUTC": {
+              "type": "string",
+              "description": "Start date/time in ISO 8601 format (e.g., \u00272026-02-15T09:00:00Z\u0027)"
+            },
+            "endDateTimeUTC": {
+              "type": "string",
+              "description": "End date/time in ISO 8601 format"
+            },
+            "workPercentComplete": {
+              "type": "number",
+              "description": "Completion percentage (0-100)"
+            },
+            "isMilestone": {
+              "type": "boolean",
+              "description": "Whether this is a milestone (zero-duration marker)"
+            }
+          },
+          "required": [
+            "name",
+            "project_Id"
+          ]
+        }
+      },
+      "required": [
+        "task"
+      ]
+    }
+  },
+  {
+    "name": "update_task",
+    "description": "Update an existing task\u0027s properties. Only the specified fields will be modified.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "description": "The task ID (GUID) to update"
+        },
+        "task": {
+          "type": "object",
+          "description": "Task properties to update. Only include fields you want to change.",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Task name"
+            },
+            "description": {
+              "type": "string",
+              "description": "Task description"
+            },
+            "workPercentComplete": {
+              "type": "number",
+              "description": "Completion percentage (0-100)"
+            },
+            "startDateTimeUTC": {
+              "type": "string",
+              "description": "Start date/time in ISO 8601 format"
+            },
+            "endDateTimeUTC": {
+              "type": "string",
+              "description": "End date/time in ISO 8601 format"
+            },
+            "isActive": {
+              "type": "boolean",
+              "description": "Whether task is active"
+            },
+            "isTaskCaptureTimeBillableDefaultCheckedOn": {
+              "type": "boolean",
+              "description": "Whether time entries default to billable when logging time against this task"
+            },
+            "isTaskCaptureTimeBillableResourceAllowedToToggle": {
+              "type": "boolean",
+              "description": "Whether resources can toggle the billable flag on time entries for this task"
+            }
+          }
+        }
+      },
+      "required": [
+        "taskId",
+        "task"
+      ]
+    }
+  },
+  {
+    "name": "get_timesheet",
+    "description": "Get timesheet by ID. Use \u0027fields\u0027 parameter to control response size - default is \u0027summary\u0027.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "timeSheetId": {
+          "type": "string",
+          "description": "The timesheet ID (GUID)"
+        },
+        "fields": {
+          "type": "string",
+          "description": "Controls response fields. PRESETS: \u0027minimal\u0027|\u0027summary\u0027|\u0027standard\u0027|\u0027full\u0027. CUSTOM: comma-separated. AVAILABLE TIMESHEET FIELDS: Id, Name, User_Id, StartDate, EndDate, TotalHours, TotalBillableHours, TotalNonBillableHours, IsSubmitted, IsApproved, IsRejected, SubmittedDateTimeUTC, ApprovedDateTimeUTC, RejectedDateTimeUTC, ApprovedBy_Id, TimeSheetEntries (nested). Default: \u0027summary\u0027"
+        }
+      },
+      "required": [
+        "timeSheetId"
+      ]
+    }
+  },
+  {
+    "name": "search_timesheets",
+    "description": "Search timesheets by user, approver, date range, or status. Use \u0027fields\u0027 to control response size. Default is \u0027summary\u0027.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "fields": {
+          "type": "string",
+          "description": "Controls response fields. PRESETS: \u0027minimal\u0027|\u0027summary\u0027|\u0027standard\u0027|\u0027full\u0027. CUSTOM: comma-separated. AVAILABLE: Id, Name, User_Id, StartDate, EndDate, TotalHours, TotalBillableHours, IsSubmitted, IsApproved, IsRejected, SubmittedDateTimeUTC, ApprovedDateTimeUTC. Default: \u0027summary\u0027"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Filter by timesheet owner\u0027s user ID (GUID)"
+        },
+        "approverUserId": {
+          "type": "string",
+          "description": "Filter by approver\u0027s user ID (GUID)"
+        },
+        "startDate": {
+          "type": "string",
+          "description": "Filter timesheets starting on/after this date (yyyy-MM-dd)"
+        },
+        "endDate": {
+          "type": "string",
+          "description": "Filter timesheets ending on/before this date (yyyy-MM-dd)"
+        },
+        "excludeUnsubmitted": {
+          "type": "boolean",
+          "description": "Exclude unsubmitted timesheets"
+        },
+        "excludeApproved": {
+          "type": "boolean",
+          "description": "Exclude approved timesheets"
+        },
+        "excludeRejected": {
+          "type": "boolean",
+          "description": "Exclude rejected timesheets"
+        },
+        "excludePendingApproval": {
+          "type": "boolean",
+          "description": "Exclude pending-approval timesheets"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "get_my_time_status",
+    "description": "Get the current authenticated user\u0027s time tracking status. Returns current timesheet info, hours worked today, and hours worked this period. Useful for quick status checks.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "update_timesheet",
+    "description": "Update an existing timesheet\u0027s properties. Only the specified fields will be modified. Cannot update submitted/approved timesheets.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "timeSheetId": {
+          "type": "string",
+          "description": "The timesheet ID (GUID) to update"
+        },
+        "timeSheet": {
+          "type": "object",
+          "description": "Timesheet properties to update. Only include fields you want to change.",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Timesheet name"
+            },
+            "description": {
+              "type": "string",
+              "description": "Timesheet description or notes"
+            }
+          }
+        }
+      },
+      "required": [
+        "timeSheetId",
+        "timeSheet"
+      ]
+    }
+  },
+  {
+    "name": "submit_timesheet",
+    "description": "Submit a timesheet for manager approval. Once submitted, the timesheet enters the approval workflow and cannot be edited until approved or rejected.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "timeSheetId": {
+          "type": "string",
+          "description": "The timesheet ID (GUID) to submit"
+        },
+        "approverUserId": {
+          "type": "string",
+          "description": "Optional: Override the default approver with a specific user ID (GUID)"
+        }
+      },
+      "required": [
+        "timeSheetId"
+      ]
+    }
+  },
+  {
+    "name": "create_and_submit_timesheet",
+    "description": "Create a new timesheet for a date range and immediately submit it for approval in one step. This is the standard workflow for submitting a weekly or bi-weekly timesheet. If no userId is provided, defaults to the current authenticated user.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "startDate": {
+          "type": "string",
+          "description": "Period start date (format: yyyy-MM-dd)"
+        },
+        "endDate": {
+          "type": "string",
+          "description": "Period end date (format: yyyy-MM-dd)"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Optional: User ID (GUID) to create the timesheet for. Defaults to the current authenticated user."
+        }
+      },
+      "required": [
+        "startDate",
+        "endDate"
+      ]
+    }
+  },
+  {
+    "name": "approve_timesheet",
+    "description": "Approve a submitted timesheet. Requires manager/approver permissions. The timesheet will be marked as approved and locked.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "timeSheetId": {
+          "type": "string",
+          "description": "The timesheet ID (GUID) to approve"
+        },
+        "comments": {
+          "type": "string",
+          "description": "Optional comments to include with the approval"
+        }
+      },
+      "required": [
+        "timeSheetId"
+      ]
+    }
+  },
+  {
+    "name": "reject_timesheet",
+    "description": "Reject a submitted timesheet and return it to the user for corrections. Requires manager/approver permissions. Include comments explaining what needs to be fixed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "timeSheetId": {
+          "type": "string",
+          "description": "The timesheet ID (GUID) to reject"
+        },
+        "comments": {
+          "type": "string",
+          "description": "Reason for rejection - explain what needs to be corrected before resubmission"
+        }
+      },
+      "required": [
+        "timeSheetId"
+      ]
+    }
+  },
+  {
+    "name": "unsubmit_timesheet",
+    "description": "Reset a timesheet back to Unsubmitted (draft) state. Use this to unblock time entry creation when a Rejected or Submitted timesheet is preventing new entries for its date range. The PI API blocks new time entries for dates covered by a submitted/rejected timesheet \u2014 this tool resolves that by reverting the timesheet to draft. After unsubmitting, time entries can be freely created for those dates again.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "timeSheetId": {
+          "type": "string",
+          "description": "The timesheet ID (GUID) to unsubmit"
+        }
+      },
+      "required": [
+        "timeSheetId"
+      ]
+    }
+  },
+  {
+    "name": "get_project_time_entries",
+    "description": "Get detailed time entries logged against a specific project. Returns individual time entries with date, description, hours, billable status, billable amount, user ID, and task ID. Use this to analyze how time was spent on a project, audit billing, or see who worked on what. IMPORTANT: Always specify a date range (startDate/endDate) to limit results - without dates, returns ALL project time entries which can be very large. Supports filtering by user and task. Output includes summary stats: total entries, total hours, billable hours, and billable amount.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "description": "The project ID (GUID) to get time entries for - REQUIRED"
+        },
+        "startDate": {
+          "type": "string",
+          "description": "Start date filter (format: yyyy-MM-dd). STRONGLY RECOMMENDED to limit results. Entries on or after this date are included."
+        },
+        "endDate": {
+          "type": "string",
+          "description": "End date filter (format: yyyy-MM-dd). STRONGLY RECOMMENDED to limit results. Entries on or before this date are included."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Filter to a specific user\u0027s entries only (GUID). Useful for seeing one person\u0027s time on a project."
+        },
+        "taskId": {
+          "type": "string",
+          "description": "Filter to a specific task\u0027s entries only (GUID). Useful for seeing time logged against a particular task."
+        }
+      },
+      "required": [
+        "projectId"
+      ]
+    }
+  },
+  {
+    "name": "search_time_entries",
+    "description": "Search time entries across all projects with flexible filters. Returns entries grouped by project (default) with per-project summary stats, or raw entries if groupByProject=false. Use this to find all time a specific user has logged, analyze billable vs non-billable time, or audit time entries across the organization. Much more efficient than querying individual projects when you need cross-project data.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Filter by user ID (GUID). Returns only this user\u0027s time entries across all projects."
+        },
+        "projectId": {
+          "type": "string",
+          "description": "Filter by project ID (GUID). Can be combined with userId to see a user\u0027s time on a specific project."
+        },
+        "startDate": {
+          "type": "string",
+          "description": "Start date filter (format: yyyy-MM-dd). STRONGLY RECOMMENDED to limit results."
+        },
+        "endDate": {
+          "type": "string",
+          "description": "End date filter (format: yyyy-MM-dd). STRONGLY RECOMMENDED to limit results."
+        },
+        "isBillable": {
+          "type": "string",
+          "description": "Filter by billable status: \u0027true\u0027 for billable only, \u0027false\u0027 for non-billable only. Omit for all entries."
+        },
+        "groupByProject": {
+          "type": "string",
+          "description": "Set to \u0027false\u0027 to return individual entries instead of per-project summaries. Default is \u0027true\u0027 which groups entries by project and returns summary stats (hours, billable hours, billable amount) per project. Use \u0027true\u0027 for overview reports, \u0027false\u0027 for detailed entry-level data."
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "create_time_entry",
+    "description": "Create a new time entry against a project task. Requires a task ID, date, hours, and optionally a description and billable flag. The time entry will be created for the authenticated user. NOTE: If you get an error about a submitted timesheet blocking the entry, use search_timesheets to find the blocking timesheet for that date range, then use unsubmit_timesheet to reset it to draft before retrying.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "timeEntry": {
+          "type": "object",
+          "description": "The time entry object to create",
+          "properties": {
+            "task_Id": {
+              "type": "string",
+              "description": "The task ID (GUID) to log time against (required)"
+            },
+            "date": {
+              "type": "string",
+              "description": "Date of the time entry (format: yyyy-MM-dd) (required)"
+            },
+            "actualHours": {
+              "type": "number",
+              "description": "Number of hours worked (required, in 0.25 increments)"
+            },
+            "description": {
+              "type": "string",
+              "description": "Description of work performed"
+            },
+            "isBillable": {
+              "type": "boolean",
+              "description": "Whether this time is billable (default: false)"
+            }
+          },
+          "required": [
+            "task_Id",
+            "date",
+            "actualHours"
+          ]
+        }
+      },
+      "required": [
+        "timeEntry"
+      ]
+    }
+  },
+  {
+    "name": "delete_time_entry",
+    "description": "Delete a time entry by ID. This permanently removes the time entry. Use search_time_entries or get_project_time_entries to find entry IDs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "timeEntryId": {
+          "type": "string",
+          "description": "The time entry ID (GUID) to delete"
+        }
+      },
+      "required": [
+        "timeEntryId"
+      ]
+    }
+  },
+  {
+    "name": "update_time_entry",
+    "description": "Update an existing time entry. Only the specified fields will be modified. Use search_time_entries or get_project_time_entries to find entry IDs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "timeEntryId": {
+          "type": "string",
+          "description": "The time entry ID (GUID) to update"
+        },
+        "timeEntry": {
+          "type": "object",
+          "description": "Time entry properties to update. Only include fields you want to change.",
+          "properties": {
+            "task_Id": {
+              "type": "string",
+              "description": "The task ID (GUID) to log time against"
+            },
+            "date": {
+              "type": "string",
+              "description": "Date of the time entry (format: yyyy-MM-dd)"
+            },
+            "actualHours": {
+              "type": "number",
+              "description": "Number of hours worked (in 0.25 increments)"
+            },
+            "description": {
+              "type": "string",
+              "description": "Description of work performed"
+            },
+            "isBillable": {
+              "type": "boolean",
+              "description": "Whether this time is billable"
+            }
+          }
+        }
+      },
+      "required": [
+        "timeEntryId",
+        "timeEntry"
+      ]
+    }
+  },
+  {
+    "name": "get_current_user",
+    "description": "Get authenticated user\u0027s profile. Use \u0027fields\u0027 to control response size - default is \u0027summary\u0027.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "fields": {
+          "type": "string",
+          "description": "PRESETS: \u0027minimal\u0027 (Id,Name), \u0027summary\u0027 (default - contact info), \u0027standard\u0027, \u0027full\u0027."
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "get_user",
+    "description": "Get user profile by ID. Use \u0027fields\u0027 to control response size - default is \u0027summary\u0027.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The user ID (GUID)"
+        },
+        "fields": {
+          "type": "string",
+          "description": "Controls response fields. PRESETS: \u0027minimal\u0027|\u0027summary\u0027|\u0027standard\u0027|\u0027full\u0027. CUSTOM: comma-separated. AVAILABLE USER FIELDS: Id, Name, FirstName, LastName, Email, IsActive, Title, Department, PhoneNumber, MobileNumber, EmployeeNumber, HireDate, Address, City, State, PostalCode, Country, TimeZone_Id, Manager_Id, UrlFull. Default: \u0027summary\u0027"
+        }
+      },
+      "required": [
+        "userId"
+      ]
+    }
+  },
+  {
+    "name": "get_users",
+    "description": "Get multiple users by IDs in one request. More efficient than multiple get_user calls. Use \u0027fields\u0027 to control response size.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "string",
+          "description": "Comma-separated user IDs (GUIDs)"
+        },
+        "fields": {
+          "type": "string",
+          "description": "Controls response fields. PRESETS: \u0027minimal\u0027|\u0027summary\u0027|\u0027standard\u0027|\u0027full\u0027. CUSTOM: comma-separated. AVAILABLE: Id, Name, FirstName, LastName, Email, IsActive, Title, Department, Manager_Id. Default: \u0027summary\u0027"
+        }
+      },
+      "required": [
+        "ids"
+      ]
+    }
+  },
+  {
+    "name": "search_users",
+    "description": "Search users by name or list all. Use \u0027fields\u0027 to control response size - default is \u0027summary\u0027.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Filter by name (partial match in first/last/full name/email)"
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Filter by active status"
+        },
+        "fields": {
+          "type": "string",
+          "description": "Controls response fields. PRESETS: \u0027minimal\u0027|\u0027summary\u0027|\u0027standard\u0027|\u0027full\u0027. CUSTOM: comma-separated. AVAILABLE USER FIELDS: Id, Name, FirstName, LastName, Email, IsActive, Title, Department, PhoneNumber, Manager_Id, HireDate. Default: \u0027summary\u0027"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "get_resource_types",
+    "description": "Resolve resource type IDs to names (e.g., \u0027Senior Consultant\u0027, \u0027Project Manager\u0027). Use this to look up the objectId values from rate card rates or resourceTypeDefault_Id from project resources. Accepts multiple IDs at once.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "string",
+          "description": "Comma-separated resource type IDs (GUIDs) to resolve"
+        }
+      },
+      "required": [
+        "ids"
+      ]
+    }
+  },
+  {
+    "name": "get_project_rate_cards",
+    "description": "Get rate cards (company contracts) for a project. Returns billing rate cards with their nested rate tiers (user rates, resource type rates, task type rates, time code rates). Use this to see what billing rates apply to a project.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "description": "The project ID (GUID)"
+        }
+      },
+      "required": [
+        "projectId"
+      ]
+    }
+  },
+  {
+    "name": "get_rate_card",
+    "description": "Get a single rate card (company contract) by ID with full detail including all rate tiers and amounts.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "rateCardId": {
+          "type": "string",
+          "description": "The rate card / company contract ID (GUID)"
+        }
+      },
+      "required": [
+        "rateCardId"
+      ]
+    }
+  },
+  {
+    "name": "save_rate_card_rate",
+    "description": "Create or update a rate on a rate card. Specify the rate type tier and the rate details. To update an existing rate, include its \u0027id\u0027 in the rate object.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "rateCardId": {
+          "type": "string",
+          "description": "The rate card / company contract ID (GUID)"
+        },
+        "rateType": {
+          "type": "string",
+          "description": "Rate tier type: \u0027default\u0027, \u0027user\u0027, \u0027resource-type\u0027, \u0027task-type\u0027, or \u0027time-code\u0027"
+        },
+        "rate": {
+          "type": "object",
+          "description": "The rate data to save",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Rate ID (GUID) - include for updates, omit for new rates"
+            },
+            "objectId": {
+              "type": "string",
+              "description": "ID of the associated object (user ID, resource type ID, task type ID, or time code ID depending on rateType)"
+            },
+            "rateBillableDefault": {
+              "type": "number",
+              "description": "Default billable rate amount"
+            },
+            "rateDefault": {
+              "type": "number",
+              "description": "Default rate amount"
+            },
+            "rateInvoiceDefault": {
+              "type": "number",
+              "description": "Default invoice rate amount"
+            },
+            "effectiveDate": {
+              "type": "string",
+              "description": "Rate effective date (yyyy-MM-dd)"
+            },
+            "expirationDate": {
+              "type": "string",
+              "description": "Rate expiration date (yyyy-MM-dd)"
+            }
+          }
+        }
+      },
+      "required": [
+        "rateCardId",
+        "rateType",
+        "rate"
+      ]
+    }
+  },
+  {
+    "name": "delete_rate_card_rate",
+    "description": "Delete a rate from a rate card. Permanently removes the specified rate entry from the rate card tier.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "rateCardId": {
+          "type": "string",
+          "description": "The rate card / company contract ID (GUID)"
+        },
+        "rateType": {
+          "type": "string",
+          "description": "Rate tier type: \u0027default\u0027, \u0027user\u0027, \u0027resource-type\u0027, \u0027task-type\u0027, or \u0027time-code\u0027"
+        },
+        "rateId": {
+          "type": "string",
+          "description": "The ID of the rate entry to delete (GUID)"
+        }
+      },
+      "required": [
+        "rateCardId",
+        "rateType",
+        "rateId"
+      ]
+    }
+  },
+  {
+    "name": "get_pto_entry",
+    "description": "Get a single PTO (Paid Time Off) entry by its ID. Returns the full PTO record including hours, date, time code category (with name), description, and the linked time entry ID. NOTE: PTO entries are separate from regular time entries \u2014 each PTO entry auto-generates a linked non-billable time entry (visible in search_time_entries with no projectId/taskId). Use this tool to inspect a specific PTO record; use list_user_pto to see all PTO for a user.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ptoEntryId": {
+          "type": "string",
+          "description": "The PTO entry ID (GUID). This is NOT a time entry ID \u2014 it\u0027s the PTO-specific record ID."
+        }
+      },
+      "required": [
+        "ptoEntryId"
+      ]
+    }
+  },
+  {
+    "name": "list_user_pto",
+    "description": "List all PTO (Paid Time Off) entries for a user. Returns the complete PTO history including both usage entries (time off taken, PTOHours set) and balance entries (accruals, PTOAdded set). Also returns the available PTO time codes (categories like Vacation, Personal Day, etc.) with their IDs and names \u2014 use these IDs when creating new PTO entries. NOTE: The API returns ALL entries with no server-side date filtering \u2014 use startDate/endDate to filter client-side. Each usage entry has a TimeEntry_Id linking to its auto-generated time entry.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The user ID (GUID) to list PTO entries for"
+        },
+        "startDate": {
+          "type": "string",
+          "description": "Optional: client-side filter \u2014 only return entries on or after this date (yyyy-MM-dd)"
+        },
+        "endDate": {
+          "type": "string",
+          "description": "Optional: client-side filter \u2014 only return entries on or before this date (yyyy-MM-dd)"
+        },
+        "timeCodeId": {
+          "type": "string",
+          "description": "Optional: filter by time code ID (GUID) to show only one PTO category"
+        }
+      },
+      "required": [
+        "userId"
+      ]
+    }
+  },
+  {
+    "name": "create_pto_entry",
+    "description": "Create a new PTO (Paid Time Off) entry. This records time off for a user on a specific date. IMPORTANT: Creating a PTO entry automatically generates a linked non-billable time entry (no project/task) \u2014 do NOT also create a time entry manually. Required fields: userId, date, ptoHours (must be \u003E 0), and timeCodeId. To discover available timeCodeId values, call list_user_pto first \u2014 the response includes the available time codes with their names and IDs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The user ID (GUID) to record PTO for"
+        },
+        "date": {
+          "type": "string",
+          "description": "The date of the PTO (format: yyyy-MM-dd)"
+        },
+        "ptoHours": {
+          "type": "number",
+          "description": "Hours of PTO (must be \u003E 0, supports decimals e.g. 3.25)"
+        },
+        "timeCodeId": {
+          "type": "string",
+          "description": "Time code category ID (GUID). Call list_user_pto to discover available time codes and their IDs for this tenant."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional description (e.g. \u0027Vacation day\u0027, \u0027Doctor appointment\u0027)"
+        }
+      },
+      "required": [
+        "userId",
+        "date",
+        "ptoHours",
+        "timeCodeId"
+      ]
+    }
+  },
+  {
+    "name": "update_pto_entry",
+    "description": "Update an existing PTO entry. Provide the ptoEntryId of the entry to update along with any fields to change. The linked time entry is automatically updated to match. Only include fields you want to change.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ptoEntryId": {
+          "type": "string",
+          "description": "The PTO entry ID (GUID) to update"
+        },
+        "date": {
+          "type": "string",
+          "description": "New date (format: yyyy-MM-dd)"
+        },
+        "ptoHours": {
+          "type": "number",
+          "description": "New PTO hours (must be \u003E 0)"
+        },
+        "timeCodeId": {
+          "type": "string",
+          "description": "New time code category ID (GUID). Call list_user_pto to see available codes."
+        },
+        "description": {
+          "type": "string",
+          "description": "New description"
+        }
+      },
+      "required": [
+        "ptoEntryId"
+      ]
+    }
+  },
+  {
+    "name": "delete_pto_entry",
+    "description": "Delete a PTO entry. IMPORTANT: This also automatically deletes the linked time entry \u2014 do NOT separately delete the time entry. Use get_pto_entry or list_user_pto to find the PTO entry ID.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ptoEntryId": {
+          "type": "string",
+          "description": "The PTO entry ID (GUID) to delete. This is NOT a time entry ID."
+        }
+      },
+      "required": [
+        "ptoEntryId"
+      ]
+    }
+  }
+]

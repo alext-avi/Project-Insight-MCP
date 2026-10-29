@@ -61,7 +61,7 @@ fi
 
 # Check if .NET is installed
 if ! command -v dotnet &> /dev/null; then
-    log_error ".NET SDK is not installed. Please install .NET 8.0 SDK."
+    log_error ".NET SDK is not installed. Please install the .NET 10 SDK (the Function app targets .NET 8)."
     exit 1
 fi
 

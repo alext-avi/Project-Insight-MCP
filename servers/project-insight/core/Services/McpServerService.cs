@@ -136,7 +136,7 @@ public class McpServerService
     /// <summary>
     /// Execute a specific tool
     /// </summary>
-    internal async Task<McpToolResult> ExecuteToolAsync(McpToolCall toolCall, CancellationToken cancellationToken)
+    public async Task<McpToolResult> ExecuteToolAsync(McpToolCall toolCall, CancellationToken cancellationToken)
     {
         try
         {
@@ -3626,7 +3626,7 @@ public class McpServerService
     /// <summary>
     /// Initialize available tools
     /// </summary>
-    internal static List<McpTool> InitializeTools()
+    public static List<McpTool> InitializeTools()
     {
         return new List<McpTool>
         {

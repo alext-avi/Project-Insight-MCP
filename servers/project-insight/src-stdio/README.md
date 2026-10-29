@@ -223,7 +223,7 @@ Pass any comma-separated list of field names to get exactly what you need:
 
 ## Requirements
 
-- .NET 8.0 Runtime (if not using self-contained build)
+- .NET 10 Runtime (if not using self-contained build)
 - Valid Project Insight account with API access
 
 ## License

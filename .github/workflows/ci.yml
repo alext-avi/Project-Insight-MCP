@@ -1,0 +1,29 @@
+name: CI
+
+# Builds both hosts and runs the tests. Deployment is separate (deploy.yml, manual-only).
+on:
+    pull_request:
+    push:
+        branches:
+            - main
+
+jobs:
+    build-and-test:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Setup .NET
+              uses: actions/setup-dotnet@v4
+              with:
+                  dotnet-version: "10.0.x"
+
+            - name: Build Azure Functions host (net8.0)
+              run: dotnet build servers/project-insight/src --configuration Release
+
+            - name: Build stdio host (net10.0)
+              run: dotnet build servers/project-insight/src-stdio --configuration Release
+
+            - name: Test
+              run: dotnet test servers/project-insight/tests --configuration Release

@@ -141,7 +141,7 @@ func start
 
 **Function won't start:**
 - Run "clean" task then "build" task
-- Check `.NET 8.0` is installed
+- Check the .NET 10 SDK and the .NET 8 runtime are installed
 - Verify Azure Functions Core Tools v4
 
 **Debugging not working:**

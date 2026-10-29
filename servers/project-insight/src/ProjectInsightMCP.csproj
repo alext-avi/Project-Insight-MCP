@@ -26,9 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="../../../shared/McpModels.cs" Link="Shared/McpModels.cs" />
-    <Compile Include="../../../shared/McpConfiguration.cs" Link="Shared/McpConfiguration.cs" />
-    <Compile Include="../../../shared/McpUtilities.cs" Link="Shared/McpUtilities.cs" />
+    <ProjectReference Include="../core/ProjectInsightMCP.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
