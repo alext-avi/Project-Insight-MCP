@@ -71,6 +71,7 @@ public class TimeChangeCardTests
         Assert.Contains(".spent .row.chg", Html);
         Assert.Contains("act(\"undo_time_changes\", { receiptId: d.revertedBy })", Html);
         Assert.Contains("Draft a redo", Html);
+        Assert.Contains("startsWith(\"Redo: \") ? \"redo\" : \"undo\"", Html);
     }
 
     [Fact]

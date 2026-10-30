@@ -363,9 +363,11 @@
         : d.channel === "agent" ? "Committed by the agent" : "Committed · confirmed in chat";
       cls = d.revertedBy && !d.redoneBy ? "p-mute" : "p-ok";
     } else if (d.status === "draft" && d.undoOf) {
+      // Undoing an undo puts the original changes back; the planner names that draft "Redo: …".
+      const kind = String(d.intent || "").startsWith("Redo: ") ? "redo" : "undo";
       label = d.undoOfCommittedAt
-        ? "Draft · undo of " + when(d.undoOfCommittedAt) + " changes"
-        : "Draft · undo of earlier changes";
+        ? "Draft · " + kind + " of " + when(d.undoOfCommittedAt) + " changes"
+        : "Draft · " + kind + " of earlier changes";
     }
     const by = d.status === "committed"
       ? (d.channel === "agent"
