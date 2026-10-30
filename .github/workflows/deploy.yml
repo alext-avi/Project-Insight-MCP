@@ -24,10 +24,10 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout code
-              uses: actions/checkout@v4
+              uses: actions/checkout@v7
 
             - name: Setup .NET
-              uses: actions/setup-dotnet@v4
+              uses: actions/setup-dotnet@v6
               with:
                   dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -44,7 +44,7 @@ jobs:
               run: dotnet publish --configuration Release --output ./output
 
             - name: Upload build artifacts
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: function-app
                   path: servers/project-insight/src/output
@@ -53,10 +53,10 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout code
-              uses: actions/checkout@v4
+              uses: actions/checkout@v7
 
             - name: Azure CLI Login
-              uses: azure/login@v2
+              uses: azure/login@v3
               with:
                   creds: ${{ secrets.AZURE_CREDENTIALS }}
 
@@ -75,16 +75,16 @@ jobs:
         environment: dev
         steps:
             - name: Checkout code
-              uses: actions/checkout@v4
+              uses: actions/checkout@v7
 
             - name: Download build artifacts
-              uses: actions/download-artifact@v4
+              uses: actions/download-artifact@v8
               with:
                   name: function-app
                   path: ./output
 
             - name: Azure CLI Login
-              uses: azure/login@v2
+              uses: azure/login@v3
               with:
                   creds: ${{ secrets.AZURE_CREDENTIALS }}
 
@@ -136,16 +136,16 @@ jobs:
         environment: staging
         steps:
             - name: Checkout code
-              uses: actions/checkout@v4
+              uses: actions/checkout@v7
 
             - name: Download build artifacts
-              uses: actions/download-artifact@v4
+              uses: actions/download-artifact@v8
               with:
                   name: function-app
                   path: ./output
 
             - name: Azure CLI Login
-              uses: azure/login@v2
+              uses: azure/login@v3
               with:
                   creds: ${{ secrets.AZURE_CREDENTIALS }}
 
@@ -188,16 +188,16 @@ jobs:
         environment: production
         steps:
             - name: Checkout code
-              uses: actions/checkout@v4
+              uses: actions/checkout@v7
 
             - name: Download build artifacts
-              uses: actions/download-artifact@v4
+              uses: actions/download-artifact@v8
               with:
                   name: function-app
                   path: ./output
 
             - name: Azure CLI Login
-              uses: azure/login@v2
+              uses: azure/login@v3
               with:
                   creds: ${{ secrets.AZURE_CREDENTIALS }}
 
