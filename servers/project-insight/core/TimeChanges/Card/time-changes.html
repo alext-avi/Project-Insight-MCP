@@ -6,32 +6,35 @@
 <title>Time changes</title>
 <style>
   :root {
-    --bg: #ffffff; --fg: #1f2328; --mut: #656d76; --faint: #8c959f; --line: #d8dee4; --soft: #f6f8fa;
-    --acc: #0b6bcb; --pos: #1a7f37; --neg: #cf222e; --warn: #9a6700; --warnbg: #fff8c5; --chg: #f0f7ff;
-    --okbg: #dafbe1; --okfg: #116329; --stalebg: #fff8c5; --stalefg: #7d4e00; --failbg: #ffebe9; --failfg: #a40e26;
-    --mutebg: #eaeef2; --mutefg: #57606a; --draftbg: #ddf4ff; --draftfg: #0550ae; --otherbg: #fbefff; --otherfg: #8250df;
-    --primary: #1f883d; --primaryfg: #ffffff;
+    --bg: #ffffff; --page: #f4f5f7; --fg: #1f2d3d; --mut: #5b6b7b; --faint: #8a97a6; --line: #dfe3e8; --soft: #f4f5f7;
+    --acc: #1b75bb; --navy: #0b3a62; --bar: #033a64; --barfg: #ffffff; --pos: #1fa855; --neg: #e5304b; --warn: #b86e00; --warnbg: #fff4dc; --chg: #eef5fc;
+    --okbg: #dcf5e6; --okfg: #11713a; --stalebg: #fff4dc; --stalefg: #8a5300; --failbg: #fde6e9; --failfg: #b0162f;
+    --mutebg: #e9edf1; --mutefg: #5b6b7b; --draftbg: #e3f0fb; --draftfg: #135a92; --otherbg: #f6e8fb; --otherfg: #9b34c2;
+    --primary: #1b75bb; --primaryfg: #ffffff;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #0d1117; --fg: #e6edf3; --mut: #9198a1; --faint: #6e7681; --line: #30363d; --soft: #161b22;
-      --acc: #4493f8; --pos: #3fb950; --neg: #f85149; --warn: #d29922; --warnbg: #3b2e0a; --chg: #0c2d4a;
-      --okbg: #0f3d1e; --okfg: #56d364; --stalebg: #3b2e0a; --stalefg: #e3b341; --failbg: #490202; --failfg: #ff7b72;
-      --mutebg: #21262d; --mutefg: #9198a1; --draftbg: #0c2d4a; --draftfg: #79c0ff; --otherbg: #2a1a3e; --otherfg: #d2a8ff;
-      --primary: #238636; --primaryfg: #ffffff;
+      --bg: #12202e; --page: #0b1620; --fg: #e3eaf1; --mut: #9aabbc; --faint: #6c7f92; --line: #263a4d; --soft: #182a3b;
+      --acc: #5aa9e6; --navy: #cfe3f5; --bar: #06223b; --barfg: #e3eaf1; --pos: #3fcf7a; --neg: #ff6b7f; --warn: #f0b03c; --warnbg: #3a2a08; --chg: #13314b;
+      --okbg: #0f3a24; --okfg: #5fe39a; --stalebg: #3a2a08; --stalefg: #f0b03c; --failbg: #4a0f1a; --failfg: #ff8a99;
+      --mutebg: #223445; --mutefg: #9aabbc; --draftbg: #13314b; --draftfg: #8cc6f2; --otherbg: #33183f; --otherfg: #dc9cf5;
+      --primary: #2f86cc; --primaryfg: #ffffff;
     }
   }
   :root[data-theme="dark"] {
-    --bg: #0d1117; --fg: #e6edf3; --mut: #9198a1; --faint: #6e7681; --line: #30363d; --soft: #161b22;
-    --acc: #4493f8; --pos: #3fb950; --neg: #f85149; --warn: #d29922; --warnbg: #3b2e0a; --chg: #0c2d4a;
-    --okbg: #0f3d1e; --okfg: #56d364; --stalebg: #3b2e0a; --stalefg: #e3b341; --failbg: #490202; --failfg: #ff7b72;
-    --mutebg: #21262d; --mutefg: #9198a1; --draftbg: #0c2d4a; --draftfg: #79c0ff; --otherbg: #2a1a3e; --otherfg: #d2a8ff;
-    --primary: #238636; --primaryfg: #ffffff;
+    --bg: #12202e; --page: #0b1620; --fg: #e3eaf1; --mut: #9aabbc; --faint: #6c7f92; --line: #263a4d; --soft: #182a3b;
+      --acc: #5aa9e6; --navy: #cfe3f5; --bar: #06223b; --barfg: #e3eaf1; --pos: #3fcf7a; --neg: #ff6b7f; --warn: #f0b03c; --warnbg: #3a2a08; --chg: #13314b;
+      --okbg: #0f3a24; --okfg: #5fe39a; --stalebg: #3a2a08; --stalefg: #f0b03c; --failbg: #4a0f1a; --failfg: #ff8a99;
+      --mutebg: #223445; --mutefg: #9aabbc; --draftbg: #13314b; --draftfg: #8cc6f2; --otherbg: #33183f; --otherfg: #dc9cf5;
+      --primary: #2f86cc; --primaryfg: #ffffff;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; background: var(--bg); color: var(--fg); }
-  body { font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  .card { padding: 12px 14px; max-width: 640px; }
+  html, body { margin: 0; background: var(--page); color: var(--fg); }
+  body { font: 13px/1.45 "Source Sans Pro", "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .card { max-width: 640px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .body { padding: 12px 16px 14px; }
+  .brand { background: var(--bar); color: var(--barfg); font-size: 12px; font-weight: 600; letter-spacing: 0.02em; padding: 7px 16px; }
+  .brand span { opacity: 0.7; font-weight: 400; }
   .muted { color: var(--mut); }
   .pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
   .p-draft { background: var(--draftbg); color: var(--draftfg); }
@@ -39,11 +42,12 @@
   .p-stale { background: var(--stalebg); color: var(--stalefg); }
   .p-fail { background: var(--failbg); color: var(--failfg); }
   .p-mute { background: var(--mutebg); color: var(--mutefg); }
-  .intent { font-size: 14px; font-weight: 600; margin-top: 4px; }
+  .intent { font-size: 18px; font-weight: 400; color: var(--acc); margin-top: 6px; line-height: 1.3; }
   .by { color: var(--mut); font-size: 12px; margin-bottom: 8px; }
-  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 8px 0 6px; }
-  .kpi { background: var(--soft); border-radius: 8px; padding: 6px 8px; min-width: 0; }
-  .kpi b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; margin: 10px 0 6px; background: var(--soft); border-radius: 4px; padding: 6px 4px; }
+  .kpi { padding: 2px 8px; min-width: 0; }
+  .kpi b { display: block; font-size: 18px; font-weight: 600; color: var(--navy); font-variant-numeric: tabular-nums; }
+  .kpi b.pos { color: var(--pos); } .kpi b.neg { color: var(--neg); } .kpi b.warn { color: var(--warn); }
   .kpi span { font-size: 11px; color: var(--mut); }
   .pos { color: var(--pos); } .neg { color: var(--neg); } .warn { color: var(--warn); }
   .note { border-radius: 8px; padding: 8px 10px; font-size: 12px; margin: 8px 0; }
@@ -51,7 +55,10 @@
   .n-fail { background: var(--failbg); color: var(--failfg); }
   .n-mute { background: var(--soft); color: var(--mutefg); }
   .week { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
-  .whead { display: grid; grid-template-columns: 1fr auto 52px; gap: 8px; align-items: baseline; margin-bottom: 4px; }
+  .who { color: var(--acc); font-weight: 600; }
+  .avatar { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%;
+    color: #ffffff; font-size: 10px; font-weight: 700; margin-right: 6px; vertical-align: middle; }
+  .whead { display: grid; grid-template-columns: 1fr auto 52px; gap: 8px; align-items: center; margin-bottom: 4px; }
   .other { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: var(--otherbg); color: var(--otherfg); margin-left: 6px; }
   .link { font-size: 11px; color: var(--acc); margin-left: 6px; text-decoration: none; cursor: pointer; }
   .tot { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--mut); }
@@ -80,8 +87,10 @@
   .st-rejected, .st-reverse_failed, .st-unknown { background: var(--failbg); color: var(--failfg); }
   .err { color: var(--failfg); }
   .btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
-  .btn { border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 6px; padding: 5px 12px; font: inherit; font-weight: 600; cursor: pointer; }
-  .btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primaryfg); }
+  .btn { border: 1.5px solid var(--acc); background: var(--bg); color: var(--acc); border-radius: 999px; padding: 4px 16px; font: inherit; font-size: 14px; cursor: pointer; }
+  .btn:hover:not(:disabled) { background: var(--chg); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primaryfg); font-weight: 600; }
+  .btn.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--primary); }
   .btn:disabled { opacity: 0.5; cursor: default; }
   .hint { font-size: 11px; color: var(--faint); }
   .error { color: var(--failfg); }
@@ -307,23 +316,25 @@
     const v = state.view;
     app.replaceChildren();
     app.classList.remove("spent");
+    const body = el("div", "body");
+    app.append(el("div", "brand", "Project Insight ", el("span", "", "· Time changes")), body);
     if (!v) {
-      app.append(el("p", state.error ? "error" : "muted", state.error || "Waiting for the draft…"));
+      body.append(el("p", state.error ? "error" : "muted", state.error || "Waiting for the draft…"));
     } else if (v.kind !== "draft" || !v.draft) {
-      app.append(el("p", "error", v.message || "Nothing to show."));
+      body.append(el("p", "error", v.message || "Nothing to show."));
     } else {
       const d = v.draft;
       app.classList.toggle("spent", d.status === "committed" && !!d.revertedBy);
-      app.append(header(d), totals(d));
+      body.append(header(d), totals(d));
       if (d.status === "stale")
-        app.append(el("div", "note n-stale",
+        body.append(el("div", "note n-stale",
           "Project Insight changed after this draft was made: " + (d.staleDays || []).join(", ") +
           ". Nothing was written. Ask the agent to draft again."));
-      if (d.status === "failed" && d.error) app.append(el("div", "note n-fail", d.error));
-      if (d.status === "expired") app.append(el("div", "note n-mute", "Not confirmed within 24 hours. Nothing was changed."));
-      for (const w of d.weeks || []) app.append(week(d, w));
-      app.append(actions(d));
-      if (state.error) app.append(el("div", "note n-fail", state.error));
+      if (d.status === "failed" && d.error) body.append(el("div", "note n-fail", d.error));
+      if (d.status === "expired") body.append(el("div", "note n-mute", "Not confirmed within 24 hours. Nothing was changed."));
+      for (const w of d.weeks || []) body.append(week(d, w));
+      body.append(actions(d));
+      if (state.error) body.append(el("div", "note n-fail", state.error));
     }
     reportSize();
   }
@@ -366,7 +377,8 @@
   }
 
   function week(d, w) {
-    const title = el("span", "", el("b", "", w.isCaller ? "You" : w.userName),
+    const name = w.isCaller ? "You" : w.userName;
+    const title = el("span", "", avatar(w.userName || name, w.userId), el("span", "who", name),
       w.isCaller ? null : el("span", "other", "someone else’s time"),
       " · week of " + day(w.start, { day: "numeric", month: "short" }));
     if (w.timesheetUrl) {
@@ -380,6 +392,19 @@
         delta(w.totalAfter - w.totalBefore)));
     for (const dv of w.days || []) box.append(...dayBlock(d, w, dv));
     return box;
+  }
+
+  // Initials in a coloured circle, like PI's people lists. The colour is stable per user.
+  const AVATAR_COLOURS = ["#f26b1d", "#16a085", "#8e44ad", "#1b75bb", "#e5a50a", "#c0392b", "#27ae60", "#d35400", "#0097a7", "#d63384"];
+  function avatar(name, key) {
+    const words = String(name || "?").trim().split(/\s+/);
+    const initials = (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : "")).toUpperCase();
+    let h = 0;
+    for (const ch of String(key || name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    const a = el("span", "avatar", initials);
+    a.style.background = AVATAR_COLOURS[h % AVATAR_COLOURS.length];
+    a.setAttribute("aria-hidden", "true");
+    return a;
   }
 
   function dayBlock(d, w, dv) {
