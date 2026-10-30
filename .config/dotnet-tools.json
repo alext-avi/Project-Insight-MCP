@@ -3,7 +3,7 @@
   "isRoot": true,
   "tools": {
     "projectinsight.mcp": {
-      "version": "1.0.11",
+      "version": "1.3.4",
       "commands": [
         "projectinsight-mcp"
       ],
