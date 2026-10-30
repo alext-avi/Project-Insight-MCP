@@ -89,6 +89,8 @@ public sealed class EntryValues
     public required string TaskName { get; set; }
     public required string ProjectId { get; set; }
     public required string ProjectName { get; set; }
+    /// <summary>The project's colour in PI ("#rrggbb"), for the card. Not part of the entry's values.</summary>
+    public string? ProjectColor { get; set; }
     public required DateOnly Date { get; set; }
     public required decimal Hours { get; set; }
     public bool Billable { get; set; }
@@ -124,6 +126,7 @@ public sealed class ContextEntry
 {
     public required string TimeEntryId { get; set; }
     public required string ProjectName { get; set; }
+    public string? ProjectColor { get; set; }
     public required string TaskName { get; set; }
     public required decimal Hours { get; set; }
     public bool Billable { get; set; }
@@ -144,6 +147,7 @@ public sealed class WeekView
 {
     public required string UserId { get; set; }
     public required string UserName { get; set; }
+    public UserAvatar? Avatar { get; set; }
     public bool IsCaller { get; set; }
     public required DateOnly Start { get; set; }
     public required DateOnly End { get; set; }
@@ -155,6 +159,16 @@ public sealed class WeekView
     public decimal TotalBefore { get; set; }
     public decimal TotalAfter { get; set; }
     public List<DayView> Days { get; set; } = new();
+}
+
+/// <summary>How PI draws the person: their photo when they have one, else initials on their colours.</summary>
+public sealed class UserAvatar
+{
+    public string? Initials { get; set; }
+    public string? Background { get; set; }
+    public string? Foreground { get; set; }
+    /// <summary>A data: URI, so the card needs no network access to show it.</summary>
+    public string? Photo { get; set; }
 }
 
 public sealed class DraftTotals

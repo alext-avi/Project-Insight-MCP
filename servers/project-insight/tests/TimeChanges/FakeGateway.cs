@@ -21,6 +21,18 @@ public sealed class FakeGateway : ITimeEntryGateway
 
     public List<PiEntry> Entries { get; } = new();
 
+    /// <summary>Project colours by project id; projects not listed have none.</summary>
+    public Dictionary<string, string> ProjectColors { get; } = new();
+
+    /// <summary>Avatars by user id, as GetUserLooksAsync returns them.</summary>
+    public Dictionary<string, PiLook> Looks { get; } = new();
+
+    /// <summary>Photo data URIs by photo URL; a URL not listed fetches as null.</summary>
+    public Dictionary<string, string> Photos { get; } = new();
+
+    /// <summary>When set, GetUserLooksAsync throws it.</summary>
+    public Exception? LooksThrow { get; set; }
+
     /// <summary>Timesheets per user id.</summary>
     public Dictionary<string, List<PiTimeSheet>> Sheets { get; } = new();
 
@@ -59,7 +71,7 @@ public sealed class FakeGateway : ITimeEntryGateway
         bool billable = true, string? description = null)
     {
         var task = GetTask(taskId)!;
-        var entry = new PiEntry(id, userId, date, hours, billable, description, task.Id, task.Name, task.ProjectId, task.ProjectName, null);
+        var entry = new PiEntry(id, userId, date, hours, billable, description, task.Id, task.Name, task.ProjectId, task.ProjectName, null, task.ProjectColor);
         Entries.Add(entry);
         return entry;
     }
@@ -112,7 +124,7 @@ public sealed class FakeGateway : ITimeEntryGateway
         if (UncertainWrite?.Invoke("create", null) is { } unsure) return new PiWrite(false, null, unsure, Uncertain: true);
         var id = $"te-{_next++}";
         var task = GetTask(w.TaskId)!;
-        Entries.Add(new PiEntry(id, w.UserId, w.Date, w.Hours, w.Billable, w.Description, task.Id, task.Name, task.ProjectId, task.ProjectName, w.TimeSheetId));
+        Entries.Add(new PiEntry(id, w.UserId, w.Date, w.Hours, w.Billable, w.Description, task.Id, task.Name, task.ProjectId, task.ProjectName, w.TimeSheetId, task.ProjectColor));
         Writes.Add($"create:{id}");
         AfterWrite?.Invoke(Writes.Count);
         return new PiWrite(true, id, null);
@@ -131,7 +143,8 @@ public sealed class FakeGateway : ITimeEntryGateway
         Entries[i] = Entries[i] with
         {
             Date = w.Date, Hours = w.Hours, Billable = w.Billable, Description = w.Description,
-            TaskId = task.Id, TaskName = task.Name, ProjectId = task.ProjectId, ProjectName = task.ProjectName
+            TaskId = task.Id, TaskName = task.Name, ProjectId = task.ProjectId, ProjectName = task.ProjectName,
+            ProjectColor = task.ProjectColor
         };
         Writes.Add($"update:{timeEntryId}");
         AfterWrite?.Invoke(Writes.Count);
@@ -151,11 +164,22 @@ public sealed class FakeGateway : ITimeEntryGateway
         return new PiWrite(true, null, null);
     }
 
+    public async Task<IReadOnlyDictionary<string, PiLook>> GetUserLooksAsync(IReadOnlyCollection<string> userIds, CancellationToken ct)
+    {
+        await Enter();
+        if (LooksThrow is { } boom) throw boom;
+        return Looks.Where(l => userIds.Contains(l.Key)).ToDictionary(l => l.Key, l => l.Value);
+    }
+
+    public async Task<string?> GetPhotoAsync(string photoUrl, CancellationToken ct)
+    { await Enter(); return Photos.GetValueOrDefault(photoUrl); }
+
     private PiTask? GetTask(string taskId)
     {
         foreach (var (projectId, tasks) in Tasks)
             if (tasks.FirstOrDefault(t => t.Id == taskId) is { } task)
-                return new PiTask(task.Id, task.Name, projectId, Projects.First(p => p.Id == projectId).Name);
+                return new PiTask(task.Id, task.Name, projectId, Projects.First(p => p.Id == projectId).Name,
+                    ProjectColors.GetValueOrDefault(projectId));
         return null;
     }
 

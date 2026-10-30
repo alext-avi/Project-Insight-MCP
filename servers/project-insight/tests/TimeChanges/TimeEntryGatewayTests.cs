@@ -240,4 +240,77 @@ public class TimeEntryGatewayTests
         Assert.Contains("not signed in to Project Insight", ex.Message);
         Assert.DoesNotContain("X-PI-Token", ex.Message);
     }
+
+    [Fact]
+    public async Task Search_reads_each_entrys_project_colour_and_drops_anything_but_a_hex_colour()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.OK, $"[{EntryJson.Replace("\"Name\":\"Acme Portal\"", "\"Name\":\"Acme Portal\",\"Color\":\"#BE2EDD\"")}," +
+            $"{EntryJson.Replace("te-1", "te-2").Replace("\"Name\":\"Acme Portal\"", "\"Name\":\"Acme Portal\",\"Color\":\"red;background:url(x)\"")}]"));
+
+        var entries = await gw.SearchEntriesAsync("u-1", new DateOnly(2026, 10, 26), new DateOnly(2026, 11, 1), default);
+
+        Assert.Equal(["#be2edd", null], entries.Select(e => e.ProjectColor));
+        Assert.Contains("Project:Id,Name,Color", TimeEntryWithNames.ModelProperties);
+    }
+
+    [Fact]
+    public async Task User_looks_come_from_one_user_list_call()
+    {
+        var (gw, pi) = Create(Json(HttpStatusCode.OK, """
+            [{"Id":"u-1","Initials":"AT","PhotoUrl":"/Sites/Files/a/UserPhotos/b/at.jpeg",
+              "ColorSettings":{"BackgroundColor":"#17a7c9","FontColor":"#ffffff","FontIsWhite":true,"HasValue":true}},
+             {"Id":"u-2","Initials":"JD","PhotoUrl":"","ColorSettings":{}}]
+            """));
+
+        var looks = await gw.GetUserLooksAsync(["u-1", "u-2"], default);
+
+        Assert.Equal(new PiLook("AT", "#17a7c9", "#ffffff", "/Sites/Files/a/UserPhotos/b/at.jpeg"), looks["u-1"]);
+        Assert.Equal(new PiLook("JD", null, null, null), looks["u-2"]);
+        var url = Uri.UnescapeDataString(Assert.Single(pi.Requests).Uri.PathAndQuery);
+        Assert.StartsWith("/api/user/list?ids=u-1,u-2", url);
+        Assert.Contains("modelProperties=Id,Initials,ColorSettings,PhotoUrl", url);
+    }
+
+    [Fact]
+    public async Task A_photo_is_inlined_as_a_data_uri_from_the_pi_site()
+    {
+        var (gw, pi) = Create(Image([1, 2, 3], "image/jpeg"));
+
+        var photo = await gw.GetPhotoAsync("/Sites/Files/a/UserPhotos/b/at.jpeg", default);
+
+        Assert.Equal("data:image/jpeg;base64,AQID", photo);
+        Assert.Equal("https://pi.test/Sites/Files/a/UserPhotos/b/at.jpeg", Assert.Single(pi.Requests).Uri.ToString());
+    }
+
+    [Theory]
+    [InlineData("https://elsewhere.test/a.jpeg")]
+    [InlineData("//elsewhere.test/a.jpeg")]
+    [InlineData("/Sites/../secret.jpeg")]
+    [InlineData("Sites/Files/a.jpeg")]
+    public async Task A_photo_url_that_leaves_the_pi_site_is_never_fetched(string url)
+    {
+        var (gw, pi) = Create();
+
+        Assert.Null(await gw.GetPhotoAsync(url, default));
+        Assert.Empty(pi.Requests);
+    }
+
+    [Fact]
+    public async Task A_photo_that_is_not_an_image_or_too_large_is_left_out()
+    {
+        var (gw, _) = Create(Image([1], "text/html"), Image([1], "image/svg+xml"),
+            Image(new byte[ProjectInsightTimeEntryGateway.MaxPhotoBytes + 1], "image/png"), Json(HttpStatusCode.NotFound, "{}"));
+
+        Assert.Null(await gw.GetPhotoAsync("/a.jpeg", default));
+        Assert.Null(await gw.GetPhotoAsync("/b.svg", default));
+        Assert.Null(await gw.GetPhotoAsync("/c.png", default));
+        Assert.Null(await gw.GetPhotoAsync("/d.jpeg", default));
+    }
+
+    private static HttpResponseMessage Image(byte[] bytes, string type)
+    {
+        var content = new ByteArrayContent(bytes);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(type);
+        return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+    }
 }

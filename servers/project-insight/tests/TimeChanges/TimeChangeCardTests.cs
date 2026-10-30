@@ -74,6 +74,16 @@ public class TimeChangeCardTests
     }
 
     [Fact]
+    public void Card_draws_pi_avatars_and_project_colours_and_checks_them_first()
+    {
+        Assert.Contains("w.avatar", Html);
+        Assert.Contains("look.photo && PHOTO.test(look.photo)", Html);
+        Assert.Contains("HEX.test(look.background)", Html);
+        Assert.Contains("swatch(v.projectColor)", Html);
+        Assert.Contains("swatch(c.projectColor)", Html);
+    }
+
+    [Fact]
     public void Card_treats_an_unknown_outcome_like_a_failed_reversal()
     {
         Assert.Contains("d.outcomeUnknown", Html);

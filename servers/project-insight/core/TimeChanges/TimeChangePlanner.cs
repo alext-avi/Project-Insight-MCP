@@ -110,6 +110,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             Rows = rows
         };
         BuildViews(draft, weeks, caller);
+        await AddAvatarsAsync(draft, ct);
 
         await store.CreateAsync(draft, ct);
         try
@@ -144,7 +145,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                 After = new EntryValues
                 {
                     TaskId = task.Value.Id, TaskName = task.Value.Name, ProjectId = task.Value.ProjectId,
-                    ProjectName = task.Value.ProjectName, Date = date, Hours = hours,
+                    ProjectName = task.Value.ProjectName, ProjectColor = task.Value.ProjectColor, Date = date, Hours = hours,
                     Billable = c.Billable ?? false, Description = Blank(c.Description)
                 }
             };
@@ -170,7 +171,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         var before = new EntryValues
         {
             TaskId = entry.TaskId, TaskName = entry.TaskName, ProjectId = entry.ProjectId, ProjectName = entry.ProjectName,
-            Date = entry.Date, Hours = entry.Hours, Billable = entry.Billable, Description = Blank(entry.Description)
+            ProjectColor = entry.ProjectColor, Date = entry.Date, Hours = entry.Hours, Billable = entry.Billable, Description = Blank(entry.Description)
         };
         if (action == ChangeAction.Delete)
             return new DraftRow { Index = i, Action = action, UserId = owner.Id, UserName = owner.Name, TimeEntryId = id, Before = before };
@@ -194,6 +195,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             after.TaskName = task.Value.Name;
             after.ProjectId = task.Value.ProjectId;
             after.ProjectName = task.Value.ProjectName;
+            after.ProjectColor = task.Value.ProjectColor;
         }
         if (Same(before, after))
         {
@@ -202,6 +204,35 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             throw Invalid(n, $"this update changes nothing on time entry {id}.");
         }
         return new DraftRow { Index = i, Action = action, UserId = owner.Id, UserName = owner.Name, TimeEntryId = id, Before = before, After = after };
+    }
+
+    /// <summary>
+    /// PI's own look for each person on the card: their photo, else their initials and colours.
+    /// Cosmetic, so a failure here leaves the card on its fallback initials and never fails the plan.
+    /// </summary>
+    private async Task AddAvatarsAsync(Draft draft, CancellationToken ct)
+    {
+        try
+        {
+            var looks = await pi.GetUserLooksAsync(draft.Weeks.Select(w => w.UserId).Distinct().ToList(), ct);
+            var photos = new Dictionary<string, string?>();
+            foreach (var url in looks.Values.Select(l => l.PhotoUrl).OfType<string>().Distinct())
+                photos[url] = await pi.GetPhotoAsync(url, ct);
+            foreach (var week in draft.Weeks)
+            {
+                if (!looks.TryGetValue(week.UserId, out var look))
+                    continue;
+                week.Avatar = new UserAvatar
+                {
+                    Initials = look.Initials, Background = look.Background, Foreground = look.Foreground,
+                    Photo = look.PhotoUrl is { } url ? photos[url] : null
+                };
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Leave the avatars out.
+        }
     }
 
     private async Task<List<WeekData>> LoadWeeksAsync(List<DraftRow> rows, CancellationToken ct)
@@ -257,7 +288,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                     RowIndexes = here.Select(r => r.Index).ToList(),
                     Context = existing.Where(e => !touchedIds.Contains(e.Id)).Select(e => new ContextEntry
                     {
-                        TimeEntryId = e.Id, ProjectName = e.ProjectName, TaskName = e.TaskName,
+                        TimeEntryId = e.Id, ProjectName = e.ProjectName, ProjectColor = e.ProjectColor, TaskName = e.TaskName,
                         Hours = e.Hours, Billable = e.Billable, Description = e.Description
                     }).ToList()
                 });

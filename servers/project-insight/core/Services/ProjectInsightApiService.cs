@@ -2654,6 +2654,47 @@ public class ProjectInsightApiService
             .ToList();
     }
 
+    /// <summary>Image types a user photo may have. SVG is left out: it can carry script.</summary>
+    private static readonly HashSet<string> PhotoTypes = new(StringComparer.OrdinalIgnoreCase)
+        { "image/jpeg", "image/png", "image/gif", "image/webp" };
+
+    /// <summary>
+    /// Fetch an image PI serves from its own site, such as a user's PhotoUrl ("/Sites/Files/…").
+    /// Only site-relative paths are fetched, so a stored URL can't send the request (or the token)
+    /// anywhere else. Returns null when it's missing, not a photo type, or larger than maxBytes.
+    /// </summary>
+    public async Task<(byte[] Bytes, string ContentType)?> GetSiteImageAsync(string path, int maxBytes, CancellationToken cancellationToken = default)
+    {
+        if (!path.StartsWith('/') || path.StartsWith("//") || path.Contains('\\') || path.Contains(".."))
+            return null;
+        try
+        {
+            using var request = CreateRequest(HttpMethod.Get, path);
+            request.Headers.Accept.ParseAdd("image/*");
+            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            var type = response.Content.Headers.ContentType?.MediaType;
+            if (!response.IsSuccessStatusCode || type is null || !PhotoTypes.Contains(type)
+                || response.Content.Headers.ContentLength > maxBytes)
+                return null;
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var buffer = new MemoryStream();
+            var chunk = new byte[16 * 1024];
+            int read;
+            while ((read = await stream.ReadAsync(chunk, cancellationToken)) > 0)
+            {
+                if (buffer.Length + read > maxBytes)
+                    return null;
+                buffer.Write(chunk, 0, read);
+            }
+            return (buffer.ToArray(), type.ToLowerInvariant());
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "Could not fetch site image");
+            return null;
+        }
+    }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,

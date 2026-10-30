@@ -5,9 +5,11 @@ namespace ProjectInsightMCP.TimeChanges;
 
 public sealed record PiUser(string Id, string Name);
 public sealed record PiNamed(string Id, string Name);
-public sealed record PiTask(string Id, string Name, string ProjectId, string ProjectName);
+public sealed record PiTask(string Id, string Name, string ProjectId, string ProjectName, string? ProjectColor = null);
 public sealed record PiEntry(string Id, string UserId, DateOnly Date, decimal Hours, bool Billable, string? Description,
-    string TaskId, string TaskName, string ProjectId, string ProjectName, string? TimeSheetId);
+    string TaskId, string TaskName, string ProjectId, string ProjectName, string? TimeSheetId, string? ProjectColor = null);
+/// <summary>How PI draws a user: initials on their colours, or their photo (a site-relative path) when they have one.</summary>
+public sealed record PiLook(string? Initials, string? Background, string? Foreground, string? PhotoUrl);
 public sealed record PiTimeSheet(string Id, DateOnly Start, DateOnly End, bool Submitted, bool Approved, bool Locked, string? Url);
 public sealed record EntryWrite(string UserId, string TaskId, DateOnly Date, decimal Hours, bool Billable, string? Description, string? TimeSheetId);
 /// <summary>
@@ -31,6 +33,10 @@ public interface ITimeEntryGateway
     Task<PiWrite> CreateEntryAsync(EntryWrite entry, CancellationToken ct);
     Task<PiWrite> UpdateEntryAsync(string timeEntryId, EntryWrite values, CancellationToken ct);
     Task<PiWrite> DeleteEntryAsync(string timeEntryId, CancellationToken ct);
+    /// <summary>Avatars for the card, keyed by user id. Users PI doesn't return are left out.</summary>
+    Task<IReadOnlyDictionary<string, PiLook>> GetUserLooksAsync(IReadOnlyCollection<string> userIds, CancellationToken ct);
+    /// <summary>A user photo as a data: URI the card can show, or null.</summary>
+    Task<string?> GetPhotoAsync(string photoUrl, CancellationToken ct);
 }
 
 public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api, ApiTokenAccessor token) : ITimeEntryGateway
@@ -103,11 +109,11 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
             return MissingOrThrow<PiTask>(task.Message, task.Errors, "read the task");
         if (task.Data?.Id is null || task.Data.ProjectId is null)
             return null;
-        var project = await api.GetProjectAsync(task.Data.ProjectId, "Id,Name", ct);
+        var project = await api.GetProjectAsync(task.Data.ProjectId, "Id,Name,Color", ct);
         if (!project.Success && !IsNotFound(project.Message, project.Errors))
             throw Unavailable("read the task's project", project.Message, project.Errors);
         return new PiTask(task.Data.Id, task.Data.Name ?? task.Data.Id, task.Data.ProjectId,
-            project.Data?.Name ?? task.Data.ProjectId);
+            project.Data?.Name ?? task.Data.ProjectId, Colour(project.Data?.Color));
     }
 
     public async Task<PiEntry?> GetEntryAsync(string timeEntryId, CancellationToken ct)
@@ -145,6 +151,33 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
                 s.IsSubmitted == true, s.IsApproved == true, s.IsLocked == true, s.UrlFull))
             .ToList();
     }
+
+    public async Task<IReadOnlyDictionary<string, PiLook>> GetUserLooksAsync(IReadOnlyCollection<string> userIds, CancellationToken ct)
+    {
+        if (userIds.Count == 0)
+            return new Dictionary<string, PiLook>();
+        var response = await api.GetUsersAsync(string.Join(",", userIds), "Id,Initials,ColorSettings,PhotoUrl", ct);
+        if (!response.Success)
+            throw Unavailable("read users' avatars", response.Message, response.Errors);
+        return (response.Data ?? new()).Where(u => u.Id is not null).ToDictionary(u => u.Id!, u => new PiLook(
+            string.IsNullOrWhiteSpace(u.Initials) ? null : u.Initials.Trim(),
+            Colour(u.ColorSettings?.BackgroundColor), Colour(u.ColorSettings?.FontColor),
+            string.IsNullOrWhiteSpace(u.PhotoUrl) ? null : u.PhotoUrl.Trim()));
+    }
+
+    /// <summary>Largest photo embedded in a draft. PI's are a few KB.</summary>
+    public const int MaxPhotoBytes = 200 * 1024;
+
+    public async Task<string?> GetPhotoAsync(string photoUrl, CancellationToken ct)
+        => await api.GetSiteImageAsync(photoUrl, MaxPhotoBytes, ct) is { } image
+            ? $"data:{image.ContentType};base64,{Convert.ToBase64String(image.Bytes)}"
+            : null;
+
+    /// <summary>A PI colour as "#rrggbb", or null for anything else (the card puts it in a style).</summary>
+    public static string? Colour(string? value)
+        => value is { } v && System.Text.RegularExpressions.Regex.IsMatch(v.Trim(), "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+            ? v.Trim().ToLowerInvariant()
+            : null;
 
     public Task<PiWrite> CreateEntryAsync(EntryWrite entry, CancellationToken ct) => SaveAsync(null, entry, ct);
 
@@ -191,7 +224,7 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
             return null;
         return new PiEntry(e.Id, e.UserId, DateOnly.FromDateTime(e.Date.Value), e.ActualHours ?? 0m, e.IsBillable == true,
             e.Description, e.TaskId, e.TaskRef?.Name ?? e.TaskId, e.ProjectId ?? e.ProjectRef?.Id ?? "",
-            e.ProjectRef?.Name ?? e.ProjectId ?? "", e.TimeSheetId);
+            e.ProjectRef?.Name ?? e.ProjectId ?? "", e.TimeSheetId, Colour(e.ProjectRef?.Color));
     }
 
     private static TimeChangeException Unavailable(string what, string? message, List<string>? errors)

@@ -58,6 +58,8 @@
   .who { color: var(--acc); font-weight: 600; }
   .avatar { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%;
     color: #ffffff; font-size: 10px; font-weight: 700; margin-right: 6px; vertical-align: middle; }
+  img.avatar { object-fit: cover; }
+  .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: 1px; }
   .whead { display: grid; grid-template-columns: 1fr auto 52px; gap: 8px; align-items: center; margin-bottom: 4px; }
   .other { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: var(--otherbg); color: var(--otherfg); margin-left: 6px; }
   .link { font-size: 11px; color: var(--acc); margin-left: 6px; text-decoration: none; cursor: pointer; }
@@ -378,7 +380,7 @@
 
   function week(d, w) {
     const name = w.isCaller ? "You" : w.userName;
-    const title = el("span", "", avatar(w.userName || name, w.userId), el("span", "who", name),
+    const title = el("span", "", avatar(w), el("span", "who", name),
       w.isCaller ? null : el("span", "other", "someone else’s time"),
       " · week of " + day(w.start, { day: "numeric", month: "short" }));
     if (w.timesheetUrl) {
@@ -394,17 +396,41 @@
     return box;
   }
 
-  // Initials in a coloured circle, like PI's people lists. The colour is stable per user.
+  // The person as PI draws them: their photo, else their initials on their PI colours. Without
+  // those (an older draft, or PI didn't answer) the colour is picked from the user id instead.
   const AVATAR_COLOURS = ["#f26b1d", "#16a085", "#8e44ad", "#1b75bb", "#e5a50a", "#c0392b", "#27ae60", "#d35400", "#0097a7", "#d63384"];
-  function avatar(name, key) {
-    const words = String(name || "?").trim().split(/\s+/);
-    const initials = (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : "")).toUpperCase();
-    let h = 0;
-    for (const ch of String(key || name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
+  const PHOTO = /^data:image\/(jpeg|png|gif|webp);base64,[A-Za-z0-9+\/=]+$/;
+  function avatar(w) {
+    const look = w.avatar || {};
+    if (look.photo && PHOTO.test(look.photo)) {
+      const img = el("img", "avatar");
+      img.src = look.photo;
+      img.alt = "";
+      return img;
+    }
+    const words = String(w.userName || "?").trim().split(/\s+/);
+    const initials = look.initials || (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : "")).toUpperCase();
     const a = el("span", "avatar", initials);
-    a.style.background = AVATAR_COLOURS[h % AVATAR_COLOURS.length];
+    if (look.background && HEX.test(look.background)) {
+      a.style.background = look.background;
+      if (look.foreground && HEX.test(look.foreground)) a.style.color = look.foreground;
+    } else {
+      let h = 0;
+      for (const ch of String(w.userId || w.userName)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      a.style.background = AVATAR_COLOURS[h % AVATAR_COLOURS.length];
+    }
     a.setAttribute("aria-hidden", "true");
     return a;
+  }
+
+  // The project's PI colour, as a small mark before its name.
+  function swatch(colour) {
+    if (!colour || !HEX.test(colour)) return null;
+    const s = el("span", "swatch");
+    s.style.background = colour;
+    s.setAttribute("aria-hidden", "true");
+    return s;
   }
 
   function dayBlock(d, w, dv) {
@@ -439,7 +465,7 @@
   function contextRow(c) {
     return el("div", "row ctx",
       el("span", ""),
-      el("span", "task", el("span", "label", c.projectName + " › " + c.taskName), c.billable ? el("span", "bill", "billable") : null,
+      el("span", "task", swatch(c.projectColor), el("span", "label", c.projectName + " › " + c.taskName), c.billable ? el("span", "bill", "billable") : null,
         c.description ? el("small", "", c.description) : null),
       el("span", "hrs", hrs(c.hours)),
       el("span", ""));
@@ -457,7 +483,7 @@
     const to = removing ? "—" : hrs(r.after.hours);
     const diff = (removing ? 0 : r.after.hours) - (adding ? 0 : r.before.hours);
     const task = el("span", "task",
-      el("span", "label", v.projectName + " › " + v.taskName),
+      swatch(v.projectColor), el("span", "label", v.projectName + " › " + v.taskName),
       v.billable ? el("span", "bill", "billable") : null,
       v.description ? el("small", "", v.description) : null,
       r.action === "update" && r.before.taskId !== r.after.taskId && !removing

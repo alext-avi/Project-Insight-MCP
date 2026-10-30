@@ -280,6 +280,64 @@ public sealed class TimeChangePlannerTests : IDisposable
     }
 
     [Fact]
+    public async Task Each_week_carries_the_persons_pi_avatar_with_their_photo_inlined()
+    {
+        _pi.Looks["u-1"] = new PiLook("AE", "#17a7c9", "#ffffff", "/Sites/Files/x/UserPhotos/y/ae.jpeg");
+        _pi.Looks["u-2"] = new PiLook("JD", "#be2edd", "#ffffff", null);
+        _pi.Photos["/Sites/Files/x/UserPhotos/y/ae.jpeg"] = "data:image/jpeg;base64,AAAA";
+
+        var draft = (await _planner.PlanAsync("Log Tuesday",
+            [TypicalChanges()[0], new() { Action = "create", User = "Jane Doe", Date = "2026-10-27", Hours = 3m, TaskId = "t-4" }], default)).Draft!;
+
+        var alex = draft.Weeks.Single(w => w.UserId == "u-1").Avatar!;
+        Assert.Equal(("AE", "#17a7c9", "#ffffff", "data:image/jpeg;base64,AAAA"), (alex.Initials, alex.Background, alex.Foreground, alex.Photo));
+        var jane = draft.Weeks.Single(w => w.UserId == "u-2").Avatar!;
+        Assert.Equal(("JD", "#be2edd", null), (jane.Initials, jane.Background, jane.Photo));
+    }
+
+    [Fact]
+    public async Task A_failed_avatar_lookup_still_plans_the_draft_without_avatars()
+    {
+        _pi.LooksThrow = new TimeChangeException("pi_unavailable", "API returned InternalServerError");
+
+        var draft = (await _planner.PlanAsync("Log Tuesday", TypicalChanges(), default)).Draft!;
+
+        Assert.All(draft.Weeks, w => Assert.Null(w.Avatar));
+    }
+
+    [Fact]
+    public async Task Project_colours_follow_rows_and_context_entries()
+    {
+        var pi = new FakeGateway();
+        pi.ProjectColors["p-1"] = "#be2edd";
+        pi.Add("te-1", "u-1", Mon, 1.0m, "t-2");
+        pi.Add("te-3", "u-1", Mon, 0.5m, "t-6", billable: false);
+        var planner = new TimeChangePlanner(pi, _store, _time);
+
+        var draft = (await planner.PlanAsync("Fix Monday",
+            [new() { Action = "update", TimeEntryId = "te-1", Hours = 1.5m },
+             new() { Action = "update", TimeEntryId = "te-3", TaskId = "t-1" }], default)).Draft!;
+
+        Assert.Equal(("#be2edd", "#be2edd"), (draft.Rows[0].Before!.ProjectColor, draft.Rows[0].After!.ProjectColor));
+        Assert.Equal((null, "#be2edd"), (draft.Rows[1].Before!.ProjectColor, draft.Rows[1].After!.ProjectColor));
+    }
+
+    [Fact]
+    public async Task Context_entries_carry_their_project_colour()
+    {
+        var pi = new FakeGateway();
+        pi.ProjectColors["p-1"] = "#be2edd";
+        pi.Add("te-2", "u-1", Mon, 5.0m, "t-1");
+        pi.Add("te-3", "u-1", Mon, 0.5m, "t-6", billable: false);
+        var planner = new TimeChangePlanner(pi, _store, _time);
+
+        var draft = (await planner.PlanAsync("Monday", [new() { Action = "update", TimeEntryId = "te-3", Hours = 1m }], default)).Draft!;
+
+        var context = draft.Weeks.Single().Days.Single(d => d.Date == Mon).Context;
+        Assert.Equal("#be2edd", Assert.Single(context).ProjectColor);
+    }
+
+    [Fact]
     public async Task Undoing_an_undo_is_a_redo_of_the_original_changes()
     {
         var planned = (await _planner.PlanAsync("Log Tuesday", [TypicalChanges()[0]], default)).Draft!;
