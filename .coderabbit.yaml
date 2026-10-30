@@ -2,7 +2,7 @@
 language: en-US
 
 reviews:
-    profile: chill
+    profile: assertive
     request_changes_workflow: false
     high_level_summary: true
     poem: false
@@ -10,7 +10,16 @@ reviews:
     auto_review:
         enabled: true
         drafts: false
+    tools:
+        gitleaks:
+            enabled: true
     path_instructions:
+        - path: "**"
+          instructions: >-
+              This repo is public. Treat any credential as a blocking issue: API tokens, JWTs,
+              bearer headers, passwords, connection strings, private keys, client secrets, and
+              Azure tenant, subscription or client IDs, in code, config, docs, tests, fixtures or
+              comments. Placeholders such as YOUR_TOKEN are fine; real-looking values are not.
         - path: "servers/project-insight/core/**"
           instructions: >-
               Tool names, descriptions, input schemas and result text are a contract with MCP
