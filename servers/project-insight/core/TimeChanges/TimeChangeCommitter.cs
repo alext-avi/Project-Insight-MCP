@@ -24,7 +24,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
                 SetStatus(d, DraftStatus.Failed, now);
                 d.OutcomeUnknown = true;
                 d.Error = "The commit was interrupted, so the outcome is unknown. Check these days in Project Insight: "
-                          + string.Join(", ", ChangedDayLabels(d)) + ".";
+                          + string.Join(", ", ChangedDayLabels(d, Weeks.Today(time))) + ".";
             }, ct) ?? await LoadAsync(caller, draft.Id, ct);
         return draft;
     }
@@ -106,7 +106,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
                     done.SavedId = reversed.SavedId; // recreated under a new id
             }
             var error = unknown
-                ? UnansweredError(claimed, row, result.Error)
+                ? UnansweredError(claimed, row, result.Error, Weeks.Today(time))
                 : $"Project Insight rejected change {i + 1} of {claimed.Rows.Count}: {result.Error}";
             return await FinishAsync(caller, claimed, d =>
             {
@@ -148,20 +148,20 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
     }
 
     /// <summary>"You · Tue 27 Oct" for each day the draft changes, in date order.</summary>
-    public static IEnumerable<string> ChangedDayLabels(Draft d)
+    public static IEnumerable<string> ChangedDayLabels(Draft d, DateOnly today)
         => d.DayFingerprints.Keys.Order(StringComparer.Ordinal).Select(key =>
         {
             var (userId, date) = Weeks.ParseDayKey(key);
             var week = d.Weeks.FirstOrDefault(w => w.UserId == userId);
-            return Weeks.DayLabel(week is null ? userId : week.IsCaller ? "You" : week.UserName, date);
+            return Weeks.DayLabel(week is null ? userId : week.IsCaller ? "You" : week.UserName, date, today);
         });
 
-    private static string UnansweredError(Draft draft, DraftRow row, string? detail)
+    private static string UnansweredError(Draft draft, DraftRow row, string? detail, DateOnly today)
     {
         var week = draft.Weeks.FirstOrDefault(w => w.UserId == row.UserId);
         var who = week is { IsCaller: true } ? "You" : row.UserName;
         var days = new[] { row.Before?.Date, row.After?.Date }.OfType<DateOnly>().Distinct().Order()
-            .Select(date => Weeks.DayLabel(who, date)).ToList();
+            .Select(date => Weeks.DayLabel(who, date, today)).ToList();
         return $"Project Insight didn't answer for change {row.Index + 1} ({string.Join(", ", days)}), so it may have been saved. " +
                $"Check {(days.Count == 1 ? "that day" : "those days")} in Project Insight." +
                (string.IsNullOrWhiteSpace(detail) ? "" : $" ({detail})");
@@ -170,6 +170,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
     private async Task<List<string>> FindStaleDaysAsync(Draft draft, CancellationToken ct)
     {
         var stale = new List<string>();
+        var today = Weeks.Today(time);
         foreach (var week in draft.Weeks)
         {
             var days = draft.DayFingerprints.Keys
@@ -186,7 +187,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
             {
                 var now = Fingerprint.Compute(entries.Where(e => e.Date == date), Weeks.Covering(sheets, date));
                 if (now != draft.DayFingerprints[key])
-                    stale.Add(Weeks.DayLabel(week.IsCaller ? "You" : week.UserName, date));
+                    stale.Add(Weeks.DayLabel(week.IsCaller ? "You" : week.UserName, date, today));
             }
         }
         return stale;

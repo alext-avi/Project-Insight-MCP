@@ -46,6 +46,8 @@ public static class WarningCode
     public const string NotQuarterHour = "not_quarter_hour";
     public const string LikelyDuplicate = "likely_duplicate";
     public const string OtherPerson = "other_person";
+    /// <summary>More than a month back or a week ahead: likely a wrong date or year.</summary>
+    public const string FarDate = "far_date";
 }
 
 /// <summary>One requested change, as the agent sends it to plan_time_changes.</summary>

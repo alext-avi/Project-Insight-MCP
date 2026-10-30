@@ -259,10 +259,12 @@
     return (x > 0 ? "+" : x < 0 ? "−" : "±") + hrs(Math.abs(x));
   }
 
-  // Dates arrive as yyyy-MM-dd; build them in local time so they never shift a day.
+  // Dates arrive as yyyy-MM-dd; build them in local time so they never shift a day. A date outside
+  // this year shows its year, so a wrong year can't pass unnoticed.
   function day(iso, options) {
     const [y, m, d] = String(iso).split("-").map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString(undefined, options);
+    const withYear = y !== new Date().getFullYear() ? Object.assign({}, options, { year: "numeric" }) : options;
+    return new Date(y, m - 1, d).toLocaleDateString(undefined, withYear);
   }
 
   function when(iso) {

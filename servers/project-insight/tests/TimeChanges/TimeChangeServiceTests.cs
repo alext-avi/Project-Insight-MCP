@@ -42,6 +42,15 @@ public sealed class TimeChangeServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Text_shows_the_year_of_a_date_outside_this_year()
+    {
+        var r = await _service.PlanAsync("Log", [new() { Action = "create", Date = "2025-10-27", Hours = 1m, TaskId = "t-5" }], default);
+
+        Assert.Contains("1. create · You · Mon 27 Oct 2025 · Internal › Staff meeting · +1h", r.Text);
+        Assert.Contains("[warning: Date is 365 days ago (Mon 27 Oct 2025)]", r.Text);
+    }
+
+    [Fact]
     public async Task Clarification_is_not_an_error_and_lists_candidates()
     {
         var r = await _service.PlanAsync("Log",
@@ -192,7 +201,7 @@ public sealed class TimeChangeServiceTests : IDisposable
             ProposedAt = failed.ProposedAt, ExpiresAt = failed.ExpiresAt, Rows = [], Weeks = [], Totals = failed.Totals, Error = null
         }, Drafts.T0) };
 
-        var first = TimeChangeText.For(view).Split('\n')[0];
+        var first = TimeChangeText.For(view, DateOnly.FromDateTime(Drafts.T0.UtcDateTime)).Split('\n')[0];
 
         Assert.DoesNotContain(".  ", first);
         Assert.False(first.EndsWith(' '));

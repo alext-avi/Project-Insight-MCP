@@ -91,4 +91,15 @@ public class TimeChangeCardTests
         Assert.Contains("r.outcome === \"unknown\"", Html);
         Assert.Contains(".st-unknown", Html);
     }
+
+    [Fact]
+    public void Card_shows_the_year_of_a_date_outside_this_year()
+    {
+        Assert.Contains("y !== new Date().getFullYear()", Html);
+        Assert.Contains("{ year: \"numeric\" }", Html);
+        // Every date on the card goes through day(): day lines, "week of", "moved to/from".
+        Assert.Contains("\" · week of \" + day(", Html);
+        Assert.Contains("\"moved to \" + day(", Html);
+        Assert.Contains("\"moved from \" + day(", Html);
+    }
 }

@@ -400,4 +400,71 @@ public sealed class TimeChangePlannerTests : IDisposable
             _planner.PlanAsync("x", [new() { Action = "update", TimeEntryId = "te-1", Hours = 0m }], default));
         Assert.Contains("hours must be more than 0", ex.Message);
     }
+
+    [Theory]
+    [InlineData("2025-10-27", "Date is 365 days ago (Mon 27 Oct 2025)")]
+    [InlineData("2026-09-25", "Date is 32 days ago (Fri 25 Sep 2026)")]
+    [InlineData("2026-11-04", "Date is 8 days in the future (Wed 4 Nov 2026)")]
+    [InlineData("2026-09-26", null)]
+    [InlineData("2026-11-03", null)]
+    public async Task A_date_more_than_a_month_back_or_a_week_ahead_warns(string date, string? expected)
+    {
+        var draft = (await _planner.PlanAsync("Log", [new() { Action = "create", Date = date, Hours = 1m, TaskId = "t-5" }], default)).Draft!;
+
+        Assert.Equal(expected is null ? [] : new[] { expected },
+            draft.Rows[0].Warnings.Where(w => w.Code == WarningCode.FarDate).Select(w => w.Message));
+    }
+
+    [Fact]
+    public async Task Deleting_an_old_entry_warns_on_its_date_but_an_undo_never_does()
+    {
+        _pi.Add("te-old", "u-1", new DateOnly(2025, 10, 28), 2m, "t-5");
+        var delete = (await _planner.PlanAsync("Tidy", [new() { Action = "delete", TimeEntryId = "te-old" }], default)).Draft!;
+        Assert.Contains(delete.Rows[0].Warnings, w => w.Code == WarningCode.FarDate && w.Message.Contains("Tue 28 Oct 2025"));
+
+        _pi.Entries.RemoveAll(e => e.Id == "te-old");
+        delete.Status = DraftStatus.Committed;
+        delete.CommittedAt = Drafts.T0;
+        var undo = (await _planner.PlanUndoAsync(delete, default)).Draft!;
+
+        Assert.Equal(["create"], undo.Rows.Select(r => r.Action));
+        Assert.DoesNotContain(undo.Rows[0].Warnings, w => w.Code == WarningCode.FarDate);
+    }
+
+    [Fact]
+    public async Task A_made_up_week_stops_where_a_real_timesheet_starts_and_that_timesheet_keeps_its_dates()
+    {
+        // Two-weekly sheets until 18 Oct, nothing for 19-25 Oct, then a weekly sheet for 26 Oct-1 Nov.
+        _pi.Sheets["u-1"] =
+        [
+            new PiTimeSheet("ts-1", new DateOnly(2026, 10, 5), new DateOnly(2026, 10, 18), true, false, false, null),
+            new PiTimeSheet("ts-2", Mon, new DateOnly(2026, 11, 1), true, false, false, "https://pi.test/ts-2")
+        ];
+
+        var draft = (await _planner.PlanAsync("Log",
+        [
+            new() { Action = "create", Date = "2026-10-21", Hours = 1m, TaskId = "t-5" },
+            new() { Action = "create", Date = "2026-10-27", Hours = 1m, TaskId = "t-5" }
+        ], default)).Draft!;
+
+        Assert.Equal([(new DateOnly(2026, 10, 19), new DateOnly(2026, 10, 25), (string?)null), (Mon, new DateOnly(2026, 11, 1), "ts-2")],
+            draft.Weeks.Select(w => (w.Start, w.End, w.TimesheetId)));
+        Assert.DoesNotContain(draft.Rows[0].Warnings, w => w.Code == WarningCode.TimesheetSubmitted);
+        Assert.Contains(draft.Rows[1].Warnings, w => w.Code == WarningCode.TimesheetSubmitted);
+    }
+
+    [Fact]
+    public async Task A_made_up_week_stops_before_a_later_timesheet_even_when_no_change_falls_in_it()
+    {
+        _pi.Sheets["u-1"] =
+        [
+            new PiTimeSheet("ts-1", new DateOnly(2026, 10, 5), new DateOnly(2026, 10, 18), true, false, false, null),
+            new PiTimeSheet("ts-2", Mon, new DateOnly(2026, 11, 1), true, false, false, null)
+        ];
+
+        var draft = (await _planner.PlanAsync("Log", [new() { Action = "create", Date = "2026-10-21", Hours = 1m, TaskId = "t-5" }], default)).Draft!;
+
+        var week = Assert.Single(draft.Weeks);
+        Assert.Equal((new DateOnly(2026, 10, 19), new DateOnly(2026, 10, 25)), (week.Start, week.End));
+    }
 }

@@ -109,7 +109,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             ConfirmTokenHash = DraftIds.Hash(token),
             Rows = rows
         };
-        BuildViews(draft, weeks, caller);
+        BuildViews(draft, weeks, caller, Weeks.Today(time));
         await AddAvatarsAsync(draft, ct);
 
         await store.CreateAsync(draft, ct);
@@ -238,6 +238,9 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
     /// <summary>How far back to look for a timesheet to copy the period shape from.</summary>
     public const int PeriodLookbackDays = 26 * 7;
 
+    /// <summary>The longest period <see cref="Weeks.PeriodLike"/> makes up (two weeks).</summary>
+    private const int MaxPeriodDays = 14;
+
     private async Task<List<WeekData>> LoadWeeksAsync(List<DraftRow> rows, CancellationToken ct)
     {
         var weeks = new List<WeekData>();
@@ -248,19 +251,22 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             .ToList();
         // One timesheet read per person: the periods covering their dates, plus earlier ones to take the
         // period shape from when no timesheet exists yet for a date (PI creates them on first submit).
+        // The read also runs a period past the last date, so a made-up period can be kept clear of a real
+        // timesheet that starts after it.
         var sheetsByUser = new Dictionary<string, IReadOnlyList<PiTimeSheet>>();
         foreach (var (userId, userName, date) in touched)
         {
-            if (weeks.Any(w => w.Contains(userId, date)))
-                continue;
             if (!sheetsByUser.TryGetValue(userId, out var sheets))
             {
                 var dates = touched.Where(t => t.UserId == userId).Select(t => t.Date).ToList();
-                sheets = await pi.SearchTimeSheetsAsync(userId, dates.Min().AddDays(-PeriodLookbackDays), dates.Max(), ct);
+                sheets = await pi.SearchTimeSheetsAsync(userId, dates.Min().AddDays(-PeriodLookbackDays), dates.Max().AddDays(MaxPeriodDays - 1), ct);
                 sheetsByUser[userId] = sheets;
             }
+            // A date a real timesheet covers belongs in that timesheet's week, never a made-up one.
             var sheet = Weeks.Covering(sheets, date);
-            var (start, end) = sheet is not null ? (sheet.Start, sheet.End) : Weeks.PeriodLike(Weeks.LatestFrom(sheets, date), date);
+            if (weeks.Any(w => w.Contains(userId, date) && (sheet is null || w.Sheet == sheet)))
+                continue;
+            var (start, end) = sheet is not null ? (sheet.Start, sheet.End) : Weeks.PeriodLike(Weeks.LatestFrom(sheets, date), date, sheets);
             weeks.Add(new WeekData
             {
                 User = new PiUser(userId, userName), Start = start, End = end, Sheet = sheet,
@@ -270,7 +276,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         return weeks;
     }
 
-    private static void BuildViews(Draft draft, List<WeekData> weeks, PiUser caller)
+    private static void BuildViews(Draft draft, List<WeekData> weeks, PiUser caller, DateOnly today)
     {
         var rows = draft.Rows;
         var touchedIds = rows.Select(r => r.TimeEntryId).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -312,7 +318,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             draft.Weeks.Add(view);
         }
 
-        AddWarnings(draft, weeks, caller);
+        AddWarnings(draft, weeks, caller, today);
 
         var befores = rows.Select(r => r.Before).OfType<EntryValues>().ToList();
         var afters = rows.Select(r => r.After).OfType<EntryValues>().ToList();
@@ -328,7 +334,10 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         };
     }
 
-    private static void AddWarnings(Draft draft, List<WeekData> weeks, PiUser caller)
+    /// <summary>A row dated further back or ahead than this is flagged as a likely wrong date or year.</summary>
+    public const int FarPastDays = 31, FarFutureDays = 7;
+
+    private static void AddWarnings(Draft draft, List<WeekData> weeks, PiUser caller, DateOnly today)
     {
         foreach (var row in draft.Rows)
         {
@@ -353,6 +362,16 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                 Warn(row, WarningCode.LikelyDuplicate, "Looks like a duplicate of an entry already on this day");
             if (row.UserId != caller.Id)
                 Warn(row, WarningCode.OtherPerson, $"Changes {row.UserName}'s time");
+            // An undo restores what was there, however long ago, so only new dates are checked.
+            if (draft.UndoOf is null)
+            {
+                var days = date.DayNumber - today.DayNumber;
+                var full = date.ToString("ddd d MMM yyyy", CultureInfo.InvariantCulture);
+                if (days < -FarPastDays)
+                    Warn(row, WarningCode.FarDate, $"Date is {-days} days ago ({full})");
+                else if (days > FarFutureDays)
+                    Warn(row, WarningCode.FarDate, $"Date is {days} days in the future ({full})");
+            }
         }
     }
 

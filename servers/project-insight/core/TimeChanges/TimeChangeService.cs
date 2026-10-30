@@ -106,7 +106,7 @@ public sealed class TimeChangeService(ITimeEntryGateway pi, TimeChangePlanner pl
         return FromPlan(await planner.PlanUndoAsync(receipt, ct));
     });
 
-    private static async Task<TimeChangeResponse> Run(Func<Task<TimeChangeResponse>> action)
+    private async Task<TimeChangeResponse> Run(Func<Task<TimeChangeResponse>> action)
     {
         try
         {
@@ -121,10 +121,10 @@ public sealed class TimeChangeService(ITimeEntryGateway pi, TimeChangePlanner pl
             return Error($"Something went wrong: {ex.Message}");
         }
 
-        static TimeChangeResponse Error(string message)
+        TimeChangeResponse Error(string message)
         {
             var view = new TimeChangesView { Kind = "error", Message = message };
-            return new TimeChangeResponse { View = view, Text = TimeChangeText.For(view), IsError = true };
+            return new TimeChangeResponse { View = view, Text = TimeChangeText.For(view, Weeks.Today(time)), IsError = true };
         }
     }
 
@@ -133,7 +133,7 @@ public sealed class TimeChangeService(ITimeEntryGateway pi, TimeChangePlanner pl
         if (plan.Draft is null)
         {
             var view = new TimeChangesView { Kind = "needs_clarification", Message = "No draft was created.", Clarifications = plan.Clarifications };
-            return new TimeChangeResponse { View = view, Text = TimeChangeText.For(view) };
+            return new TimeChangeResponse { View = view, Text = TimeChangeText.For(view, Weeks.Today(time)) };
         }
         var drafted = FromDraft(plan.Draft);
         return new TimeChangeResponse { View = drafted.View, Text = drafted.Text, ConfirmToken = plan.ConfirmToken };
@@ -142,6 +142,6 @@ public sealed class TimeChangeService(ITimeEntryGateway pi, TimeChangePlanner pl
     private TimeChangeResponse FromDraft(Draft draft)
     {
         var view = new TimeChangesView { Kind = "draft", Draft = DraftView.From(draft, time.GetUtcNow()) };
-        return new TimeChangeResponse { View = view, Text = TimeChangeText.For(view) };
+        return new TimeChangeResponse { View = view, Text = TimeChangeText.For(view, Weeks.Today(time)) };
     }
 }

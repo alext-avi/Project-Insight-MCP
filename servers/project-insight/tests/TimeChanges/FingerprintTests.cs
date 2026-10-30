@@ -62,13 +62,15 @@ public class FingerprintTests
         Assert.Same(sheet, Weeks.Covering([sheet], Day));
         Assert.Null(Weeks.Covering([sheet], new DateOnly(2026, 10, 31)));
         Assert.Equal("u-1|2026-10-27", Weeks.DayKey("u-1", Day));
-        Assert.Equal("Jane Doe · Tue 27 Oct", Weeks.DayLabel("Jane Doe", Day));
+        Assert.Equal("Jane Doe · Tue 27 Oct", Weeks.DayLabel("Jane Doe", Day, Day));
     }
 
     [Fact]
     public void Format_helpers_round_trip_day_keys_and_format_dates_and_hours()
     {
-        Assert.Equal("Tue 27 Oct", Weeks.ShortDate(Day));
+        Assert.Equal("Tue 27 Oct", Weeks.ShortDate(Day, Day));
+        Assert.Equal("Mon 27 Oct 2025", Weeks.ShortDate(new DateOnly(2025, 10, 27), Day));
+        Assert.Equal("Fri 1 Jan 2027", Weeks.ShortDate(new DateOnly(2027, 1, 1), Day));
         Assert.Equal(("u-1", Day), Weeks.ParseDayKey(Weeks.DayKey("u-1", Day)));
         Assert.Equal(("a|b", Day), Weeks.ParseDayKey(Weeks.DayKey("a|b", Day)));
         Assert.Equal("1.5", Weeks.FormatHours(1.50m));
@@ -108,4 +110,14 @@ public class FingerprintTests
     [Fact]
     public void With_no_timesheet_history_the_week_is_monday_to_sunday()
         => Assert.Equal((new DateOnly(2026, 10, 26), new DateOnly(2026, 11, 1)), Weeks.PeriodLike(null, new DateOnly(2026, 10, 27)));
+
+    [Fact]
+    public void A_made_up_week_is_cut_short_where_it_would_overlap_a_real_timesheet()
+    {
+        var before = new PiTimeSheet("ts-1", new DateOnly(2026, 10, 20), new DateOnly(2026, 10, 26), false, false, false, null);
+        var after = new PiTimeSheet("ts-2", new DateOnly(2026, 10, 31), new DateOnly(2026, 11, 6), false, false, false, null);
+
+        Assert.Equal((new DateOnly(2026, 10, 27), new DateOnly(2026, 10, 30)),
+            Weeks.PeriodLike(null, new DateOnly(2026, 10, 28), [before, after]));
+    }
 }

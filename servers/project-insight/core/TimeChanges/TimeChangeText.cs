@@ -8,10 +8,11 @@ namespace ProjectInsightMCP.TimeChanges;
 /// </summary>
 public static class TimeChangeText
 {
-    public static string For(TimeChangesView view) => view.Kind switch
+    /// <param name="today">The user's date, so dates in another year are shown with their year.</param>
+    public static string For(TimeChangesView view, DateOnly today) => view.Kind switch
     {
         "needs_clarification" => Clarify(view.Clarifications ?? new()),
-        "draft" when view.Draft is { } d => Draft(d),
+        "draft" when view.Draft is { } d => Draft(d, today),
         _ => view.Message ?? "Something went wrong."
     };
 
@@ -27,7 +28,7 @@ public static class TimeChangeText
         return sb.ToString();
     }
 
-    private static string Draft(DraftView d)
+    private static string Draft(DraftView d, DateOnly today)
     {
         var t = d.Totals;
         var reverseFailed = d.Rows.Where(r => r.Outcome == RowOutcome.ReverseFailed).ToList();
@@ -69,12 +70,12 @@ public static class TimeChangeText
         });
         sb.Append($"\nIntent: {d.Intent}");
         foreach (var r in d.Rows)
-            sb.Append('\n').Append(Row(r, d));
+            sb.Append('\n').Append(Row(r, d, today));
         if (mayBeChanged)
         {
             sb.Append("\nCheck in Project Insight: ");
             sb.Append(toCheck.Count > 0
-                ? string.Join("; ", toCheck.Select(r => $"change {r.Index + 1} ({Where(r, d)})"))
+                ? string.Join("; ", toCheck.Select(r => $"change {r.Index + 1} ({Where(r, d, today)})"))
                 : "the days named above");
             sb.Append(". Tell the user to check these entries in Project Insight. Don't draft these changes again " +
                       "until they have, or the time may be entered twice.");
@@ -83,16 +84,16 @@ public static class TimeChangeText
     }
 
     /// <summary>"You · Tue 27 Oct, entry te-1": the day(s) a row touches and, if known, its entry.</summary>
-    private static string Where(DraftRow r, DraftView d)
+    private static string Where(DraftRow r, DraftView d, DateOnly today)
     {
         var who = d.Weeks.Any(w => w.UserId == r.UserId && w.IsCaller) ? "You" : r.UserName;
         var days = new[] { r.Before?.Date, r.After?.Date }.OfType<DateOnly>().Distinct().Order()
-            .Select(date => Weeks.DayLabel(who, date));
+            .Select(date => Weeks.DayLabel(who, date, today));
         var entry = r.SavedId ?? r.TimeEntryId;
         return string.Join(", ", days) + (entry is null ? "" : $", entry {entry}");
     }
 
-    private static string Row(DraftRow r, DraftView d)
+    private static string Row(DraftRow r, DraftView d, DateOnly today)
     {
         var v = (r.After ?? r.Before)!;
         var who = d.Weeks.Any(w => w.UserId == r.UserId && w.IsCaller) ? "You" : r.UserName;
@@ -103,12 +104,12 @@ public static class TimeChangeText
             _ => $"{Weeks.FormatHours(r.Before!.Hours)}h → {Weeks.FormatHours(r.After!.Hours)}h"
         };
         var line = new StringBuilder(
-            $"{r.Index + 1}. {r.Action} · {who} · {Weeks.ShortDate(v.Date)} · {v.ProjectName} › {v.TaskName} · {hours}");
+            $"{r.Index + 1}. {r.Action} · {who} · {Weeks.ShortDate(v.Date, today)} · {v.ProjectName} › {v.TaskName} · {hours}");
         if (v.Billable) line.Append(" (billable)");
         if (v.Description is { } desc) line.Append($" — \"{desc}\"");
         if (r is { Action: ChangeAction.Update, Before: { } b, After: { } a })
         {
-            if (b.Date != a.Date) line.Append($"; moved from {Weeks.ShortDate(b.Date)}");
+            if (b.Date != a.Date) line.Append($"; moved from {Weeks.ShortDate(b.Date, today)}");
             if (b.TaskId != a.TaskId) line.Append($"; was {b.ProjectName} › {b.TaskName}");
         }
         foreach (var w in r.Warnings) line.Append($" [warning: {w.Message}]");
