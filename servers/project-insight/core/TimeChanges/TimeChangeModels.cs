@@ -203,6 +203,11 @@ public sealed class Draft
     /// <summary>When this draft is an undo, the commit time of the receipt it reverses.</summary>
     public DateTimeOffset? UndoOfCommittedAt { get; set; }
     public string? RevertedBy { get; set; }
+    /// <summary>
+    /// Set when the undo in <see cref="RevertedBy"/> was itself reversed by this later commit (a redo),
+    /// so this receipt's changes are in PI again.
+    /// </summary>
+    public string? RedoneBy { get; set; }
     public required string ConfirmTokenHash { get; set; }
     public bool ConfirmTokenUsed { get; set; }
     public List<DraftRow> Rows { get; set; } = new();

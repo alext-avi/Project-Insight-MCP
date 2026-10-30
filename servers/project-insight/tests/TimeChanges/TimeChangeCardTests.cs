@@ -102,4 +102,20 @@ public class TimeChangeCardTests
         Assert.Contains("\"moved to \" + day(", Html);
         Assert.Contains("\"moved from \" + day(", Html);
     }
+
+    [Fact]
+    public void Card_words_the_undo_button_by_the_receipts_kind()
+    {
+        Assert.Contains("const redo = !!d.undoOf && String(d.intent || \"\").startsWith(\"Undo: \");", Html);
+        Assert.Contains("button(redo ? \"Draft a redo\" : \"Draft an undo\"", Html);
+    }
+
+    [Fact]
+    public void Card_shows_a_redone_receipt_as_back_in_effect_with_no_button()
+    {
+        Assert.Contains("Redone · changes put back", Html);
+        Assert.Contains("Put back by a later redo; undo that one to remove them again.", Html);
+        Assert.Contains("d.status === \"committed\" && !!d.revertedBy && !d.redoneBy", Html);
+        Assert.Contains("d.status === \"committed\" && d.revertedBy && d.redoneBy", Html);
+    }
 }

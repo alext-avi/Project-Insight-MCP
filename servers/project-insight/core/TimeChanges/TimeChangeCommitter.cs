@@ -125,7 +125,8 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
         {
             try
             {
-                await store.TryTransitionAsync(caller.Id, receiptId, DraftStatus.Committed, r => r.RevertedBy = committed.Id, CancellationToken.None);
+                var reversed = await store.TryTransitionAsync(caller.Id, receiptId, DraftStatus.Committed, r => r.RevertedBy = committed.Id, CancellationToken.None);
+                await MarkRedoneAsync(caller, reversed, committed.Id);
             }
             catch (Exception)
             {
@@ -135,6 +136,22 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
             }
         }
         return committed;
+    }
+
+    /// <summary>
+    /// Reversing an undo (a redo) puts the receipt that undo reversed back in effect; further up the
+    /// chain the receipts alternate, out and back in. Receipt R1, undo U1, redo R2: R1 is redone by R2.
+    /// Then undo U2 of R2: U1 is redone by U2 and R1 is out again, so its RedoneBy is cleared.
+    /// </summary>
+    private async Task MarkRedoneAsync(PiUser caller, Draft? reversed, string commitId)
+    {
+        var inEffect = true;
+        for (var id = reversed?.UndoOf; id is not null; inEffect = !inEffect)
+        {
+            var back = inEffect;
+            id = (await store.TryTransitionAsync(caller.Id, id, DraftStatus.Committed,
+                r => r.RedoneBy = back ? commitId : null, CancellationToken.None))?.UndoOf;
+        }
     }
 
     public async Task<Draft> CancelAsync(PiUser caller, string draftId, CancellationToken ct)

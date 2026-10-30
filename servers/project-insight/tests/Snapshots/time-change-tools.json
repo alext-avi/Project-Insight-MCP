@@ -161,6 +161,12 @@
                 "null"
               ]
             },
+            "redoneBy": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "undoUntil": {
               "type": [
                 "string",
@@ -701,6 +707,12 @@
               "format": "date-time"
             },
             "revertedBy": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "redoneBy": {
               "type": [
                 "string",
                 "null"
@@ -1256,6 +1268,12 @@
                 "null"
               ]
             },
+            "redoneBy": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "undoUntil": {
               "type": [
                 "string",
@@ -1796,6 +1814,12 @@
               "format": "date-time"
             },
             "revertedBy": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "redoneBy": {
               "type": [
                 "string",
                 "null"
@@ -2347,6 +2371,12 @@
                 "null"
               ]
             },
+            "redoneBy": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "undoUntil": {
               "type": [
                 "string",
@@ -2888,6 +2918,12 @@
               "format": "date-time"
             },
             "revertedBy": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "redoneBy": {
               "type": [
                 "string",
                 "null"

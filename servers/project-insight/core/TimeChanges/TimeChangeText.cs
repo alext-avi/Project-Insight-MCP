@@ -50,7 +50,8 @@ public static class TimeChangeText
             DraftStatus.Committed =>
                 $"Committed {d.Id}: {Count(t.Changes, "change", "changes")} applied " +
                 $"({(d.Channel == CommitChannel.Agent ? "committed by the agent" : "confirmed by the user in chat")})." +
-                (d.RevertedBy is not null ? $" It has since been undone by {d.RevertedBy}."
+                (d.RevertedBy is not null ? $" It has since been undone by {d.RevertedBy}." +
+                                             (d.RedoneBy is not null ? $" Its changes were put back by {d.RedoneBy}." : "")
                  : d.UndoUntil is { } until ? $" Undo is available until {until.UtcDateTime:yyyy-MM-dd HH:mm} UTC with undo_time_changes."
                  : ""),
             DraftStatus.Stale =>

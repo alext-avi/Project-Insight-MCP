@@ -25,6 +25,8 @@ public sealed class DraftView
     /// <summary>For an undo draft: when the receipt it reverses was committed.</summary>
     public DateTimeOffset? UndoOfCommittedAt { get; init; }
     public string? RevertedBy { get; init; }
+    /// <summary>When the undo in RevertedBy was reversed in turn: the redo that put these changes back.</summary>
+    public string? RedoneBy { get; init; }
     /// <summary>Until when an undo can be drafted; null when it can't.</summary>
     public DateTimeOffset? UndoUntil { get; init; }
     public required List<DraftRow> Rows { get; init; }
@@ -48,6 +50,7 @@ public sealed class DraftView
         UndoOf = d.UndoOf,
         UndoOfCommittedAt = d.UndoOfCommittedAt,
         RevertedBy = d.RevertedBy,
+        RedoneBy = d.RedoneBy,
         UndoUntil = d.Status == DraftStatus.Committed && d.RevertedBy is null && d.CommittedAt is { } at
                     && now <= at + TimeChangeService.UndoWindow
             ? at + TimeChangeService.UndoWindow

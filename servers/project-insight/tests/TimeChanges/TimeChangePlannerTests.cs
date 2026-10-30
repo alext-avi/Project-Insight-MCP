@@ -467,4 +467,29 @@ public sealed class TimeChangePlannerTests : IDisposable
         var week = Assert.Single(draft.Weeks);
         Assert.Equal((new DateOnly(2026, 10, 19), new DateOnly(2026, 10, 25)), (week.Start, week.End));
     }
+
+    [Fact]
+    public async Task Undoing_a_redo_is_an_undo_again_never_undo_of_redo()
+    {
+        var planned = (await _planner.PlanAsync("Log Tuesday", [TypicalChanges()[0]], default)).Draft!;
+        _pi.Add("te-100", "u-1", Tue, 4m, "t-1", description: "Order sync");
+        planned.Status = DraftStatus.Committed;
+        planned.Rows[0].SavedId = "te-100";
+        planned.CommittedAt = Drafts.T0;
+        var undo = (await _planner.PlanUndoAsync(planned, default)).Draft!;
+        _pi.Entries.RemoveAll(e => e.Id == "te-100");
+        undo.Status = DraftStatus.Committed;
+        undo.CommittedAt = Drafts.T0;
+        var redo = (await _planner.PlanUndoAsync(undo, default)).Draft!;
+        _pi.Add("te-101", "u-1", Tue, 4m, "t-1", description: "Order sync");
+        redo.Status = DraftStatus.Committed;
+        redo.Rows[0].SavedId = "te-101";
+        redo.CommittedAt = Drafts.T0;
+
+        var undoAgain = (await _planner.PlanUndoAsync(redo, default)).Draft!;
+
+        Assert.Equal(("Undo: Log Tuesday", "Redo: Log Tuesday", "Undo: Log Tuesday"), (undo.Intent, redo.Intent, undoAgain.Intent));
+        Assert.Equal(redo.Id, undoAgain.UndoOf);
+        Assert.Equal([("delete", "te-101")], undoAgain.Rows.Select(r => (r.Action, r.TimeEntryId)));
+    }
 }

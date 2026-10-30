@@ -360,4 +360,29 @@ public sealed class TimeChangeCommitterTests : IDisposable
         Assert.Equal(1.0m, Entry("te-1")!.Hours);
         Assert.Contains(_pi.Entries, e => e.Date == TimeChangePlannerTests.Tue && e.TaskId == "t-1" && e.Hours == 2.0m && e.Description == "API integration");
     }
+
+    [Fact]
+    public async Task A_redo_marks_the_original_receipt_redone_and_undoing_the_redo_clears_it()
+    {
+        var (draft, _) = await Plan();
+        var r1 = await Commit(draft.Id);
+        var u1 = await Commit((await _planner.PlanUndoAsync(r1, default)).Draft!.Id);
+        var r2 = await Commit((await _planner.PlanUndoAsync(u1, default)).Draft!.Id);
+        Assert.Equal(DraftStatus.Committed, r2.Status);
+
+        var original = (await _store.GetAsync("u-1", r1.Id))!;
+        Assert.Equal((u1.Id, r2.Id), (original.RevertedBy, original.RedoneBy));
+        Assert.Equal((r2.Id, (string?)null), ((await _store.GetAsync("u-1", u1.Id))!.RevertedBy, (await _store.GetAsync("u-1", u1.Id))!.RedoneBy));
+        Assert.Equal(1.5m, Entry("te-1")!.Hours);
+        var view = DraftView.From(original, Drafts.T0);
+        Assert.Equal(r2.Id, view.RedoneBy);
+        Assert.Contains($"It has since been undone by {u1.Id}. Its changes were put back by {r2.Id}.",
+            TimeChangeText.For(new TimeChangesView { Kind = "draft", Draft = view }, new DateOnly(2026, 10, 27)));
+
+        // Undoing the redo takes the original's changes out again; the first undo is back in effect.
+        var u2 = await Commit((await _planner.PlanUndoAsync(r2, default)).Draft!.Id);
+        Assert.Null((await _store.GetAsync("u-1", r1.Id))!.RedoneBy);
+        Assert.Equal(u2.Id, (await _store.GetAsync("u-1", u1.Id))!.RedoneBy);
+        Assert.Equal(1.0m, Entry("te-1")!.Hours);
+    }
 }

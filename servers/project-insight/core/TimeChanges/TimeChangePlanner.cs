@@ -43,12 +43,19 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                 Billable = r.Before.Billable, Description = r.Before.Description
             }
         }).ToList();
-        // Undoing an undo puts the original changes back, so call it a redo rather than "Undo: Undo: …".
-        var intent = receipt.UndoOf is not null && receipt.Intent.StartsWith("Undo: ", StringComparison.Ordinal)
-            ? "Redo: " + receipt.Intent["Undo: ".Length..]
-            : $"Undo: {receipt.Intent}";
+        // Undoing an undo puts the original changes back, so it's a redo; undoing a redo is an undo again.
+        // Labels go by kind, never stacking: X → "Undo: X" → "Redo: X" → "Undo: X".
+        var isRedo = receipt.UndoOf is not null && receipt.Intent.StartsWith(UndoPrefix, StringComparison.Ordinal);
+        var intent = (isRedo ? RedoPrefix : UndoPrefix) + WithoutUndoPrefix(receipt.Intent);
         return PlanCoreAsync(intent, changes, receipt.Id, receipt.CommittedAt, ct);
     }
+
+    private const string UndoPrefix = "Undo: ", RedoPrefix = "Redo: ";
+
+    private static string WithoutUndoPrefix(string intent)
+        => intent.StartsWith(UndoPrefix, StringComparison.Ordinal) ? intent[UndoPrefix.Length..]
+            : intent.StartsWith(RedoPrefix, StringComparison.Ordinal) ? intent[RedoPrefix.Length..]
+            : intent;
 
     private sealed class WeekData
     {
