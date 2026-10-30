@@ -7,12 +7,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>projectinsight-mcp</AssemblyName>
     <RootNamespace>ProjectInsightMCP.Stdio</RootNamespace>
+    <!-- ModelContextProtocol.Extensions.Apps is marked experimental (MCPEXP003). -->
+    <NoWarn>$(NoWarn);MCPEXP003</NoWarn>
     
     <!-- .NET Tool Configuration -->
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>projectinsight-mcp</ToolCommandName>
     <PackageId>ProjectInsight.MCP</PackageId>
-    <Version>2.0.0</Version>
+    <Version>2.1.0</Version>
     <Authors>Applied Visions Inc</Authors>
     <Company>Applied Visions Inc</Company>
     <Description>MCP (Model Context Protocol) Server for Project Insight integration with AI assistants like GitHub Copilot, Claude, and VS Code.</Description>
@@ -35,6 +37,7 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.14" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.14" />
     <PackageReference Include="ModelContextProtocol" Version="2.3.0" />
+    <PackageReference Include="ModelContextProtocol.Extensions.Apps" Version="2.3.0" />
   </ItemGroup>
 
   <ItemGroup>

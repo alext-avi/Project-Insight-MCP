@@ -69,6 +69,10 @@ public class Project
     
     [JsonPropertyName("urlFull")]
     public string? UrlFull { get; set; }
+
+    /// <summary>The project's colour in PI, e.g. "#be2edd". Only present when requested.</summary>
+    [JsonPropertyName("color")]
+    public string? Color { get; set; }
     
     [JsonPropertyName("itemNumber")]
     public int? ItemNumber { get; set; }
@@ -240,6 +244,16 @@ public class User
     
     [JsonPropertyName("companyDefault_Id")]
     public string? CompanyDefaultId { get; set; }
+
+    [JsonPropertyName("initials")]
+    public string? Initials { get; set; }
+
+    /// <summary>Site-relative path of the user's photo; empty when they have none.</summary>
+    [JsonPropertyName("photoUrl")]
+    public string? PhotoUrl { get; set; }
+
+    [JsonPropertyName("colorSettings")]
+    public ColorSettings? ColorSettings { get; set; }
     
     [JsonPropertyName("customFieldValue_Id")]
     public string? CustomFieldValueId { get; set; }
@@ -538,6 +552,46 @@ public class TimeEntrySearchRequest
     public DateTime? EndDate { get; set; }
     public bool? IsBillable { get; set; }
     public string? ModelProperties { get; set; }
+}
+
+/// <summary>Id and name of a related record, as PI returns it for nested modelProperties.</summary>
+public class NamedRef
+{
+    [JsonPropertyName("Id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    /// <summary>Only projects have one, and only when requested.</summary>
+    [JsonPropertyName("Color")]
+    public string? Color { get; set; }
+}
+
+/// <summary>A user's avatar colours in PI.</summary>
+public class ColorSettings
+{
+    [JsonPropertyName("BackgroundColor")]
+    public string? BackgroundColor { get; set; }
+
+    [JsonPropertyName("FontColor")]
+    public string? FontColor { get; set; }
+}
+
+/// <summary>
+/// A time entry read together with its task and project names. Separate from <see cref="TimeEntry"/>
+/// so existing tools' output is unchanged.
+/// </summary>
+public class TimeEntryWithNames : TimeEntry
+{
+    public const string ModelProperties =
+        "Id,Date,ActualHours,IsBillable,Description,Task_Id,Project_Id,User_Id,TimeSheet_Id,Task,Project;Task:Id,Name;Project:Id,Name,Color";
+
+    [JsonPropertyName("Task")]
+    public NamedRef? TaskRef { get; set; }
+
+    [JsonPropertyName("Project")]
+    public NamedRef? ProjectRef { get; set; }
 }
 
 /// <summary>

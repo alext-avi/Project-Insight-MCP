@@ -9,6 +9,7 @@ using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using ProjectInsightMCP.Services;
+using ProjectInsightMCP.TimeChanges;
 using Shared.MCP;
 
 namespace ProjectInsightMCP.Stdio;
@@ -68,6 +69,16 @@ public static class ProjectInsightServer
         services.AddSingleton<ProjectInsightApiService>();
         services.AddSingleton<McpServerService>();
         services.AddSingleton<ToolCallGate>();
+
+        // Time-change drafts (plan -> review card -> confirm/cancel/undo).
+        services.AddSingleton<TimeProvider>(TimeProvider.System);
+        services.AddSingleton<IDraftStore>(sp => new FileDraftStore(
+            configuration["ProjectInsight:DraftsPath"] is { Length: > 0 } path ? path : FileDraftStore.DefaultRoot,
+            sp.GetRequiredService<TimeProvider>()));
+        services.AddSingleton<ITimeEntryGateway, ProjectInsightTimeEntryGateway>();
+        services.AddSingleton<TimeChangePlanner>();
+        services.AddSingleton<TimeChangeCommitter>();
+        services.AddSingleton<TimeChangeService>();
         return services;
     }
 
@@ -102,13 +113,33 @@ public static class ProjectInsightServer
                     Name = ctx.Params.Name,
                     Arguments = ToLegacyArguments(ctx.Params.Arguments)
                 };
+                return ToSdkResult(await mcp.ExecuteToolAsync(call, CancellationToken.None));
+            })
+            .WithTools(TimeChangeTools.Create())
+            .WithResources([TimeChangeTools.CreateCard()])
+            // Every tool call, adapter or SDK-native, goes through the gate. Cancellation only
+            // applies while a call is queued. Once started it runs to completion, as before the SDK
+            // (the SDK then sends no response, per spec): stopping midway could leave a multi-step
+            // write (e.g. add_task_resource, or a time-change commit) half-applied.
+            .WithRequestFilters(filters => filters.AddCallToolFilter(next => (context, cancellationToken) =>
+                new ValueTask<CallToolResult>(context.Services!.GetRequiredService<ToolCallGate>().RunAsync(
+                    () => next(context, CancellationToken.None).AsTask(), cancellationToken))));
+    }
 
-                // Cancellation only applies while the call is queued. Once started it runs to
-                // completion, as before the SDK (the SDK then sends no response, per spec):
-                // stopping midway could leave a multi-step write (e.g. add_task_resource) half-applied.
-                return await ctx.Services!.GetRequiredService<ToolCallGate>().RunAsync(
-                    async () => ToSdkResult(await mcp.ExecuteToolAsync(call, CancellationToken.None)), ct);
-            });
+    /// <summary>
+    /// Deletes expired drafts. A failure must never stop the server, and stdout is the protocol
+    /// stream, so it is reported on stderr only.
+    /// </summary>
+    public static async Task PruneDraftsAtStartupAsync(IServiceProvider services)
+    {
+        try
+        {
+            await services.GetRequiredService<IDraftStore>().PruneAllAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Could not prune time-change drafts: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -169,7 +200,8 @@ public static class ProjectInsightServer
     {
         Name = tool.Name,
         Description = tool.Description,
-        InputSchema = JsonSerializer.SerializeToElement(tool.InputSchema, SchemaOptions)
+        InputSchema = JsonSerializer.SerializeToElement(tool.InputSchema, SchemaOptions),
+        Annotations = tool.Annotations is null ? null : new ToolAnnotations { DestructiveHint = tool.Annotations.DestructiveHint }
     };
 
     internal static CallToolResult ToSdkResult(McpToolResult result) => new()

@@ -804,6 +804,9 @@
       "required": [
         "timeEntry"
       ]
+    },
+    "annotations": {
+      "destructiveHint": true
     }
   },
   {
@@ -820,6 +823,9 @@
       "required": [
         "timeEntryId"
       ]
+    },
+    "annotations": {
+      "destructiveHint": true
     }
   },
   {
@@ -863,6 +869,9 @@
         "timeEntryId",
         "timeEntry"
       ]
+    },
+    "annotations": {
+      "destructiveHint": true
     }
   },
   {

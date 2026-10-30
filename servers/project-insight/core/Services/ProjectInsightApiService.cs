@@ -1821,6 +1821,84 @@ public class ProjectInsightApiService
         }
     }
 
+    /// <summary>
+    /// Search one user's time entries in a date range, with task and project names.
+    /// Requests only the fields time-change drafts use (no rates or totals).
+    /// </summary>
+    public async Task<ApiListResponse<TimeEntryWithNames>> SearchTimeEntriesWithNamesAsync(
+        string userId, DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = "/api/time-entry/search" +
+                $"?userList={Uri.EscapeDataString(userId)}" +
+                $"&startDate={startDate:yyyy-MM-dd}&endDate={endDate:yyyy-MM-dd}" +
+                $"&modelProperties={Uri.EscapeDataString(TimeEntryWithNames.ModelProperties)}";
+            var response = await GetWithTokenAsync(url, cancellationToken);
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Failed to search time entries with names: {StatusCode} - {Error}", response.StatusCode, content);
+                return new ApiListResponse<TimeEntryWithNames>
+                {
+                    Success = false,
+                    Message = $"API returned {response.StatusCode}",
+                    Errors = new List<string> { content }
+                };
+            }
+
+            var entries = JsonSerializer.Deserialize<List<TimeEntryWithNames>>(content, JsonOptions) ?? new();
+            return new ApiListResponse<TimeEntryWithNames> { Success = true, Data = entries, TotalCount = entries.Count };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error searching time entries with names");
+            return new ApiListResponse<TimeEntryWithNames>
+            {
+                Success = false,
+                Message = "Internal error occurred",
+                Errors = new List<string> { ex.Message }
+            };
+        }
+    }
+
+    /// <summary>Get one time entry by id, with task and project names.</summary>
+    public async Task<ApiResponse<TimeEntryWithNames>> GetTimeEntryAsync(string timeEntryId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = $"/api/time-entry/{Uri.EscapeDataString(timeEntryId)}" +
+                $"?modelProperties={Uri.EscapeDataString(TimeEntryWithNames.ModelProperties)}";
+            var response = await GetWithTokenAsync(url, cancellationToken);
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new ApiResponse<TimeEntryWithNames>
+                {
+                    Success = false,
+                    Message = $"API returned {response.StatusCode}",
+                    Errors = new List<string> { content }
+                };
+            }
+
+            return new ApiResponse<TimeEntryWithNames>
+            {
+                Success = true,
+                Data = JsonSerializer.Deserialize<TimeEntryWithNames>(content, JsonOptions)
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting time entry {TimeEntryId}", timeEntryId);
+            return new ApiResponse<TimeEntryWithNames>
+            {
+                Success = false,
+                Message = "Internal error occurred",
+                Errors = new List<string> { ex.Message }
+            };
+        }
+    }
+
     #endregion
 
     #region User Operations
@@ -2574,6 +2652,49 @@ public class ProjectInsightApiService
         return errors
             .Select(e => e.ErrorMessage ?? "Unknown error")
             .ToList();
+    }
+
+    /// <summary>Image types a user photo may have. SVG is left out: it can carry script.</summary>
+    private static readonly HashSet<string> PhotoTypes = new(StringComparer.OrdinalIgnoreCase)
+        { "image/jpeg", "image/png", "image/gif", "image/webp" };
+
+    /// <summary>
+    /// Fetch an image PI serves from its own site, such as a user's PhotoUrl ("/Sites/Files/…").
+    /// Only site-relative paths are fetched, so a stored URL can't send the request (or the token)
+    /// anywhere else. Returns null when it's missing, not a photo type, or larger than maxBytes.
+    /// </summary>
+    public async Task<(byte[] Bytes, string ContentType)?> GetSiteImageAsync(string path, int maxBytes, CancellationToken cancellationToken = default)
+    {
+        // Only PI's own uploaded files: no query, fragment, escapes or path tricks that could reach another page.
+        if (!path.StartsWith("/Sites/Files/", StringComparison.Ordinal) || path.IndexOfAny(['?', '#', '%', '\\']) >= 0
+            || path.Contains("..") || path.Contains("//"))
+            return null;
+        try
+        {
+            using var request = CreateRequest(HttpMethod.Get, path);
+            request.Headers.Accept.ParseAdd("image/*");
+            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            var type = response.Content.Headers.ContentType?.MediaType;
+            if (!response.IsSuccessStatusCode || type is null || !PhotoTypes.Contains(type)
+                || response.Content.Headers.ContentLength > maxBytes)
+                return null;
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var buffer = new MemoryStream();
+            var chunk = new byte[16 * 1024];
+            int read;
+            while ((read = await stream.ReadAsync(chunk, cancellationToken)) > 0)
+            {
+                if (buffer.Length + read > maxBytes)
+                    return null;
+                buffer.Write(chunk, 0, read);
+            }
+            return (buffer.ToArray(), type.ToLowerInvariant());
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "Could not fetch site image");
+            return null;
+        }
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()

@@ -36,7 +36,8 @@ public sealed class SdkServerTests : IAsyncLifetime
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["ProjectInsight:BaseUrl"] = "https://pi.test",
-            ["ProjectInsight:ApiToken"] = "test-token"
+            ["ProjectInsight:ApiToken"] = "test-token",
+            ["ProjectInsight:DraftsPath"] = Path.Combine(Path.GetTempPath(), "pi-sdk-drafts-" + Guid.NewGuid().ToString("N"))
         });
         builder.Services.AddLogging();
         builder.Services.AddProjectInsightServices(builder.Configuration);
@@ -70,7 +71,8 @@ public sealed class SdkServerTests : IAsyncLifetime
     [Fact]
     public async Task Tools_list_over_the_wire_matches_snapshot()
     {
-        var tools = await _client.ListToolsAsync();
+        var all = await _client.ListToolsAsync();
+        var tools = all.Where(t => !TimeChangeToolsTests.ToolNames.Contains(t.Name)).ToList();
         var snapshot = ToolListSnapshotTests.LoadSnapshot();
 
         Assert.Equal(snapshot.Count, tools.Count);
@@ -82,6 +84,8 @@ public sealed class SdkServerTests : IAsyncLifetime
             Assert.True(JsonNode.DeepEquals(snapshot[i], wire),
                 $"tool {tools[i].Name} differs on the wire:\n{wire}");
         }
+        Assert.Equal(TimeChangeToolsTests.ToolNames.Order(),
+            all.Select(t => t.Name).Where(TimeChangeToolsTests.ToolNames.Contains).Order());
     }
 
     [Fact]

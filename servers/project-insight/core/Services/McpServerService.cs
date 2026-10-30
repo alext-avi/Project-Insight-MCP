@@ -134,6 +134,31 @@ public class McpServerService
     }
 
     /// <summary>
+    /// With no PI token, starts the sign-in flow that fits the host and returns what to tell the user;
+    /// null when a token is present. Every tool that needs PI runs this first, so all of them guide
+    /// sign-in the same way.
+    /// </summary>
+    public async Task<McpToolResult?> SignInIfNeededAsync(CancellationToken cancellationToken)
+    {
+        if (_apiTokenAccessor.HasToken)
+            return null;
+
+        // Copilot context (Entra user, Key Vault available) → account linking
+        if (_apiTokenAccessor.HasEntraIdentity && _keyVaultTokenService != null)
+            return await LinkPiAccountAsync(cancellationToken);
+
+        // Local stdio context → device activation
+        if (_deviceActivation != null)
+            return await TriggerAuthFlowAsync(cancellationToken);
+
+        return new McpToolResult
+        {
+            Content = new List<McpContent> { new() { Type = "text", Text = "Error: No API token configured. Set ProjectInsight__ApiToken in your MCP server environment variables, or restart without it to use interactive authentication." } },
+            IsError = true
+        };
+    }
+
+    /// <summary>
     /// Execute a specific tool
     /// </summary>
     public async Task<McpToolResult> ExecuteToolAsync(McpToolCall toolCall, CancellationToken cancellationToken)
@@ -151,22 +176,8 @@ public class McpServerService
                 return await CompletePiLinkAsync(toolCall.Arguments, cancellationToken);
 
             // If no PI token, trigger the appropriate auth flow
-            if (!_apiTokenAccessor.HasToken)
-            {
-                // Copilot context (Entra user, Key Vault available) → account linking
-                if (_apiTokenAccessor.HasEntraIdentity && _keyVaultTokenService != null)
-                    return await LinkPiAccountAsync(cancellationToken);
-
-                // Local stdio context → device activation
-                if (_deviceActivation != null)
-                    return await TriggerAuthFlowAsync(cancellationToken);
-
-                return new McpToolResult
-                {
-                    Content = new List<McpContent> { new() { Type = "text", Text = "Error: No API token configured. Set ProjectInsight__ApiToken in your MCP server environment variables, or restart without it to use interactive authentication." } },
-                    IsError = true
-                };
-            }
+            if (await SignInIfNeededAsync(cancellationToken) is { } signIn)
+                return signIn;
 
             switch (toolCall.Name)
             {
@@ -4170,6 +4181,7 @@ public class McpServerService
             new()
             {
                 Name = "create_time_entry",
+                Annotations = McpToolAnnotations.Destructive,
                 Description = "Create a new time entry against a project task. Requires a task ID, date, hours, and optionally a description and billable flag. The time entry will be created for the authenticated user. NOTE: If you get an error about a submitted timesheet blocking the entry, use search_timesheets to find the blocking timesheet for that date range, then use unsubmit_timesheet to reset it to draft before retrying.",
                 InputSchema = new
                 {
@@ -4197,6 +4209,7 @@ public class McpServerService
             new()
             {
                 Name = "delete_time_entry",
+                Annotations = McpToolAnnotations.Destructive,
                 Description = "Delete a time entry by ID. This permanently removes the time entry. Use search_time_entries or get_project_time_entries to find entry IDs.",
                 InputSchema = new
                 {
@@ -4211,6 +4224,7 @@ public class McpServerService
             new()
             {
                 Name = "update_time_entry",
+                Annotations = McpToolAnnotations.Destructive,
                 Description = "Update an existing time entry. Only the specified fields will be modified. Use search_time_entries or get_project_time_entries to find entry IDs.",
                 InputSchema = new
                 {

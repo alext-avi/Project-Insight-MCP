@@ -79,3 +79,4 @@ servers/project-insight/src-stdio/bin/mcpb/
 **/.env.*
 !**/.env.example
 !**/.env.*.example
+.superpowers/

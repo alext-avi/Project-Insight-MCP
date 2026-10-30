@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Time changes</title>
+<style>
+  :root {
+    --bg: #ffffff; --page: #f4f5f7; --fg: #1f2d3d; --mut: #5b6b7b; --faint: #8a97a6; --line: #dfe3e8; --soft: #f4f5f7;
+    --acc: #1b75bb; --navy: #0b3a62; --bar: #033a64; --barfg: #ffffff; --pos: #1fa855; --neg: #e5304b; --warn: #b86e00; --warnbg: #fff4dc; --chg: #eef5fc;
+    --okbg: #dcf5e6; --okfg: #11713a; --stalebg: #fff4dc; --stalefg: #8a5300; --failbg: #fde6e9; --failfg: #b0162f;
+    --mutebg: #e9edf1; --mutefg: #5b6b7b; --draftbg: #e3f0fb; --draftfg: #135a92; --otherbg: #f6e8fb; --otherfg: #9b34c2;
+    --primary: #1b75bb; --primaryfg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12202e; --page: #0b1620; --fg: #e3eaf1; --mut: #9aabbc; --faint: #6c7f92; --line: #263a4d; --soft: #182a3b;
+      --acc: #5aa9e6; --navy: #cfe3f5; --bar: #06223b; --barfg: #e3eaf1; --pos: #3fcf7a; --neg: #ff6b7f; --warn: #f0b03c; --warnbg: #3a2a08; --chg: #13314b;
+      --okbg: #0f3a24; --okfg: #5fe39a; --stalebg: #3a2a08; --stalefg: #f0b03c; --failbg: #4a0f1a; --failfg: #ff8a99;
+      --mutebg: #223445; --mutefg: #9aabbc; --draftbg: #13314b; --draftfg: #8cc6f2; --otherbg: #33183f; --otherfg: #dc9cf5;
+      --primary: #2f86cc; --primaryfg: #ffffff;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12202e; --page: #0b1620; --fg: #e3eaf1; --mut: #9aabbc; --faint: #6c7f92; --line: #263a4d; --soft: #182a3b;
+      --acc: #5aa9e6; --navy: #cfe3f5; --bar: #06223b; --barfg: #e3eaf1; --pos: #3fcf7a; --neg: #ff6b7f; --warn: #f0b03c; --warnbg: #3a2a08; --chg: #13314b;
+      --okbg: #0f3a24; --okfg: #5fe39a; --stalebg: #3a2a08; --stalefg: #f0b03c; --failbg: #4a0f1a; --failfg: #ff8a99;
+      --mutebg: #223445; --mutefg: #9aabbc; --draftbg: #13314b; --draftfg: #8cc6f2; --otherbg: #33183f; --otherfg: #dc9cf5;
+      --primary: #2f86cc; --primaryfg: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--page); color: var(--fg); }
+  body { font: 13px/1.45 "Source Sans Pro", "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .card { max-width: 640px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .body { padding: 12px 16px 14px; }
+  .brand { background: var(--bar); color: var(--barfg); font-size: 12px; font-weight: 600; letter-spacing: 0.02em; padding: 7px 16px; }
+  .brand span { opacity: 0.7; font-weight: 400; }
+  .muted { color: var(--mut); }
+  .pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+  .p-draft { background: var(--draftbg); color: var(--draftfg); }
+  .p-ok { background: var(--okbg); color: var(--okfg); }
+  .p-stale { background: var(--stalebg); color: var(--stalefg); }
+  .p-fail { background: var(--failbg); color: var(--failfg); }
+  .p-mute { background: var(--mutebg); color: var(--mutefg); }
+  .intent { font-size: 18px; font-weight: 400; color: var(--acc); margin-top: 6px; line-height: 1.3; }
+  .by { color: var(--mut); font-size: 12px; margin-bottom: 8px; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; margin: 10px 0 6px; background: var(--soft); border-radius: 4px; padding: 6px 4px; }
+  .kpi { padding: 2px 8px; min-width: 0; }
+  .kpi b { display: block; font-size: 18px; font-weight: 600; color: var(--navy); font-variant-numeric: tabular-nums; }
+  .kpi b.pos { color: var(--pos); } .kpi b.neg { color: var(--neg); } .kpi b.warn { color: var(--warn); }
+  .kpi span { font-size: 11px; color: var(--mut); }
+  .pos { color: var(--pos); } .neg { color: var(--neg); } .warn { color: var(--warn); }
+  .note { border-radius: 8px; padding: 8px 10px; font-size: 12px; margin: 8px 0; }
+  .n-stale { background: var(--stalebg); color: var(--stalefg); }
+  .n-fail { background: var(--failbg); color: var(--failfg); }
+  .n-mute { background: var(--soft); color: var(--mutefg); }
+  .week { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
+  .who { color: var(--acc); font-weight: 600; }
+  .avatar { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%;
+    color: #ffffff; font-size: 10px; font-weight: 700; margin-right: 6px; vertical-align: middle; }
+  img.avatar { object-fit: cover; }
+  .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: 1px; }
+  .whead { display: grid; grid-template-columns: 1fr auto 52px; gap: 8px; align-items: center; margin-bottom: 4px; }
+  .other { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: var(--otherbg); color: var(--otherfg); margin-left: 6px; }
+  .link { font-size: 11px; color: var(--acc); margin-left: 6px; text-decoration: none; cursor: pointer; }
+  .tot { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--mut); }
+  .tot b { color: var(--fg); }
+  .d { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; }
+  .dline { display: grid; grid-template-columns: 12px 1fr auto 52px; gap: 8px; align-items: baseline; padding: 3px 0; cursor: pointer; }
+  .dline:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 4px; }
+  .dline.quiet { color: var(--faint); }
+  .dline.quiet .tot { color: var(--faint); }
+  .car { color: var(--faint); font-size: 10px; }
+  .rows { margin: 2px 0 6px 20px; }
+  .row { display: grid; grid-template-columns: 12px 1fr auto 52px; gap: 8px; align-items: baseline; padding: 3px 6px; margin: 0 -6px; border-radius: 6px; }
+  .row.ctx { color: var(--faint); }
+  .row.ctx .hrs { color: var(--faint); }
+  .row.chg { background: var(--chg); }
+  .row.del .label { text-decoration: line-through; text-decoration-color: var(--neg); }
+  .act { font-weight: 700; text-align: center; }
+  .a-c { color: var(--pos); } .a-d { color: var(--neg); } .a-u { color: var(--acc); }
+  .task { min-width: 0; overflow-wrap: anywhere; }
+  .task small { display: block; color: var(--mut); }
+  .hrs { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--mut); }
+  .hrs b { color: var(--fg); }
+  .bill { font-size: 10px; padding: 0 5px; border-radius: 4px; border: 1px solid var(--line); color: var(--mut); margin-left: 4px; }
+  .w { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--warnbg); color: var(--warn); margin: 2px 4px 0 0; }
+  .st { display: inline-block; font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; margin-left: 4px; background: var(--mutebg); color: var(--mutefg); }
+  .st-rejected, .st-reverse_failed, .st-unknown { background: var(--failbg); color: var(--failfg); }
+  .err { color: var(--failfg); }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+  .btn { border: 1.5px solid var(--acc); background: var(--bg); color: var(--acc); border-radius: 999px; padding: 4px 16px; font: inherit; font-size: 14px; cursor: pointer; }
+  .btn:hover:not(:disabled) { background: var(--chg); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primaryfg); font-weight: 600; }
+  .btn.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--primary); }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .hint { font-size: 11px; color: var(--faint); }
+  .error { color: var(--failfg); }
+  /* A receipt that was undone: its changes are no longer in PI, so it must not look applyable. */
+  .spent .kpis, .spent .week { opacity: 0.55; }
+  .spent .row.chg { background: transparent; }
+  @media (max-width: 420px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<div id="app" class="card"></div>
+<script>
+(() => {
+  "use strict";
+
+  const app = document.getElementById("app");
+  const state = { view: null, token: null, busy: false, error: null, toggled: new Set(), refreshed: false };
+  const pending = new Map();
+  let nextId = 1;
+
+  // ---- MCP Apps messaging: JSON-RPC 2.0 over postMessage with the host ----
+
+  function send(message) { window.parent.postMessage(message, "*"); }
+
+  function notify(method, params) { send({ jsonrpc: "2.0", method, params }); }
+
+  function request(method, params, timeoutMs) {
+    const id = nextId++;
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+      send({ jsonrpc: "2.0", id, method, params });
+      setTimeout(() => {
+        if (pending.delete(id)) reject(new Error("The host did not reply."));
+      }, timeoutMs || 60000);
+    });
+  }
+
+  window.addEventListener("message", (event) => {
+    if (event.source !== window.parent) return;
+    const msg = event.data;
+    if (!msg || msg.jsonrpc !== "2.0") return;
+
+    if (msg.id !== undefined && !msg.method) {
+      const waiting = pending.get(msg.id);
+      if (!waiting) return;
+      pending.delete(msg.id);
+      if (msg.error) waiting.reject(new Error(msg.error.message || "The request failed."));
+      else waiting.resolve(msg.result);
+      return;
+    }
+
+    switch (msg.method) {
+      case "ui/notifications/tool-result":
+        onToolResult(msg.params);
+        break;
+      case "ui/notifications/host-context-changed":
+        applyHostContext(msg.params);
+        break;
+      case "ui/resource-teardown":
+        if (msg.id !== undefined) send({ jsonrpc: "2.0", id: msg.id, result: {} });
+        break;
+      default:
+        if (msg.id !== undefined && msg.method)
+          send({ jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: "Method not found" } });
+    }
+  });
+
+  function applyHostContext(context) {
+    if (context && (context.theme === "dark" || context.theme === "light"))
+      document.documentElement.dataset.theme = context.theme;
+  }
+
+  // ---- tool results ----
+
+  function readView(result) {
+    if (!result) return null;
+    if (result.structuredContent && result.structuredContent.kind) return result.structuredContent;
+    const text = (result.content || []).find((c) => c && c.type === "text");
+    if (text) {
+      try {
+        const parsed = JSON.parse(text.text);
+        if (parsed && parsed.kind) return parsed;
+      } catch (_) { /* plain text, not JSON */ }
+    }
+    return null;
+  }
+
+  function textOf(result) {
+    const text = result && (result.content || []).find((c) => c && c.type === "text");
+    return text ? text.text : "";
+  }
+
+  function takeToken(result) {
+    const token = result && result._meta && result._meta.confirmToken;
+    if (token) state.token = token;
+  }
+
+  function onToolResult(result) {
+    const view = readView(result);
+    takeToken(result);
+    if (!view) {
+      state.error = textOf(result) || null;
+      render();
+      return;
+    }
+    state.view = view;
+    state.error = null;
+    render();
+    // A re-shown card (scrolled back to, reloaded) must show the draft's current status.
+    if (!state.refreshed && view.draft && view.draft.id) {
+      state.refreshed = true;
+      refresh(view.draft.id);
+    }
+  }
+
+  async function refresh(id) {
+    try {
+      const result = await request("tools/call", { name: "get_time_changes", arguments: { id } });
+      const view = readView(result);
+      if (view && view.kind === "draft") {
+        state.view = view;
+        render();
+      }
+    } catch (_) { /* keep showing what we have */ }
+  }
+
+  async function act(name, args) {
+    if (state.busy) return;
+    let failed = false;
+    const id = args.draftId || args.receiptId;
+    state.busy = true;
+    state.error = null;
+    render();
+    try {
+      const slow = name === "confirm_time_changes" || name === "commit_time_changes";
+      const result = await request("tools/call", { name, arguments: args }, slow ? 300000 : 60000);
+      takeToken(result);
+      const view = readView(result);
+      if (view && view.kind === "draft") state.view = view;
+      else { state.error = (view && view.message) || textOf(result) || "Something went wrong."; failed = true; }
+    } catch (e) {
+      state.error = e.message;
+      failed = true;
+    }
+    state.busy = false;
+    render();
+    // The server may have acted despite the error (e.g. a timeout): re-read the real status.
+    if (failed && id) refresh(id);
+  }
+
+  // Only https links leave the card, so a stored URL can never run script or go out unencrypted.
+  function isHttps(url) {
+    return typeof url === "string" && /^https:\/\//.test(url);
+  }
+
+  function openLink(url) {
+    if (!isHttps(url)) return;
+    request("ui/open-link", { url }).catch(() => window.open(url, "_blank", "noopener"));
+  }
+
+  // ---- formatting ----
+
+  function hrs(n) {
+    const x = Math.round(Number(n || 0) * 100) / 100;
+    return Number.isInteger(x) ? x.toFixed(1) : String(x);
+  }
+
+  function signed(n) {
+    const x = Number(n || 0);
+    return (x > 0 ? "+" : x < 0 ? "−" : "±") + hrs(Math.abs(x));
+  }
+
+  // Dates arrive as yyyy-MM-dd; build them in local time so they never shift a day. A date outside
+  // this year shows its year, so a wrong year can't pass unnoticed.
+  function day(iso, options) {
+    const [y, m, d] = String(iso).split("-").map(Number);
+    const withYear = y !== new Date().getFullYear() ? Object.assign({}, options, { year: "numeric" }) : options;
+    return new Date(y, m - 1, d).toLocaleDateString(undefined, withYear);
+  }
+
+  function when(iso) {
+    const d = new Date(iso);
+    return isNaN(d) ? "" : d.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
+  }
+
+  // ---- DOM helpers (text nodes only, never HTML strings) ----
+
+  function el(tag, cls, ...kids) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    for (const kid of kids.flat()) {
+      if (kid === null || kid === undefined || kid === false) continue;
+      node.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+    }
+    return node;
+  }
+
+  function delta(n) {
+    const x = Number(n || 0);
+    return el("span", "d " + (x > 0 ? "pos" : x < 0 ? "neg" : ""), x === 0 ? "" : signed(x));
+  }
+
+  function button(label, cls, onClick) {
+    const b = el("button", "btn " + cls, label);
+    b.type = "button";
+    b.disabled = state.busy;
+    b.addEventListener("click", onClick);
+    return b;
+  }
+
+  // ---- rendering ----
+
+  const PILL = {
+    draft: ["Draft · nothing changed yet", "p-draft"],
+    committing: ["Committing…", "p-draft"],
+    stale: ["Out of date · nothing was changed", "p-stale"],
+    failed: ["Failed · rolled back", "p-fail"],
+    cancelled: ["Cancelled", "p-mute"],
+    expired: ["Expired", "p-mute"]
+  };
+
+  const OUTCOME = {
+    reversed: "reversed",
+    rejected: "rejected",
+    not_attempted: "not attempted",
+    reverse_failed: "could not reverse — check this entry",
+    unknown: "no answer from Project Insight — may have been saved, check this day"
+  };
+
+  function render() {
+    const v = state.view;
+    app.replaceChildren();
+    app.classList.remove("spent");
+    const body = el("div", "body");
+    app.append(el("div", "brand", "Project Insight ", el("span", "", "· Time changes")), body);
+    if (!v) {
+      body.append(el("p", state.error ? "error" : "muted", state.error || "Waiting for the draft…"));
+    } else if (v.kind !== "draft" || !v.draft) {
+      body.append(el("p", "error", v.message || "Nothing to show."));
+    } else {
+      const d = v.draft;
+      app.classList.toggle("spent", d.status === "committed" && !!d.revertedBy && !d.redoneBy);
+      body.append(header(d), totals(d));
+      if (d.status === "stale")
+        body.append(el("div", "note n-stale",
+          "Project Insight changed after this draft was made: " + (d.staleDays || []).join(", ") +
+          ". Nothing was written. Ask the agent to draft again."));
+      if (d.status === "failed" && d.error) body.append(el("div", "note n-fail", d.error));
+      if (d.status === "expired") body.append(el("div", "note n-mute", "Not confirmed within 24 hours. Nothing was changed."));
+      for (const w of d.weeks || []) body.append(week(d, w));
+      body.append(actions(d));
+      if (state.error) body.append(el("div", "note n-fail", state.error));
+    }
+    reportSize();
+  }
+
+  function header(d) {
+    let [label, cls] = PILL[d.status] || [d.status, "p-mute"];
+    if (d.status === "failed") {
+      const rows = d.rows || [];
+      const unsure = d.outcomeUnknown ||
+        rows.some((r) => r.outcome === "reverse_failed" || r.outcome === "unknown") || !rows.some((r) => r.outcome);
+      if (unsure) label = "Failed · check Project Insight";
+    }
+    if (d.status === "committed") {
+      label = d.revertedBy && d.redoneBy ? "Redone · changes put back"
+        : d.revertedBy ? "Undone · back to how it was"
+        : d.channel === "agent" ? "Committed by the agent" : "Committed · confirmed in chat";
+      cls = d.revertedBy && !d.redoneBy ? "p-mute" : "p-ok";
+    } else if (d.status === "draft" && d.undoOf) {
+      // Undoing an undo puts the original changes back; the planner names that draft "Redo: …".
+      const kind = String(d.intent || "").startsWith("Redo: ") ? "redo" : "undo";
+      label = d.undoOfCommittedAt
+        ? "Draft · " + kind + " of " + when(d.undoOfCommittedAt) + " changes"
+        : "Draft · " + kind + " of earlier changes";
+    }
+    const by = d.status === "committed"
+      ? (d.channel === "agent"
+        ? "Written by the agent · committed by the agent, " + when(d.committedAt)
+        : "Written by the agent · confirmed by you, " + when(d.committedAt)) + (d.revertedBy ? (d.redoneBy ? " · since undone and redone" : " · since undone") : "")
+      : d.status === "draft"
+        ? "Written by the agent · expires " + when(d.expiresAt)
+        : "Written by the agent · " + when(d.proposedAt);
+    return el("div", "", el("span", "pill " + cls, label), el("div", "intent", d.intent), el("div", "by", by));
+  }
+
+  function totals(d) {
+    const t = d.totals || {};
+    const kpi = (value, label, cls) => el("div", "kpi", el("b", cls || "", value), el("span", "", label));
+    return el("div", "kpis",
+      kpi(signed(t.netHours) + "h", "net · billable " + signed(t.billableDelta), t.netHours > 0 ? "pos" : t.netHours < 0 ? "neg" : ""),
+      kpi(String(t.changes || 0), "changes"),
+      kpi((t.days || 0) + " · " + (t.people || 0), "days · people"),
+      kpi(String(t.warnings || 0), "warnings", t.warnings ? "warn" : ""));
+  }
+
+  function week(d, w) {
+    const name = w.isCaller ? "You" : w.userName;
+    const title = el("span", "", avatar(w), el("span", "who", name),
+      w.isCaller ? null : el("span", "other", "someone else’s time"),
+      " · week of " + day(w.start, { day: "numeric", month: "short" }));
+    if (isHttps(w.timesheetUrl)) {
+      const link = el("a", "link", "open in PI ↗");
+      link.href = "#";
+      link.addEventListener("click", (e) => { e.preventDefault(); openLink(w.timesheetUrl); });
+      title.append(link);
+    }
+    const box = el("div", "week",
+      el("div", "whead", title, el("span", "tot", hrs(w.totalBefore) + " → ", el("b", "", hrs(w.totalAfter) + "h")),
+        delta(w.totalAfter - w.totalBefore)));
+    for (const dv of w.days || []) box.append(...dayBlock(d, w, dv));
+    return box;
+  }
+
+  // The person as PI draws them: their photo, else their initials on their PI colours. Without
+  // those (an older draft, or PI didn't answer) the colour is picked from the user id instead.
+  const AVATAR_COLOURS = ["#f26b1d", "#16a085", "#8e44ad", "#1b75bb", "#e5a50a", "#c0392b", "#27ae60", "#d35400", "#0097a7", "#d63384"];
+  const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
+  const PHOTO = /^data:image\/(jpeg|png|gif|webp);base64,[A-Za-z0-9+\/=]+$/;
+  function avatar(w) {
+    const look = w.avatar || {};
+    if (look.photo && PHOTO.test(look.photo)) {
+      const img = el("img", "avatar");
+      img.src = look.photo;
+      img.alt = "";
+      return img;
+    }
+    const words = String(w.userName || "?").trim().split(/\s+/);
+    const initials = look.initials || (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : "")).toUpperCase();
+    const a = el("span", "avatar", initials);
+    if (look.background && HEX.test(look.background)) {
+      a.style.background = look.background;
+      if (look.foreground && HEX.test(look.foreground)) a.style.color = look.foreground;
+    } else {
+      let h = 0;
+      for (const ch of String(w.userId || w.userName)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      a.style.background = AVATAR_COLOURS[h % AVATAR_COLOURS.length];
+    }
+    a.setAttribute("aria-hidden", "true");
+    return a;
+  }
+
+  // The project's PI colour, as a small mark before its name.
+  function swatch(colour) {
+    if (!colour || !HEX.test(colour)) return null;
+    const s = el("span", "swatch");
+    s.style.background = colour;
+    s.setAttribute("aria-hidden", "true");
+    return s;
+  }
+
+  function dayBlock(d, w, dv) {
+    const key = w.userId + "|" + dv.date;
+    // Days with changes start open; others start closed. A click flips that.
+    const open = dv.hasChanges !== state.toggled.has(key);
+    const warnings = (dv.rowIndexes || []).reduce((n, i) => n + ((d.rows[i] && d.rows[i].warnings) || []).length, 0);
+    const line = el("div", "dline" + (dv.hasChanges ? "" : " quiet"),
+      el("span", "car", open ? "▼" : "▶"),
+      el("span", "", day(dv.date, { weekday: "short", day: "numeric", month: "short" }),
+        warnings ? el("span", "w", "⚠ " + warnings) : null),
+      el("span", "tot", dv.hasChanges ? [hrs(dv.totalBefore) + " → ", el("b", "", hrs(dv.totalAfter) + "h")] : hrs(dv.totalBefore) + "h"),
+      dv.hasChanges ? delta(dv.totalAfter - dv.totalBefore) : el("span", ""));
+    line.tabIndex = 0;
+    line.setAttribute("role", "button");
+    line.setAttribute("aria-expanded", String(open));
+    const flip = () => {
+      if (state.toggled.has(key)) state.toggled.delete(key); else state.toggled.add(key);
+      render();
+    };
+    line.addEventListener("click", flip);
+    line.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
+
+    if (!open) return [line];
+    const rows = el("div", "rows");
+    for (const c of dv.context || []) rows.append(contextRow(c));
+    for (const i of dv.rowIndexes || []) if (d.rows[i]) rows.append(changeRow(d.rows[i], dv.date, w));
+    if (!rows.childNodes.length) rows.append(el("div", "row ctx", el("span", ""), el("span", "task", "No entries"), el("span", ""), el("span", "")));
+    return [line, rows];
+  }
+
+  function contextRow(c) {
+    return el("div", "row ctx",
+      el("span", ""),
+      el("span", "task", swatch(c.projectColor), el("span", "label", c.projectName + " › " + c.taskName), c.billable ? el("span", "bill", "billable") : null,
+        c.description ? el("small", "", c.description) : null),
+      el("span", "hrs", hrs(c.hours)),
+      el("span", ""));
+  }
+
+  function changeRow(r, date, w) {
+    const moved = r.action === "update" && r.before && r.after && r.before.date !== r.after.date;
+    const away = moved && r.before.date === date;   // this day loses the entry
+    const into = moved && r.after.date === date;     // this day gains it
+    const removing = r.action === "delete" || away;
+    const adding = r.action === "create" || into;
+    const v = removing ? r.before : r.after;
+    const [symbol, symbolClass] = adding ? ["+", "a-c"] : removing ? ["−", "a-d"] : ["~", "a-u"];
+    const from = adding ? "—" : hrs(r.before.hours);
+    const to = removing ? "—" : hrs(r.after.hours);
+    const diff = (removing ? 0 : r.after.hours) - (adding ? 0 : r.before.hours);
+    const task = el("span", "task",
+      swatch(v.projectColor), el("span", "label", v.projectName + " › " + v.taskName),
+      v.billable ? el("span", "bill", "billable") : null,
+      v.description ? el("small", "", v.description) : null,
+      r.action === "update" && r.before.taskId !== r.after.taskId && !removing
+        ? el("small", "", "was " + r.before.projectName + " › " + r.before.taskName) : null,
+      away ? el("small", "", "moved to " + day(r.after.date, { weekday: "short", day: "numeric", month: "short" })) : null,
+      into ? el("small", "", "moved from " + day(r.before.date, { weekday: "short", day: "numeric", month: "short" })) : null,
+      (r.warnings || []).map((x) => el("span", "w", "⚠ " + x.message)),
+      r.outcome && r.outcome !== "applied" ? el("span", "st st-" + r.outcome, OUTCOME[r.outcome] || r.outcome) : null,
+      r.outcome && r.outcome !== "applied" && r.error ? el("small", "err", r.error) : null,
+      r.outcome === "reverse_failed" || r.outcome === "unknown" ? failedEntry(r, w) : null);
+    return el("div", "row chg" + (removing ? " del" : ""),
+      el("span", "act " + symbolClass, symbol), task,
+      el("span", "hrs", from + " → ", el("b", "", to)),
+      delta(diff));
+  }
+
+  function failedEntry(r, w) {
+    const entryId = r.savedId || r.timeEntryId;
+    const box = el("small", "err", entryId ? "Entry " + entryId : "Entry id unknown");
+    if (w && isHttps(w.timesheetUrl)) {
+      const link = el("a", "link", "open in PI ↗");
+      link.href = "#";
+      link.addEventListener("click", (e) => { e.preventDefault(); openLink(w.timesheetUrl); });
+      box.append(link);
+    }
+    return box;
+  }
+
+  function actions(d) {
+    const bar = el("div", "btns");
+    const count = (d.rows || []).length;
+    if (d.status === "draft") {
+      const confirm = button("Confirm " + count + " change" + (count === 1 ? "" : "s"), "primary",
+        () => act("confirm_time_changes", { draftId: d.id, confirmToken: state.token }));
+      if (!state.token) {
+        confirm.disabled = true;
+        confirm.title = "Ask the agent to commit this draft.";
+      }
+      bar.append(confirm, button("Cancel", "", () => act("cancel_time_changes", { draftId: d.id })));
+    } else if (d.status === "stale") {
+      bar.append(button("Cancel draft", "", () => act("cancel_time_changes", { draftId: d.id })));
+    } else if (d.status === "committed" && d.revertedBy && d.redoneBy) {
+      // Undoing the undo again would fail; the later redo is the receipt to undo.
+      bar.append(el("span", "hint", "These changes were put back by a later change; undo that one to remove them again."));
+    } else if (d.status === "committed" && d.revertedBy) {
+      // Undoing the undo drafts these changes again; the server says so if that window has passed.
+      bar.append(button("Draft these again", "", () => act("undo_time_changes", { receiptId: d.revertedBy })),
+        el("span", "hint", "None of these changes are in Project Insight now."));
+    } else if (d.status === "committed" && d.undoUntil && new Date(d.undoUntil) > new Date()) {
+      // An undo's receipt is redone; any other receipt (a redo included) is undone.
+      const redo = !!d.undoOf && String(d.intent || "").startsWith("Undo: ");
+      bar.append(button(redo ? "Draft a redo" : "Draft an undo", "", () => act("undo_time_changes", { receiptId: d.id })),
+        el("span", "hint", "available until " + when(d.undoUntil)));
+    }
+    if (state.busy) bar.append(el("span", "hint", "Working…"));
+    return bar;
+  }
+
+  function reportSize() {
+    requestAnimationFrame(() => {
+      const root = document.documentElement;
+      notify("ui/notifications/size-changed", {
+        width: Math.ceil(root.getBoundingClientRect().width),
+        height: Math.ceil(root.scrollHeight)
+      });
+    });
+  }
+
+  // ---- start: render immediately, then handshake (render even if the handshake fails) ----
+
+  async function start() {
+    render();
+    try {
+      const result = await request("ui/initialize", {
+        protocolVersion: "2026-01-26",
+        appInfo: { name: "project-insight-time-changes", version: "1.0.0" },
+        appCapabilities: {}
+      });
+      applyHostContext(result && result.hostContext);
+    } catch (_) { /* hosts that don't answer still get a rendered card */ }
+    notify("ui/notifications/initialized", {});
+  }
+
+  start();
+})();
+</script>
+</body>
+</html>

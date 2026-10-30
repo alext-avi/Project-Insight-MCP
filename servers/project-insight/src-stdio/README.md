@@ -183,7 +183,14 @@ Pass any comma-separated list of field names to get exactly what you need:
 | `reject_timesheet` | Reject a timesheet |
 | `get_project_time_entries` | Get time entries for a project |
 | `search_time_entries` | Search time entries across projects with filters |
-| `create_time_entry` | Create a time entry against a task |
+| `create_time_entry` | Create a time entry against a task (writes immediately) |
+| `update_time_entry` | Update a time entry (writes immediately) |
+| `delete_time_entry` | Delete a time entry (writes immediately) |
+| `plan_time_changes` | Draft time-entry changes for review; writes nothing |
+| `commit_time_changes` | Apply a reviewed draft, all or nothing |
+| `cancel_time_changes` | Cancel a draft |
+| `undo_time_changes` | Draft the reverse of committed changes (24h) |
+| `get_time_changes` | Show a draft or receipt and its status |
 
 ### Rate Cards & Billing
 
@@ -203,6 +210,27 @@ Pass any comma-separated list of field names to get exactly what you need:
 | `get_user` | Get user profile by ID |
 | `get_users` | Get multiple users by IDs |
 | `search_users` | Search users by name |
+
+## Reviewable time changes
+
+`plan_time_changes` lets an agent draft several time-entry changes at once (create, update, delete;
+your own time or anyone else's you can edit in Project Insight) without writing anything. In Claude
+Desktop the draft appears as a card showing each affected week, with existing entries for context,
+and Confirm / Cancel buttons; elsewhere it reads as text. Commits are all-or-nothing: if any change
+is rejected, the ones already made are reversed, and if the affected days changed in Project Insight
+since the draft was made, nothing is written. Committed changes can be undone for 24 hours.
+
+Drafts are kept in `~/.projectinsight/drafts/` (readable only by you) and removed after 7 days.
+
+Other tools still write time immediately, without a draft: `create_time_entry`, `update_time_entry`
+and `delete_time_entry` (marked `destructiveHint`), the PTO tools `create_pto_entry`,
+`update_pto_entry` and `delete_pto_entry` (a PTO entry creates its own time entry), and the timesheet
+tools `update_timesheet` and `create_and_submit_timesheet`. If you want every change to time reviewed
+on the card first, block all of those and `commit_time_changes` in your client's tool permissions; the
+card's Confirm button is then the only way left to write time.
+
+After installing or updating, restart Claude Desktop (or reconnect the server): tools and the card
+are cached when the client connects.
 
 ## Available Fields Reference
 

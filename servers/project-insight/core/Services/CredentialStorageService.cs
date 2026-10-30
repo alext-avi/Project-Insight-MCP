@@ -10,19 +10,32 @@ namespace ProjectInsightMCP.Services;
 public class CredentialStorageService
 {
     private readonly ILogger<CredentialStorageService> _logger;
-    private static readonly string CredentialDir = Path.Combine(
+    private readonly string CredentialDir;
+    private readonly string CredentialFile;
+
+    public static readonly string DefaultDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".projectinsight");
-    private static readonly string CredentialFile = Path.Combine(CredentialDir, "credentials.json");
+
+    // The file holds a year-long PI token: owner-only, like an SSH key.
+    private const UnixFileMode OwnerFile = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+    private const UnixFileMode OwnerDir = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    public CredentialStorageService(ILogger<CredentialStorageService> logger)
+    public CredentialStorageService(ILogger<CredentialStorageService> logger) : this(logger, DefaultDir)
+    {
+    }
+
+    /// <summary>For tests: keep credentials in <paramref name="directory"/> instead of ~/.projectinsight.</summary>
+    public CredentialStorageService(ILogger<CredentialStorageService> logger, string directory)
     {
         _logger = logger;
+        CredentialDir = directory;
+        CredentialFile = Path.Combine(directory, "credentials.json");
     }
 
     /// <summary>
@@ -35,6 +48,7 @@ public class CredentialStorageService
             if (!File.Exists(CredentialFile))
                 return null;
 
+            Restrict();
             var json = File.ReadAllText(CredentialFile);
             var credential = JsonSerializer.Deserialize<StoredCredential>(json, JsonOptions);
 
@@ -62,17 +76,65 @@ public class CredentialStorageService
     /// </summary>
     public void SaveCredential(StoredCredential credential)
     {
+        // Created owner-only and renamed into place, so the token is never readable by others, even briefly.
+        // The temp name is random and must not exist yet, so a file or link left at a known name is never written through.
+        var temp = $"{CredentialFile}.{Guid.NewGuid():N}.tmp";
         try
         {
-            Directory.CreateDirectory(CredentialDir);
+            if (OperatingSystem.IsWindows())
+                Directory.CreateDirectory(CredentialDir);
+            else
+                Directory.CreateDirectory(CredentialDir, OwnerDir);
             var json = JsonSerializer.Serialize(credential, JsonOptions);
-            File.WriteAllText(CredentialFile, json);
+            var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
+            if (!OperatingSystem.IsWindows())
+                options.UnixCreateMode = OwnerFile;
+            using (var stream = new FileStream(temp, options))
+            using (var writer = new StreamWriter(stream))
+                writer.Write(json);
+            Restrict(temp);
+            File.Move(temp, CredentialFile, overwrite: true);
+            Restrict();
             _logger.LogInformation("Saved PI credential for user {UserId}", credential.UserId);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to save credentials");
             throw;
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(temp))
+                    File.Delete(temp);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "Could not remove a temporary credentials file");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Tighten the folder to 0700 and the file to 0600. Files saved by earlier versions were
+    /// readable by every account on the machine; this fixes them the next time they're loaded.
+    /// </summary>
+    private void Restrict(string? file = null)
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+        try
+        {
+            if ((File.GetUnixFileMode(CredentialDir) & ~OwnerDir) != 0)
+                File.SetUnixFileMode(CredentialDir, OwnerDir);
+            file ??= CredentialFile;
+            if (File.Exists(file) && (File.GetUnixFileMode(file) & ~OwnerFile) != 0)
+                File.SetUnixFileMode(file, OwnerFile);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Could not restrict permissions on stored credentials");
         }
     }
 }
