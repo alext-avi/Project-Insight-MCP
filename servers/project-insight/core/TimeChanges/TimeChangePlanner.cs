@@ -235,20 +235,32 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         }
     }
 
+    /// <summary>How far back to look for a timesheet to copy the period shape from.</summary>
+    public const int PeriodLookbackDays = 26 * 7;
+
     private async Task<List<WeekData>> LoadWeeksAsync(List<DraftRow> rows, CancellationToken ct)
     {
         var weeks = new List<WeekData>();
         var touched = rows
             .SelectMany(r => new[] { r.Before?.Date, r.After?.Date }.OfType<DateOnly>().Select(d => (r.UserId, r.UserName, Date: d)))
             .Distinct()
-            .OrderBy(t => t.Date);
+            .OrderBy(t => t.Date)
+            .ToList();
+        // One timesheet read per person: the periods covering their dates, plus earlier ones to take the
+        // period shape from when no timesheet exists yet for a date (PI creates them on first submit).
+        var sheetsByUser = new Dictionary<string, IReadOnlyList<PiTimeSheet>>();
         foreach (var (userId, userName, date) in touched)
         {
             if (weeks.Any(w => w.Contains(userId, date)))
                 continue;
-            var sheet = Weeks.Covering(await pi.SearchTimeSheetsAsync(userId, date, date, ct), date);
-            var start = sheet?.Start ?? Weeks.MondayOf(date);
-            var end = sheet?.End ?? Weeks.SundayOf(date);
+            if (!sheetsByUser.TryGetValue(userId, out var sheets))
+            {
+                var dates = touched.Where(t => t.UserId == userId).Select(t => t.Date).ToList();
+                sheets = await pi.SearchTimeSheetsAsync(userId, dates.Min().AddDays(-PeriodLookbackDays), dates.Max(), ct);
+                sheetsByUser[userId] = sheets;
+            }
+            var sheet = Weeks.Covering(sheets, date);
+            var (start, end) = sheet is not null ? (sheet.Start, sheet.End) : Weeks.PeriodLike(Weeks.LatestFrom(sheets, date), date);
             weeks.Add(new WeekData
             {
                 User = new PiUser(userId, userName), Start = start, End = end, Sheet = sheet,

@@ -68,7 +68,7 @@ The committer is always the proposer (only the proposer can commit), so no separ
 
 - A **receipt** is the committed draft. It keeps the same id and adds `committed*`, `channel` and the PI-saved ids.
 - **Redaction:** drafts, receipts and the card hold hours, project, task, description and billable flag only. `RateBill`, `RateBurden`, `BillableTotal` and `ActualTotal` are never requested into a draft or stored.
-- **Weeks:** the period of that person's PI timesheet containing the date, or Monday–Sunday when there is no timesheet. The planner reads each touched person-week once (entries plus timesheet). The same data feeds context rows, totals and fingerprints.
+- **Weeks:** the period of that person's PI timesheet containing the date. PI creates timesheets on first submit, so a current week often has none: then the period copies the shape of the person's latest earlier timesheet (weekly or two-weekly, looking back 26 weeks), so a Sunday–Saturday company gets Sunday–Saturday weeks. Monday–Sunday only when there is no timesheet history. The planner reads each person's timesheets once and each touched person-week's entries once. The same data feeds context rows, totals and fingerprints.
 - **Warnings:** timesheet submitted, approved or locked; day over 12h; hours not on a quarter-hour; likely duplicate (same user, day and task with equal hours or description); someone else's time.
 
 ## Store

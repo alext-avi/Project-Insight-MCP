@@ -90,4 +90,22 @@ public class FingerprintTests
         Assert.False(DraftIds.TokenMatches(DraftIds.NewConfirmToken(), hash));
         Assert.False(DraftIds.TokenMatches("", hash));
     }
+
+    [Theory]
+    [InlineData("2026-09-20", "2026-09-26", "2026-10-27", "2026-10-25", "2026-10-31")] // weekly, Sun-Sat, stepped forward
+    [InlineData("2026-09-20", "2026-09-26", "2026-10-25", "2026-10-25", "2026-10-31")] // the Sunday itself starts the week
+    [InlineData("2026-09-20", "2026-09-26", "2026-10-24", "2026-10-18", "2026-10-24")] // Saturday ends the one before
+    [InlineData("2026-10-04", "2026-10-17", "2026-10-27", "2026-10-18", "2026-10-31")] // two-weekly
+    [InlineData("2026-11-08", "2026-11-14", "2026-10-27", "2026-10-25", "2026-10-31")] // template after the date: stepped back
+    [InlineData("2026-10-01", "2026-10-15", "2026-10-27", "2026-10-26", "2026-11-01")] // semi-monthly: Monday-Sunday fallback
+    public void A_week_without_a_timesheet_copies_the_last_timesheets_shape(string tStart, string tEnd, string date, string start, string end)
+    {
+        var template = new PiTimeSheet("ts", DateOnly.Parse(tStart), DateOnly.Parse(tEnd), false, false, false, null);
+
+        Assert.Equal((DateOnly.Parse(start), DateOnly.Parse(end)), Weeks.PeriodLike(template, DateOnly.Parse(date)));
+    }
+
+    [Fact]
+    public void With_no_timesheet_history_the_week_is_monday_to_sunday()
+        => Assert.Equal((new DateOnly(2026, 10, 26), new DateOnly(2026, 11, 1)), Weeks.PeriodLike(null, new DateOnly(2026, 10, 27)));
 }

@@ -143,8 +143,7 @@ public sealed class TimeChangePlannerTests : IDisposable
         Assert.Equal(0m, draft.Totals.NetHours);
         Assert.Equal(2, _pi.SearchEntriesCalls.Count);
         Assert.Equal(_pi.SearchEntriesCalls.Count, _pi.SearchEntriesCalls.Distinct().Count());
-        Assert.Equal(2, _pi.SearchTimeSheetsCalls.Count);
-        Assert.Equal(_pi.SearchTimeSheetsCalls.Count, _pi.SearchTimeSheetsCalls.Distinct().Count());
+        Assert.Single(_pi.SearchTimeSheetsCalls);
 
         static (decimal, decimal) Day(Draft d, DateOnly date)
         {
@@ -277,6 +276,25 @@ public sealed class TimeChangePlannerTests : IDisposable
         Assert.Equal(1.0m, undo.Rows[1].After!.Hours);
         Assert.Equal(("t-1", 2.0m, "API integration"), (undo.Rows[2].After!.TaskId, undo.Rows[2].After!.Hours, undo.Rows[2].After!.Description));
         Assert.Equal(0m, undo.Totals.NetHours + planned.Totals.NetHours);
+    }
+
+    [Fact]
+    public async Task Without_a_timesheet_the_week_takes_the_shape_of_the_persons_last_one()
+    {
+        // A Sunday-to-Saturday company: the last timesheet was 20-26 Sep, none exists for this week yet.
+        _pi.Sheets["u-1"] = [new PiTimeSheet("ts-old", new DateOnly(2026, 9, 20), new DateOnly(2026, 9, 26), true, true, false, null)];
+        _pi.Add("te-sun", "u-1", new DateOnly(2026, 10, 25), 2m, "t-1");
+
+        var draft = (await _planner.PlanAsync("Fix Monday", [new() { Action = "update", TimeEntryId = "te-1", Hours = 1.5m }], default)).Draft!;
+
+        var week = Assert.Single(draft.Weeks);
+        Assert.Equal((new DateOnly(2026, 10, 25), new DateOnly(2026, 10, 31)), (week.Start, week.End));
+        Assert.Null(week.TimesheetId);
+        Assert.Equal((new DateOnly(2026, 10, 25), 2m), (week.Days[0].Date, week.Days[0].TotalBefore));
+        Assert.Equal(18.5m, week.TotalBefore);
+        Assert.Empty(draft.Rows[0].Warnings);
+        var call = Assert.Single(_pi.SearchTimeSheetsCalls);
+        Assert.Equal(Mon.AddDays(-TimeChangePlanner.PeriodLookbackDays), call.Start);
     }
 
     [Fact]
