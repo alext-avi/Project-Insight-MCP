@@ -76,13 +76,17 @@ public class CredentialStorageService
     /// </summary>
     public void SaveCredential(StoredCredential credential)
     {
+        // Created owner-only and renamed into place, so the token is never readable by others, even briefly.
+        // The temp name is random and must not exist yet, so a file or link left at a known name is never written through.
+        var temp = $"{CredentialFile}.{Guid.NewGuid():N}.tmp";
         try
         {
-            Directory.CreateDirectory(CredentialDir);
+            if (OperatingSystem.IsWindows())
+                Directory.CreateDirectory(CredentialDir);
+            else
+                Directory.CreateDirectory(CredentialDir, OwnerDir);
             var json = JsonSerializer.Serialize(credential, JsonOptions);
-            // Created owner-only and renamed into place, so the token is never readable by others, even briefly.
-            var temp = CredentialFile + ".tmp";
-            var options = new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write };
+            var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
             if (!OperatingSystem.IsWindows())
                 options.UnixCreateMode = OwnerFile;
             using (var stream = new FileStream(temp, options))
@@ -97,6 +101,18 @@ public class CredentialStorageService
         {
             _logger.LogError(ex, "Failed to save credentials");
             throw;
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(temp))
+                    File.Delete(temp);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "Could not remove a temporary credentials file");
+            }
         }
     }
 

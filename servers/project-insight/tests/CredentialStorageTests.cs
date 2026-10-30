@@ -53,4 +53,38 @@ public sealed class CredentialStorageTests : IDisposable
         Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(file));
         Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute, File.GetUnixFileMode(_dir));
     }
+
+    [Fact]
+    public void Two_saves_in_a_row_leave_only_the_credentials_file()
+    {
+        _store.SaveCredential(Credential());
+        _store.SaveCredential(Credential());
+
+        Assert.Equal(["credentials.json"], Directory.GetFiles(_dir).Select(Path.GetFileName));
+    }
+
+    [Fact]
+    public void A_save_that_fails_leaves_no_temp_file()
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "credentials.json", "in-the-way"));
+
+        Assert.ThrowsAny<Exception>(() => _store.SaveCredential(Credential()));
+
+        Assert.Empty(Directory.GetFiles(_dir));
+    }
+
+    [Fact]
+    public void A_link_left_at_the_old_temp_name_is_never_written_through()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        Directory.CreateDirectory(_dir);
+        var victim = Path.Combine(Path.GetDirectoryName(_dir)!, "victim.txt");
+        File.WriteAllText(victim, "untouched");
+        File.CreateSymbolicLink(Path.Combine(_dir, "credentials.json.tmp"), victim);
+
+        _store.SaveCredential(Credential());
+
+        Assert.Equal("untouched", File.ReadAllText(victim));
+        Assert.Equal("token", _store.LoadCredential()!.ApiToken);
+    }
 }
