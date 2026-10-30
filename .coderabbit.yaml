@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+
+reviews:
+    profile: chill
+    request_changes_workflow: false
+    high_level_summary: true
+    poem: false
+    review_status: true
+    auto_review:
+        enabled: true
+        drafts: false
+    path_instructions:
+        - path: "servers/project-insight/core/**"
+          instructions: >-
+              Tool names, descriptions, input schemas and result text are a contract with MCP
+              clients. Flag any change to them, and any change that sends a different HTTP request
+              to Project Insight. Never let an API token or credential reach logs or tool results.
+        - path: "servers/project-insight/tests/Snapshots/**"
+          instructions: >-
+              A change here changes what MCP clients see in tools/list. Check the PR explains it
+              and that the version is bumped accordingly.
+        - path: "servers/project-insight/src-stdio/**"
+          instructions: >-
+              stdout carries JSON-RPC only; anything else written to stdout breaks the client.
+              Logging must go to stderr.
+        - path: ".github/workflows/**"
+          instructions: >-
+              This repo is public. Check secrets are never echoed and that pushes to main only
+              publish what the version in the csproj says.
+
+chat:
+    auto_reply: true
