@@ -64,6 +64,16 @@ public class TimeChangeCardTests
     }
 
     [Fact]
+    public void Card_greys_an_undone_receipt_and_offers_to_draft_it_again()
+    {
+        Assert.Contains("Undone · back to how it was", Html);
+        Assert.Contains("app.classList.toggle(\"spent\"", Html);
+        Assert.Contains(".spent .row.chg", Html);
+        Assert.Contains("act(\"undo_time_changes\", { receiptId: d.revertedBy })", Html);
+        Assert.Contains("Draft a redo", Html);
+    }
+
+    [Fact]
     public void Card_treats_an_unknown_outcome_like_a_failed_reversal()
     {
         Assert.Contains("d.outcomeUnknown", Html);

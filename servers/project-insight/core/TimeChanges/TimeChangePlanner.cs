@@ -43,7 +43,11 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                 Billable = r.Before.Billable, Description = r.Before.Description
             }
         }).ToList();
-        return PlanCoreAsync($"Undo: {receipt.Intent}", changes, receipt.Id, receipt.CommittedAt, ct);
+        // Undoing an undo puts the original changes back, so call it a redo rather than "Undo: Undo: …".
+        var intent = receipt.UndoOf is not null && receipt.Intent.StartsWith("Undo: ", StringComparison.Ordinal)
+            ? "Redo: " + receipt.Intent["Undo: ".Length..]
+            : $"Undo: {receipt.Intent}";
+        return PlanCoreAsync(intent, changes, receipt.Id, receipt.CommittedAt, ct);
     }
 
     private sealed class WeekData

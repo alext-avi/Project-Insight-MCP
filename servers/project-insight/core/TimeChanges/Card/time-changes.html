@@ -85,6 +85,9 @@
   .btn:disabled { opacity: 0.5; cursor: default; }
   .hint { font-size: 11px; color: var(--faint); }
   .error { color: var(--failfg); }
+  /* A receipt that was undone: its changes are no longer in PI, so it must not look applyable. */
+  .spent .kpis, .spent .week { opacity: 0.55; }
+  .spent .row.chg { background: transparent; }
   @media (max-width: 420px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
 </style>
 </head>
@@ -303,12 +306,14 @@
   function render() {
     const v = state.view;
     app.replaceChildren();
+    app.classList.remove("spent");
     if (!v) {
       app.append(el("p", state.error ? "error" : "muted", state.error || "Waiting for the draft…"));
     } else if (v.kind !== "draft" || !v.draft) {
       app.append(el("p", "error", v.message || "Nothing to show."));
     } else {
       const d = v.draft;
+      app.classList.toggle("spent", d.status === "committed" && !!d.revertedBy);
       app.append(header(d), totals(d));
       if (d.status === "stale")
         app.append(el("div", "note n-stale",
@@ -332,8 +337,9 @@
       if (unsure) label = "Failed · check Project Insight";
     }
     if (d.status === "committed") {
-      label = d.channel === "agent" ? "Committed by the agent" : "Committed · confirmed in chat";
-      cls = "p-ok";
+      label = d.revertedBy ? "Undone · back to how it was"
+        : d.channel === "agent" ? "Committed by the agent" : "Committed · confirmed in chat";
+      cls = d.revertedBy ? "p-mute" : "p-ok";
     } else if (d.status === "draft" && d.undoOf) {
       label = d.undoOfCommittedAt
         ? "Draft · undo of " + when(d.undoOfCommittedAt) + " changes"
@@ -342,7 +348,7 @@
     const by = d.status === "committed"
       ? (d.channel === "agent"
         ? "Written by the agent · committed by the agent, " + when(d.committedAt)
-        : "Written by the agent · confirmed by you, " + when(d.committedAt))
+        : "Written by the agent · confirmed by you, " + when(d.committedAt)) + (d.revertedBy ? " · since undone" : "")
       : d.status === "draft"
         ? "Written by the agent · expires " + when(d.expiresAt)
         : "Written by the agent · " + when(d.proposedAt);
@@ -469,9 +475,11 @@
     } else if (d.status === "stale") {
       bar.append(button("Cancel draft", "", () => act("cancel_time_changes", { draftId: d.id })));
     } else if (d.status === "committed" && d.revertedBy) {
-      bar.append(el("span", "hint", "Undone by " + d.revertedBy));
+      // Undoing the undo drafts these changes again; the server says so if that window has passed.
+      bar.append(button("Draft these again", "", () => act("undo_time_changes", { receiptId: d.revertedBy })),
+        el("span", "hint", "None of these changes are in Project Insight now."));
     } else if (d.status === "committed" && d.undoUntil && new Date(d.undoUntil) > new Date()) {
-      bar.append(button("Draft an undo", "", () => act("undo_time_changes", { receiptId: d.id })),
+      bar.append(button(d.undoOf ? "Draft a redo" : "Draft an undo", "", () => act("undo_time_changes", { receiptId: d.id })),
         el("span", "hint", "available until " + when(d.undoUntil)));
     }
     if (state.busy) bar.append(el("span", "hint", "Working…"));

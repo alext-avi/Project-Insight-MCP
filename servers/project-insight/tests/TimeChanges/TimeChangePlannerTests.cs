@@ -280,6 +280,27 @@ public sealed class TimeChangePlannerTests : IDisposable
     }
 
     [Fact]
+    public async Task Undoing_an_undo_is_a_redo_of_the_original_changes()
+    {
+        var planned = (await _planner.PlanAsync("Log Tuesday", [TypicalChanges()[0]], default)).Draft!;
+        _pi.Add("te-100", "u-1", Tue, 4m, "t-1", description: "Order sync");
+        planned.Status = DraftStatus.Committed;
+        planned.Rows[0].SavedId = "te-100";
+        planned.CommittedAt = Drafts.T0;
+        var undo = (await _planner.PlanUndoAsync(planned, default)).Draft!;
+        _pi.Entries.RemoveAll(e => e.Id == "te-100");
+        undo.Status = DraftStatus.Committed;
+        undo.CommittedAt = Drafts.T0.AddMinutes(5);
+
+        var redo = (await _planner.PlanUndoAsync(undo, default)).Draft!;
+
+        Assert.Equal("Redo: Log Tuesday", redo.Intent);
+        Assert.Equal(undo.Id, redo.UndoOf);
+        Assert.Equal([("create", 4m)], redo.Rows.Select(r => (r.Action, r.After!.Hours)));
+        Assert.Equal(planned.Totals.NetHours, redo.Totals.NetHours);
+    }
+
+    [Fact]
     public async Task Undo_can_recreate_a_deleted_zero_hour_entry_and_restore_zero_hours()
     {
         _pi.Add("te-0", "u-1", Wed, 0m, "t-5", billable: false);
