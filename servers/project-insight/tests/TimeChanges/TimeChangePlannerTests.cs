@@ -160,7 +160,7 @@ public sealed class TimeChangePlannerTests : IDisposable
         [
             new() { Action = "create", Date = "2026-10-28", Hours = 6m, TaskId = "t-1" },
             new() { Action = "create", Date = "2026-10-27", Hours = 2m, TaskId = "t-1" },
-            new() { Action = "create", Date = "2026-10-27", Hours = 3m, TaskId = "t-4", User = "Jane" }
+            new() { Action = "create", Date = "2026-10-27", Hours = 3m, TaskId = "t-4", User = "Jane Doe" }
         ], default)).Draft!;
 
         Assert.Contains(draft.Rows[0].Warnings, w => w.Code == WarningCode.Over12Hours && w.Message.Contains("14h"));
@@ -491,5 +491,21 @@ public sealed class TimeChangePlannerTests : IDisposable
         Assert.Equal(("Undo: Log Tuesday", "Redo: Log Tuesday", "Undo: Log Tuesday"), (undo.Intent, redo.Intent, undoAgain.Intent));
         Assert.Equal(redo.Id, undoAgain.UndoOf);
         Assert.Equal([("delete", "te-101")], undoAgain.Rows.Select(r => (r.Action, r.TimeEntryId)));
+    }
+
+    [Fact]
+    public async Task Photos_for_different_people_are_fetched_at_the_same_time()
+    {
+        _pi.Looks["u-1"] = new PiLook("AE", null, null, "/Sites/Files/x/ae.jpeg");
+        _pi.Looks["u-2"] = new PiLook("JD", null, null, "/Sites/Files/x/jd.jpeg");
+        _pi.Photos["/Sites/Files/x/ae.jpeg"] = "data:image/jpeg;base64,AAAA";
+        _pi.Photos["/Sites/Files/x/jd.jpeg"] = "data:image/jpeg;base64,BBBB";
+        _pi.Delay = TimeSpan.FromMilliseconds(20);
+
+        var draft = (await _planner.PlanAsync("Log Tuesday",
+            [TypicalChanges()[0], new() { Action = "create", User = "Jane Doe", Date = "2026-10-27", Hours = 3m, TaskId = "t-4" }], default)).Draft!;
+
+        Assert.Equal(["data:image/jpeg;base64,AAAA", "data:image/jpeg;base64,BBBB"], draft.Weeks.Select(w => w.Avatar!.Photo));
+        Assert.Equal(2, _pi.MaxConcurrent);
     }
 }

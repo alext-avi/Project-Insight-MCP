@@ -34,6 +34,22 @@ public sealed class FileDraftStoreTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task An_existing_drafts_folder_keeps_its_own_permissions()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var shared = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                     UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
+        Directory.CreateDirectory(_root);
+        File.SetUnixFileMode(_root, shared);
+
+        await Store().CreateAsync(Drafts.New());
+
+        Assert.Equal(shared, File.GetUnixFileMode(_root));
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute,
+            File.GetUnixFileMode(Path.Combine(_root, "u-1")));
+    }
+
     [Theory]
     [InlineData("../u-2/d_abc")]
     [InlineData("d_ABC/../../x")]

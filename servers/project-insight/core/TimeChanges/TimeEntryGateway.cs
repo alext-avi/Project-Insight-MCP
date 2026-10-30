@@ -1,3 +1,4 @@
+using System.Net;
 using ProjectInsightMCP.Models;
 using ProjectInsightMCP.Services;
 
@@ -166,12 +167,26 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
     }
 
     /// <summary>Largest photo embedded in a draft. PI's are a few KB.</summary>
-    public const int MaxPhotoBytes = 200 * 1024;
+    public const int MaxPhotoBytes = 32 * 1024;
+
+    /// <summary>How long one photo may take. Photos are cosmetic, so a slow one must not hold up a plan.</summary>
+    public TimeSpan PhotoTimeout { get; init; } = TimeSpan.FromSeconds(3);
 
     public async Task<string?> GetPhotoAsync(string photoUrl, CancellationToken ct)
-        => await api.GetSiteImageAsync(photoUrl, MaxPhotoBytes, ct) is { } image
-            ? $"data:{image.ContentType};base64,{Convert.ToBase64String(image.Bytes)}"
-            : null;
+    {
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        budget.CancelAfter(PhotoTimeout);
+        try
+        {
+            return await api.GetSiteImageAsync(photoUrl, MaxPhotoBytes, budget.Token) is { } image
+                ? $"data:{image.ContentType};base64,{Convert.ToBase64String(image.Bytes)}"
+                : null;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return null; // out of time; only the caller's own cancellation goes further
+        }
+    }
 
     /// <summary>A PI colour as "#rrggbb", or null for anything else (the card puts it in a style).</summary>
     public static string? Colour(string? value)
@@ -211,12 +226,21 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
     }
 
     // The API service turns any exception (timeout, dropped connection) into this message. Then PI gave
-    // no answer, so the write may have been applied; "API returned <status>" or a success:false body is
-    // a definite refusal.
+    // no answer, so the write may have been applied.
     private const string NoAnswer = "Internal error occurred";
 
+    // A server error or timeout status can come back after the write was saved (or from a gateway in
+    // front of PI that gave up waiting), so it is no answer either. Other 4xx and a success:false body
+    // are definite refusals.
+    private static readonly HashSet<string> NoAnswerStatuses = new[]
+    {
+        HttpStatusCode.InternalServerError, HttpStatusCode.BadGateway, HttpStatusCode.ServiceUnavailable,
+        HttpStatusCode.GatewayTimeout, HttpStatusCode.RequestTimeout
+    }.Select(code => $"API returned {code}").ToHashSet(StringComparer.Ordinal);
+
     private static PiWrite Failed(string? message, List<string>? errors)
-        => new(false, null, Describe(message, errors), Uncertain: message == NoAnswer);
+        => new(false, null, Describe(message, errors),
+            Uncertain: message == NoAnswer || (message is not null && NoAnswerStatuses.Contains(message)));
 
     private static PiEntry? ToEntry(TimeEntryWithNames e)
     {

@@ -16,8 +16,8 @@ public class TimeChangeResolverTests
     }
 
     [Theory]
-    [InlineData("jane")]
-    [InlineData("Jane Doe")]
+    [InlineData("jane doe")]
+    [InlineData(" Jane Doe ")]
     [InlineData("u-2")]
     public async Task User_resolves_by_unique_name_or_id(string query)
         => Assert.Equal("u-2", (await Resolver().UserAsync(0, query, _pi.Caller, default)).Value!.Id);
@@ -26,7 +26,7 @@ public class TimeChangeResolverTests
     public async Task User_name_resolves_even_when_pi_rejects_it_as_an_id()
     {
         _pi.UnknownUserIdThrows = true;
-        var r = await Resolver().UserAsync(0, "Jane", _pi.Caller, default);
+        var r = await Resolver().UserAsync(0, "Jane Doe", _pi.Caller, default);
         Assert.Equal("u-2", r.Value!.Id);
         Assert.Equal("Jane Doe", r.Value.Name);
     }
@@ -42,6 +42,20 @@ public class TimeChangeResolverTests
         Assert.Equal("user", r.Clarification.Field);
         Assert.Equal(["u-2", "u-3"], r.Clarification.Candidates.Select(c => c.Id).Order());
     }
+
+    [Fact]
+    public async Task A_unique_partial_user_name_is_offered_back_not_used()
+    {
+        var r = await Resolver().UserAsync(1, "Jane", _pi.Caller, default);
+
+        Assert.Null(r.Value);
+        Assert.Equal("No user named \"Jane\" exactly; did you mean Jane Doe?", r.Clarification!.Message);
+        Assert.Equal(["u-2"], r.Clarification.Candidates.Select(c => c.Id));
+    }
+
+    [Fact]
+    public async Task Projects_and_tasks_still_resolve_from_a_unique_partial_name()
+        => Assert.Equal("t-3", (await Resolver().TaskAsync(0, null, "Portal", "Design", default)).Value!.Id);
 
     [Fact]
     public async Task Task_resolves_from_project_and_task_names_ignoring_case()

@@ -118,13 +118,18 @@ public sealed partial class FileDraftStore(string root, TimeProvider time) : IDr
         File.Move(temp, path, overwrite: true);
     }
 
+    // Only folders the store creates are made owner-only: a DraftsPath that already exists keeps the
+    // permissions its owner gave it.
     private void EnsureDirectory(string dir)
     {
         foreach (var d in new[] { root, dir })
         {
-            Directory.CreateDirectory(d);
-            if (!OperatingSystem.IsWindows())
-                File.SetUnixFileMode(d, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            if (Directory.Exists(d))
+                continue;
+            if (OperatingSystem.IsWindows())
+                Directory.CreateDirectory(d);
+            else
+                Directory.CreateDirectory(d, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         }
     }
 

@@ -243,7 +243,13 @@
     if (failed && id) refresh(id);
   }
 
+  // Only https links leave the card, so a stored URL can never run script or go out unencrypted.
+  function isHttps(url) {
+    return typeof url === "string" && /^https:\/\//.test(url);
+  }
+
   function openLink(url) {
+    if (!isHttps(url)) return;
     request("ui/open-link", { url }).catch(() => window.open(url, "_blank", "noopener"));
   }
 
@@ -386,7 +392,7 @@
     const title = el("span", "", avatar(w), el("span", "who", name),
       w.isCaller ? null : el("span", "other", "someone else’s time"),
       " · week of " + day(w.start, { day: "numeric", month: "short" }));
-    if (w.timesheetUrl) {
+    if (isHttps(w.timesheetUrl)) {
       const link = el("a", "link", "open in PI ↗");
       link.href = "#";
       link.addEventListener("click", (e) => { e.preventDefault(); openLink(w.timesheetUrl); });
@@ -506,7 +512,7 @@
   function failedEntry(r, w) {
     const entryId = r.savedId || r.timeEntryId;
     const box = el("small", "err", entryId ? "Entry " + entryId : "Entry id unknown");
-    if (w && w.timesheetUrl) {
+    if (w && isHttps(w.timesheetUrl)) {
       const link = el("a", "link", "open in PI ↗");
       link.href = "#";
       link.addEventListener("click", (e) => { e.preventDefault(); openLink(w.timesheetUrl); });

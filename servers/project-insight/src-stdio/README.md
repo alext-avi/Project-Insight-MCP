@@ -222,10 +222,12 @@ since the draft was made, nothing is written. Committed changes can be undone fo
 
 Drafts are kept in `~/.projectinsight/drafts/` (readable only by you) and removed after 7 days.
 
-The original `create_time_entry`, `update_time_entry` and `delete_time_entry` tools still write
-immediately and are marked `destructiveHint`. If you want every change reviewed, block those three and
-`commit_time_changes` in your client's tool permissions; the card's Confirm button then remains the
-only way to write time.
+Other tools still write time immediately, without a draft: `create_time_entry`, `update_time_entry`
+and `delete_time_entry` (marked `destructiveHint`), the PTO tools `create_pto_entry`,
+`update_pto_entry` and `delete_pto_entry` (a PTO entry creates its own time entry), and the timesheet
+tools `update_timesheet` and `create_and_submit_timesheet`. If you want every change to time reviewed
+on the card first, block all of those and `commit_time_changes` in your client's tool permissions; the
+card's Confirm button is then the only way left to write time.
 
 After installing or updating, restart Claude Desktop (or reconnect the server): tools and the card
 are cached when the client connects.

@@ -287,6 +287,13 @@ public class TimeEntryGatewayTests
     [InlineData("//elsewhere.test/a.jpeg")]
     [InlineData("/Sites/../secret.jpeg")]
     [InlineData("Sites/Files/a.jpeg")]
+    [InlineData("/other/a.jpeg")]
+    [InlineData("/Sites/Files/a.jpeg?x=1")]
+    [InlineData("/Sites/Files/a.jpeg#x")]
+    [InlineData("/Sites/Files/%2e%2e/a.jpeg")]
+    [InlineData("/Sites/Files/..\\a.jpeg")]
+    [InlineData("/Sites/Files//elsewhere.test/a.jpeg")]
+    [InlineData("/sites/files/a.jpeg")]
     public async Task A_photo_url_that_leaves_the_pi_site_is_never_fetched(string url)
     {
         var (gw, pi) = Create();
@@ -298,13 +305,64 @@ public class TimeEntryGatewayTests
     [Fact]
     public async Task A_photo_that_is_not_an_image_or_too_large_is_left_out()
     {
-        var (gw, _) = Create(Image([1], "text/html"), Image([1], "image/svg+xml"),
-            Image(new byte[ProjectInsightTimeEntryGateway.MaxPhotoBytes + 1], "image/png"), Json(HttpStatusCode.NotFound, "{}"));
+        var (gw, pi) = Create(Image([1], "text/html"), Image([1], "image/svg+xml"),
+            Image(new byte[ProjectInsightTimeEntryGateway.MaxPhotoBytes + 1], "image/png"), Json(HttpStatusCode.NotFound, "{}"),
+            Image(new byte[40 * 1024], "image/png"));
 
-        Assert.Null(await gw.GetPhotoAsync("/a.jpeg", default));
-        Assert.Null(await gw.GetPhotoAsync("/b.svg", default));
-        Assert.Null(await gw.GetPhotoAsync("/c.png", default));
-        Assert.Null(await gw.GetPhotoAsync("/d.jpeg", default));
+        Assert.Null(await gw.GetPhotoAsync("/Sites/Files/a.jpeg", default));
+        Assert.Null(await gw.GetPhotoAsync("/Sites/Files/b.svg", default));
+        Assert.Null(await gw.GetPhotoAsync("/Sites/Files/c.png", default));
+        Assert.Null(await gw.GetPhotoAsync("/Sites/Files/d.jpeg", default));
+        Assert.Null(await gw.GetPhotoAsync("/Sites/Files/e.png", default));
+        Assert.Equal(5, pi.Requests.Count);
+    }
+
+    [Fact]
+    public async Task A_slow_photo_is_left_out_but_the_callers_cancellation_still_throws()
+    {
+        var pi = new StubHttpMessageHandler([Image([1], "image/png")]) { Delay = TimeSpan.FromSeconds(30) };
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["ProjectInsight:BaseUrl"] = "https://pi.test" })
+            .Build();
+        var token = new ApiTokenAccessor { ApiToken = "t" };
+        var api = new ProjectInsightApiService(new HttpClient(pi), NullLogger<ProjectInsightApiService>.Instance, config, token);
+        var gw = new ProjectInsightTimeEntryGateway(api, token) { PhotoTimeout = TimeSpan.FromMilliseconds(50) };
+
+        var started = DateTime.UtcNow;
+        Assert.Null(await gw.GetPhotoAsync("/Sites/Files/a.png", default));
+        Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(10));
+
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => gw.GetPhotoAsync("/Sites/Files/a.png", cancelled.Token));
+    }
+
+    [Fact]
+    public void A_photo_fetch_has_a_three_second_budget()
+        => Assert.Equal(TimeSpan.FromSeconds(3), new ProjectInsightTimeEntryGateway(null!, new ApiTokenAccessor()).PhotoTimeout);
+
+    [Theory]
+    [InlineData(HttpStatusCode.InternalServerError, true)]
+    [InlineData(HttpStatusCode.BadGateway, true)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, true)]
+    [InlineData(HttpStatusCode.GatewayTimeout, true)]
+    [InlineData(HttpStatusCode.RequestTimeout, true)]
+    [InlineData(HttpStatusCode.BadRequest, false)]
+    [InlineData(HttpStatusCode.Forbidden, false)]
+    [InlineData(HttpStatusCode.Conflict, false)]
+    public async Task A_server_error_or_timeout_status_on_a_write_is_uncertain(HttpStatusCode status, bool uncertain)
+    {
+        var (gw, _) = Create(Json(status, "x"), Json(status, "x"), Json(status, "x"));
+        var values = new EntryWrite("u-1", "t-1", new DateOnly(2026, 10, 27), 4m, true, null, null);
+
+        var results = new[]
+        {
+            await gw.CreateEntryAsync(values, default),
+            await gw.UpdateEntryAsync("te-1", values, default),
+            await gw.DeleteEntryAsync("te-1", default)
+        };
+
+        Assert.All(results, r => Assert.Equal((false, uncertain), (r.Success, r.Uncertain)));
     }
 
     private static HttpResponseMessage Image(byte[] bytes, string type)

@@ -222,9 +222,9 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         try
         {
             var looks = await pi.GetUserLooksAsync(draft.Weeks.Select(w => w.UserId).Distinct().ToList(), ct);
-            var photos = new Dictionary<string, string?>();
-            foreach (var url in looks.Values.Select(l => l.PhotoUrl).OfType<string>().Distinct())
-                photos[url] = await pi.GetPhotoAsync(url, ct);
+            var urls = looks.Values.Select(l => l.PhotoUrl).OfType<string>().Distinct().ToList();
+            var fetched = await Task.WhenAll(urls.Select(url => pi.GetPhotoAsync(url, ct)));
+            var photos = urls.Zip(fetched).ToDictionary(p => p.First, p => p.Second);
             foreach (var week in draft.Weeks)
             {
                 if (!looks.TryGetValue(week.UserId, out var look))

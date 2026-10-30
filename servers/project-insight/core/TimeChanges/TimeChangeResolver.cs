@@ -43,13 +43,17 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
         if (await TryUserByIdAsync(query, ct) is { } byId)
             return new(byId, null);
 
+        // Whose time it is must not be a guess, so a person needs their exact name; a unique partial
+        // match is only offered back. Tasks and projects keep partial matching.
         var match = NameMatch.Find(await pi.FindUsersAsync(query, ct), u => u.Name, query);
-        if (match.Match is not null)
-            return new(match.Match, null);
+        if (match.Match is { } m && string.Equals(m.Name.Trim(), query, StringComparison.OrdinalIgnoreCase))
+            return new(m, null);
         return new(null, Clarify(index, "user", query,
-            match.Candidates.Count == 0
-                ? $"No active user matches \"{query}\"."
-                : $"{match.Candidates.Count} users match \"{query}\". Use one of their ids.",
+            match.Match is { } partial
+                ? $"No user named \"{query}\" exactly; did you mean {partial.Name}?"
+                : match.Candidates.Count == 0
+                    ? $"No active user matches \"{query}\"."
+                    : $"{match.Candidates.Count} users match \"{query}\". Use one of their ids.",
             match.Candidates.Select(u => new Candidate { Id = u.Id, Name = u.Name })));
     }
 

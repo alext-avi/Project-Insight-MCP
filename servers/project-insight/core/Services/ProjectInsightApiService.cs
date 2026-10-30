@@ -2665,7 +2665,9 @@ public class ProjectInsightApiService
     /// </summary>
     public async Task<(byte[] Bytes, string ContentType)?> GetSiteImageAsync(string path, int maxBytes, CancellationToken cancellationToken = default)
     {
-        if (!path.StartsWith('/') || path.StartsWith("//") || path.Contains('\\') || path.Contains(".."))
+        // Only PI's own uploaded files: no query, fragment, escapes or path tricks that could reach another page.
+        if (!path.StartsWith("/Sites/Files/", StringComparison.Ordinal) || path.IndexOfAny(['?', '#', '%', '\\']) >= 0
+            || path.Contains("..") || path.Contains("//"))
             return null;
         try
         {

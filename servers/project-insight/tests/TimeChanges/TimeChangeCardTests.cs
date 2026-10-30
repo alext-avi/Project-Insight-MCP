@@ -118,4 +118,14 @@ public class TimeChangeCardTests
         Assert.Contains("d.status === \"committed\" && !!d.revertedBy && !d.redoneBy", Html);
         Assert.Contains("d.status === \"committed\" && d.revertedBy && d.redoneBy", Html);
     }
+
+    [Fact]
+    public void Card_opens_and_shows_only_https_links()
+    {
+        Assert.Contains("/^https:\\/\\//.test(url)", Html);
+        Assert.Contains("if (!isHttps(url)) return;", Html);
+        Assert.Contains("if (isHttps(w.timesheetUrl))", Html);
+        Assert.Contains("if (w && isHttps(w.timesheetUrl))", Html);
+        Assert.DoesNotContain("if (w.timesheetUrl)", Html);
+    }
 }
