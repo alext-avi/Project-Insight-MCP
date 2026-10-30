@@ -538,7 +538,7 @@
       bar.append(button("Cancel draft", "", () => act("cancel_time_changes", { draftId: d.id })));
     } else if (d.status === "committed" && d.revertedBy && d.redoneBy) {
       // Undoing the undo again would fail; the later redo is the receipt to undo.
-      bar.append(el("span", "hint", "Put back by a later redo; undo that one to remove them again."));
+      bar.append(el("span", "hint", "These changes were put back by a later change; undo that one to remove them again."));
     } else if (d.status === "committed" && d.revertedBy) {
       // Undoing the undo drafts these changes again; the server says so if that window has passed.
       bar.append(button("Draft these again", "", () => act("undo_time_changes", { receiptId: d.revertedBy })),

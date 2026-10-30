@@ -347,6 +347,8 @@ public class TimeEntryGatewayTests
     [InlineData(HttpStatusCode.ServiceUnavailable, true)]
     [InlineData(HttpStatusCode.GatewayTimeout, true)]
     [InlineData(HttpStatusCode.RequestTimeout, true)]
+    [InlineData(HttpStatusCode.NotImplemented, true)]
+    [InlineData((HttpStatusCode)524, true)]
     [InlineData(HttpStatusCode.BadRequest, false)]
     [InlineData(HttpStatusCode.Forbidden, false)]
     [InlineData(HttpStatusCode.Conflict, false)]

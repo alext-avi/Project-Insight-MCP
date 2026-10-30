@@ -229,18 +229,18 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
     // no answer, so the write may have been applied.
     private const string NoAnswer = "Internal error occurred";
 
-    // A server error or timeout status can come back after the write was saved (or from a gateway in
-    // front of PI that gave up waiting), so it is no answer either. Other 4xx and a success:false body
-    // are definite refusals.
-    private static readonly HashSet<string> NoAnswerStatuses = new[]
-    {
-        HttpStatusCode.InternalServerError, HttpStatusCode.BadGateway, HttpStatusCode.ServiceUnavailable,
-        HttpStatusCode.GatewayTimeout, HttpStatusCode.RequestTimeout
-    }.Select(code => $"API returned {code}").ToHashSet(StringComparer.Ordinal);
+    // A server error (any 5xx, including a proxy's 520-524) or a timeout status can come back after the
+    // write was saved, or from a gateway in front of PI that gave up waiting, so it is no answer either.
+    // Other 4xx and a success:false body are definite refusals.
+    private const string StatusPrefix = "API returned ";
+
+    private static bool IsNoAnswerStatus(string? message)
+        => message is not null && message.StartsWith(StatusPrefix, StringComparison.Ordinal)
+           && Enum.TryParse<HttpStatusCode>(message[StatusPrefix.Length..], out var code)
+           && ((int)code >= 500 || code == HttpStatusCode.RequestTimeout);
 
     private static PiWrite Failed(string? message, List<string>? errors)
-        => new(false, null, Describe(message, errors),
-            Uncertain: message == NoAnswer || (message is not null && NoAnswerStatuses.Contains(message)));
+        => new(false, null, Describe(message, errors), Uncertain: message == NoAnswer || IsNoAnswerStatus(message));
 
     private static PiEntry? ToEntry(TimeEntryWithNames e)
     {

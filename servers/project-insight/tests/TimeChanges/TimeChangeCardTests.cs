@@ -115,7 +115,7 @@ public class TimeChangeCardTests
     public void Card_shows_a_redone_receipt_as_back_in_effect_with_no_button()
     {
         Assert.Contains("Redone · changes put back", Html);
-        Assert.Contains("Put back by a later redo; undo that one to remove them again.", Html);
+        Assert.Contains("These changes were put back by a later change; undo that one to remove them again.", Html);
         Assert.Contains("d.status === \"committed\" && !!d.revertedBy && !d.redoneBy", Html);
         Assert.Contains("d.status === \"committed\" && d.revertedBy && d.redoneBy", Html);
     }
