@@ -1,6 +1,6 @@
 # Phase 1: reviewable time-entry changes with an MCP Apps card
 
-**Status:** implemented on branch `phase1-time-changes` (PR pending live test) · **Issue:** #3 · **Release:** 2.1.0
+**Status:** implemented and live-tested on branch `phase1-time-changes` (PR #8) · **Issue:** #3 · **Release:** 2.1.0
 **Builds on:** Phase 0 (2.0.0, SDK on .NET 10) · **Related:** #4 (remote host), #5 (SDK-style tools)
 
 ## Goal
@@ -185,6 +185,17 @@ Planner and committer depend on `ProjectInsightApiService` and `IDraftStore` thr
   - Claude Desktop: the card renders; confirm, cancel, undo, and stale (edit the day in PI between plan and confirm); check whether the confirm token reaches the model. Expiry is covered by unit tests only.
   - Claude Code: the same flow as text
   - everything created is removed with undo
+
+### Live test results (2026-10-29/30, release candidates rc.1–rc.6, real data)
+
+- **Claude Desktop and Cowork:** the card renders in light and dark mode; Confirm commits; Draft an undo then Confirm reverses it; Cancel works. All changes made during testing were undone.
+- **Found and fixed during the test:**
+  - an undone receipt still looked applyable (green + rows, no action): now greyed, with Draft these again;
+  - weeks assumed Monday–Sunday, but the company's timesheets run Sunday–Saturday and PI creates them on first submit, so Sunday's hours fell into the previous week: weeks now copy the shape of the person's latest timesheet;
+  - the card now uses PI's look: navy bar, PI blue, each person's PI avatar (photo or initials on their PI colours) and each project's PI colour (`Project.Color`, `User.ColorSettings`, `User.PhotoUrl`, all confirmed against live PI).
+- **Confirmed against live PI:** the time-entry search includes entries on its end date; nested `Project:Color` works in the time-entry search; user photos are served from `/Sites/Files/…`.
+- **Not exercised live:** the out-of-date (stale) path, whether the confirm token reaches the model, the Claude Code text-only flow, and PI's behaviour behind a proxy timeout. Unit tests cover stale and the token's `_meta`-only path; any 5xx or 408 on a write is reported as outcome unknown.
+- **Known limitation:** moving an entry to a period with no PI timesheet sends no timesheet id, which PI may read as "keep the old one". Not yet checked against PI.
 
 ## Release
 
