@@ -1,11 +1,8 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.Json;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -25,7 +22,7 @@ public sealed class ProjectInsightMcpOptions
     public Func<string, bool> ExposeTool { get; init; } = _ => true;
 }
 
-/// <summary>Which <see cref="ToolCallGate"/> queue a tool call joins: one queue per user.</summary>
+/// <summary>Which <see cref="ToolCallGate"/> queue a tool call joins: one queue per user. Resolved from the MCP request's service scope; a scoped implementation sees the HTTP request scope only when the transport is stateless.</summary>
 public interface IToolCallKey
 {
     string Key { get; }
