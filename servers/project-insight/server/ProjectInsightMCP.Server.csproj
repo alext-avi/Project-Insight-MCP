@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    MCP SDK wiring shared by the stdio and web hosts: tool and resource registration, and the
+    adapters between Core's tool model and the SDK's. Core itself stays free of the SDK.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ProjectInsightMCP.Server</RootNamespace>
+    <AssemblyName>ProjectInsightMCP.Server</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <!-- ModelContextProtocol.Extensions.Apps is marked experimental (MCPEXP003). -->
+    <NoWarn>$(NoWarn);MCPEXP003</NoWarn>
+    <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" Version="2.3.0" />
+    <PackageReference Include="ModelContextProtocol.Extensions.Apps" Version="2.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../core/ProjectInsightMCP.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="projectinsight-mcp" />
+    <InternalsVisibleTo Include="ProjectInsightMCP.Web" />
+    <InternalsVisibleTo Include="ProjectInsightMCP.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using ProjectInsightMCP.Server;
 using ProjectInsightMCP.Stdio;
 using ProjectInsightMCP.Tests.TimeChanges;
 using ProjectInsightMCP.TimeChanges;
@@ -24,7 +25,7 @@ public sealed class StartupPruneTests : IDisposable
         await store.CreateAsync(old);
         time.Now = Drafts.T0.AddDays(8);
 
-        await ProjectInsightServer.PruneDraftsAtStartupAsync(services);
+        await StdioHost.PruneDraftsAtStartupAsync(services);
 
         Assert.Null(await store.GetAsync("u-1", old.Id));
     }
@@ -33,6 +34,6 @@ public sealed class StartupPruneTests : IDisposable
     public async Task Startup_prune_failure_does_not_stop_the_server()
     {
         // No IDraftStore registered: resolving it throws. The prune must swallow that.
-        await ProjectInsightServer.PruneDraftsAtStartupAsync(new ServiceCollection().BuildServiceProvider());
+        await StdioHost.PruneDraftsAtStartupAsync(new ServiceCollection().BuildServiceProvider());
     }
 }

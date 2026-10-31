@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using ProjectInsightMCP.Server;
 using ProjectInsightMCP.Stdio;
 using ProjectInsightMCP.Tests.TimeChanges;
 using ProjectInsightMCP.TimeChanges;

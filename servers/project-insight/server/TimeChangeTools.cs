@@ -10,7 +10,7 @@ using ModelContextProtocol.Server;
 using ProjectInsightMCP.Services;
 using ProjectInsightMCP.TimeChanges;
 
-namespace ProjectInsightMCP.Stdio;
+namespace ProjectInsightMCP.Server;
 
 /// <summary>
 /// The six time-change tools and the review card as SDK-native primitives. The logic lives in

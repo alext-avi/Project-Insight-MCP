@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ProjectInsightMCP.Server;
 using ProjectInsightMCP.Services;
 
 namespace ProjectInsightMCP.Stdio;
@@ -37,7 +38,10 @@ public class Program
         builder.Services.AddProjectInsightServices(builder.Configuration);
         // Like WithStdioServerTransport (incl. its BufferedStream on stdout), but stdin EOF
         // answers the requests already read instead of dropping them.
-        builder.Services.AddProjectInsightMcp().WithDrainingStreamServerTransport(
+        builder.Services.AddProjectInsightMcp(new ProjectInsightMcpOptions
+        {
+            ServerVersion = ProjectInsightServer.VersionOf(typeof(Program).Assembly)
+        }).WithDrainingStreamServerTransport(
             Console.OpenStandardInput, () => new BufferedStream(Console.OpenStandardOutput()));
 
         var app = builder.Build();
@@ -54,7 +58,7 @@ public class Program
             Environment.Exit(1);
         }
 
-        await ProjectInsightServer.PruneDraftsAtStartupAsync(app.Services);
+        await StdioHost.PruneDraftsAtStartupAsync(app.Services);
 
         await app.RunAsync();
     }

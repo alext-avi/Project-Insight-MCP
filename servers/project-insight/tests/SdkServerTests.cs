@@ -11,6 +11,7 @@ using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using ProjectInsightMCP.Services;
+using ProjectInsightMCP.Server;
 using ProjectInsightMCP.Stdio;
 using Xunit;
 using static ProjectInsightMCP.Tests.McpServerTestHarness;
