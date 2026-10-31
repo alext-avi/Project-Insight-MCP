@@ -3,10 +3,11 @@ version: 2
 # Weekly version updates, grouped so each ecosystem opens at most a couple of PRs.
 # Security updates are enabled in the repo settings and are not limited by the groups below.
 updates:
-    # Local stdio server (.NET 10) and its tests.
+    # Local stdio server (.NET 10), the shared MCP wiring, and the tests.
     - package-ecosystem: nuget
       directories:
           - "/servers/project-insight/src-stdio"
+          - "/servers/project-insight/server"
           - "/servers/project-insight/tests"
       schedule:
           interval: weekly
