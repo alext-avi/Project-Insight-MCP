@@ -89,6 +89,7 @@ public static class WebHost
         app.MapOAuthMetadata();
         app.MapClientRegistration();
         app.MapAuthorize();
+        app.MapToken();
         var css = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "wwwroot", "oauth.css"));
         app.MapGet("/oauth.css", () => Results.Bytes(css, "text/css"));
         app.MapMcp("/mcp").RequireAuthorization();

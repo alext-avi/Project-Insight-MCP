@@ -11,7 +11,7 @@ namespace ProjectInsightMCP.Tests.Web;
 public sealed partial class AuthorizeFlow(WebFactory factory)
 {
     public const string Verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
-    public const string Challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGF3cMjXmM";
+    public const string Challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
     public const string ClaudeCallback = "https://claude.ai/api/mcp/auth_callback";
 
     public HttpClient Browser { get; } = factory.CreateClient(new WebApplicationFactoryClientOptions
