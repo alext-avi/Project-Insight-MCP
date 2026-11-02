@@ -37,6 +37,11 @@ public class RedirectPolicyTests
     [InlineData("http://localhost.evil.com/callback")]
     [InlineData("http://10.0.0.1/callback")]
     [InlineData("javascript:alert(1)")]
+    [InlineData(" https://claude.ai/api/mcp/auth_callback")]
+    [InlineData("https://claude.ai/api/mcp/auth_callback ")]
+    [InlineData("https://claude.ai/api/mcp/auth_callback\r\n")]
+    [InlineData("\thttps://claude.ai/api/mcp/auth_callback")]
+    [InlineData("http://localhost:3118/callback?")]
     [InlineData("")]
     [InlineData(null)]
     public void Refused(string? uri) => Assert.False(Policy.IsAllowed(uri));
@@ -55,4 +60,8 @@ public class RedirectPolicyTests
         Assert.True(RedirectPolicy.Matches("https://claude.ai/api/mcp/auth_callback", ["https://claude.ai/api/mcp/auth_callback"]));
         Assert.False(RedirectPolicy.Matches("https://claude.ai/api/mcp/auth_callback", ["https://chatgpt.com/connector_platform_oauth_redirect"]));
     }
+
+    [Fact]
+    public void Loopback_candidate_does_not_match_an_https_only_registration()
+        => Assert.False(RedirectPolicy.Matches("http://localhost:61000/callback", ["https://claude.ai/api/mcp/auth_callback"]));
 }

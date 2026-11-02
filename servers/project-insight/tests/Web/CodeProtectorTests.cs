@@ -36,4 +36,23 @@ public class CodeProtectorTests
         Assert.NotEqual(code, CodeProtector.Hash(code));
         Assert.Equal(64, CodeProtector.Hash(code).Length);
     }
+
+    [Theory]
+    [InlineData(0)]  // nonce
+    [InlineData(12)] // tag
+    public void Flipped_nonce_or_tag_byte_does_not_open(int index)
+    {
+        var code = CodeProtector.NewCode();
+        var sealedPayload = CodeProtector.Seal(code, [1, 2, 3, 4]);
+        sealedPayload[index] ^= 0x01;
+
+        Assert.Null(CodeProtector.Open(code, sealedPayload));
+    }
+
+    [Fact]
+    public void Payload_shorter_than_nonce_and_tag_does_not_open()
+        => Assert.Null(CodeProtector.Open(CodeProtector.NewCode(), new byte[27]));
+
+    [Fact]
+    public void Two_codes_differ() => Assert.NotEqual(CodeProtector.NewCode(), CodeProtector.NewCode());
 }

@@ -8,6 +8,8 @@ namespace ProjectInsightMCP.Web.Auth;
 /// </summary>
 public sealed class RedirectPolicy(IOptions<AuthOptions> auth)
 {
+    // System.Uri normalises other spellings of loopback (127.1, [0:0:0:0:0:0:0:1]) to the canonical host;
+    // that is deliberate, since browsers resolve them to the same loopback address.
     private static readonly string[] LoopbackHosts = ["localhost", "127.0.0.1", "[::1]"];
 
     public bool IsAllowed(string? candidate)
@@ -29,6 +31,9 @@ public sealed class RedirectPolicy(IOptions<AuthOptions> auth)
     public static Uri? Parse(string? value)
     {
         if (string.IsNullOrEmpty(value) || value.Length > 2048)
+            return null;
+        // Uri.TryCreate trims whitespace and control characters; matching must be exact, and CR/LF must never reach a Location header.
+        if (value.Any(c => c is <= ' ' or > '~'))
             return null;
         // Encoded characters, backslashes and dot segments have no place in a callback URL.
         if (value.Contains('%') || value.Contains('\\') || value.Contains("/./") || value.Contains("/../") || value.EndsWith("/.") || value.EndsWith("/.."))
