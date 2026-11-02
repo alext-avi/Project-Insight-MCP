@@ -56,7 +56,7 @@
 | Part | Branch | Pull request |
 | - | - | - |
 | A: Tasks A1–A2 | `phase2-remote-host` (already holds the spec and this plan) | PR 1 "Phase 2a: shared MCP wiring" |
-| B: Tasks B1–B11 | `phase2-web-host`, from `main` after PR 1 merges | PR 2 "Phase 2b: web host" |
+| B: Tasks B1–B11, with the live checkpoint after B8 | `phase2-web-host`, stacked on `phase2-remote-host` while PR 1 (#24) is open; rebased onto `main` once it merges | PR 2 "Phase 2b: web host" |
 | C: Tasks C1–C3 | `phase2-deploy`, from `main` after PR 2 merges | PR 3 "Phase 2c: infrastructure and deploy" |
 | C4 | none | done by the owner, after PR 3 merges |
 
@@ -3847,6 +3847,52 @@ Expected: PASS.
 git add servers/project-insight/src-web servers/project-insight/tests
 git commit -m "feat(web): token endpoint returning the PI token, with end-to-end sign-in tests"
 ```
+
+### Checkpoint after B8: sign in from desktop clients (owner, with the controller; not an agent task)
+
+The tests check the OAuth exchange only against our reading of the clients' docs. This checkpoint runs it in installed apps against live PI, before hardening (B9–B11) and before any Azure work (Part C). Failures become fixes in B3–B8 before B9 starts.
+
+**Setup** (nothing here is committed):
+- Start a tunnel: `ngrok http 5080`. Note the `https://…` host it prints.
+  - `Web:PublicBaseUrl` must be https (`StartupChecks`), so every client goes through the tunnel, Codex included. We don't add an http-localhost exception to a security check for a test.
+  - The free ngrok tier shows a one-time warning page to browsers; click through it.
+- Find your PI user id: `get_current_user` in the Desktop bundle, or your PI profile.
+- Run the host from the repo root:
+
+```bash
+ASPNETCORE_URLS=http://127.0.0.1:5080 \
+Web__PublicBaseUrl=https://<ngrok host> \
+AllowedHosts="<ngrok host>;localhost" \
+ProjectInsight__BaseUrl=<your PI API URL> \
+Auth__AllowedPiUserIds=<your PI user id> \
+Storage__Mode=Local ProjectInsight__DraftsPath=<a scratch directory> \
+dotnet run --project servers/project-insight/src-web -c Release
+```
+
+**Clients, in order:**
+1. **Codex** (the main check):
+   - Run `codex mcp add pi-web --url https://<ngrok host>/mcp`, then `codex mcp login pi-web`.
+   - In the browser: the consent page names `127.0.0.1` as the app; press Continue; approve the PI sign-in; return to Codex.
+   - Then, in the Codex app or with `codex exec`, ask: "Using pi-web, who am I in Project Insight? List my time entries for this week."
+2. **Claude Desktop / claude.ai / Cowork:**
+   - Go to Settings → Connectors → Add custom connector, enter `https://<ngrok host>/mcp`, and sign in.
+   - Ask the same question.
+   - Ask for a draft time change, but don't confirm it, and check the card renders.
+3. **Claude Code** (optional): run `claude mcp add --transport http pi-web https://<ngrok host>/mcp`, then authenticate from `/mcp`.
+4. **ChatGPT** (optional, if developer mode is available to you): add the same URL as a connector.
+
+**Pass when** (record the results in the PR 2 description):
+- **Sign-in:**
+  - Every client signs in without anyone handling a token.
+  - The consent page names the right app host.
+- **Tools:** `tools/list` doesn't show `complete_authentication`, `link_pi_account` or `complete_pi_link`.
+- **Separate tokens:**
+  - Each client's sign-in creates its own PI token, with an "MCP connector (…)" label in PI.
+  - PI shows an expiry about 90 days out.
+- **Revocation** (the go-live gate):
+  - Revoke one client's token in PI. That client's next call gets a 401 and offers to sign in again, while the other clients keep working.
+  - Write down where revocation lives in PI, for `docs/REMOTE.md` (Task C3).
+- **No echo:** the host's console output contains no bearer token, authorization code or activation code (`grep -E "eyJ|Bearer "` finds nothing).
 
 ### Task B9: No echo: scrub PI errors, tool results, logs and telemetry
 
