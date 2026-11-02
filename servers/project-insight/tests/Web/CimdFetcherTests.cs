@@ -93,6 +93,61 @@ public class CimdFetcherTests
         Assert.DoesNotContain(factory.Pi.Requests, r => r.Uri.AbsolutePath == "/elsewhere");
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task Document_with_zero_max_age_still_resolves(int seconds)
+    {
+        var (factory, cimd) = Create();
+        using var _ = factory;
+        factory.Pi.Fixed[Url] = () =>
+        {
+            var r = Doc($$"""{"client_id":"{{Url}}","redirect_uris":["http://localhost/callback"]}""");
+            r.Headers.CacheControl = seconds == 0 ? new() { MaxAge = TimeSpan.Zero } : new() { NoStore = true };
+            return r;
+        };
+
+        Assert.NotNull(await cimd.FetchAsync(Url, default));
+        await cimd.FetchAsync(Url, default);
+        Assert.Single(factory.Pi.Requests, r => r.Uri.AbsoluteUri == Url); // floored, not refetched every time
+    }
+
+    [Fact]
+    public async Task Body_that_fails_mid_read_is_a_failed_fetch()
+    {
+        var (factory, cimd) = Create();
+        using var _ = factory;
+        factory.Pi.Fixed[Url] = () => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new ThrowingStream()) { Headers = { ContentType = new("application/json") } }
+        };
+        Assert.Null(await cimd.FetchAsync(Url, default));
+    }
+
+    [Fact]
+    public async Task Document_with_a_lone_surrogate_is_a_failed_fetch()
+    {
+        var (factory, cimd) = Create();
+        using var _ = factory;
+        factory.Pi.Fixed[Url] = () => Doc($$"""{"client_id":"{{Url}}","client_name":"\uD800","redirect_uris":["http://localhost/callback"]}""");
+        Assert.Null(await cimd.FetchAsync(Url, default));
+    }
+
+    private sealed class ThrowingStream : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new IOException("reset");
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default) => throw new IOException("reset");
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
     [Fact]
     public async Task Failures_are_remembered_for_a_while()
     {

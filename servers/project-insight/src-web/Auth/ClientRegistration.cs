@@ -36,10 +36,20 @@ public static class ClientRegistration
                 return Error("invalid_client_metadata", "Only public clients (token_endpoint_auth_method none) are supported.");
             if (!body.TryGetProperty("redirect_uris", out var uris) || uris.ValueKind != JsonValueKind.Array)
                 return Error("invalid_redirect_uri", "redirect_uris is required.");
-            var redirects = uris.EnumerateArray().Select(u => u.ValueKind == JsonValueKind.String ? u.GetString() : null).ToList();
+            List<string?> redirects;
+            string? name;
+            try
+            {
+                redirects = uris.EnumerateArray().Select(u => u.ValueKind == JsonValueKind.String ? u.GetString() : null).ToList();
+                name = body.TryGetProperty("client_name", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() : null;
+            }
+            catch (InvalidOperationException)
+            {
+                // GetString throws on a lone surrogate escape.
+                return Error("invalid_client_metadata", "Strings must be valid Unicode.");
+            }
             if (redirects.Count is 0 or > 5 || redirects.Any(r => !policy.IsAllowed(r)))
                 return Error("invalid_redirect_uri", "Every redirect URI must be an allowed callback.");
-            var name = body.TryGetProperty("client_name", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() : null;
             if (name is { Length: > 100 })
                 return Error("invalid_client_metadata", "client_name is too long.");
 
@@ -48,16 +58,18 @@ public static class ClientRegistration
             if (!await store.TryAddAsync(client, MaxClients, ct))
                 return Results.Json(new { error = "temporarily_unavailable", error_description = "Too many registered clients." }, statusCode: 503);
 
-            return Results.Json(new Dictionary<string, object?>
+            var response = new Dictionary<string, object?>
             {
                 ["client_id"] = client.ClientId,
                 ["client_id_issued_at"] = now.ToUnixTimeSeconds(),
-                ["client_name"] = name,
                 ["redirect_uris"] = client.RedirectUris,
                 ["token_endpoint_auth_method"] = "none",
                 ["grant_types"] = new[] { "authorization_code" },
                 ["response_types"] = new[] { "code" }
-            }, statusCode: 201);
+            };
+            if (name is not null) // clients' schemas reject a null here
+                response["client_name"] = name;
+            return Results.Json(response, statusCode: 201);
         });
     }
 

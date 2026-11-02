@@ -16,6 +16,7 @@ public sealed class CimdFetcher(IHttpClientFactory http, IMemoryCache cache, IOp
     public const string HttpClientName = "cimd";
     public const int MaxBytes = 5 * 1024;
     private static readonly TimeSpan KeepFor = TimeSpan.FromHours(24);
+    private static readonly TimeSpan MinKeep = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan FailedFor = TimeSpan.FromMinutes(5);
     // HttpClient.Timeout stops at the headers (ResponseHeadersRead); this bounds the body read too.
     private static readonly TimeSpan Deadline = TimeSpan.FromSeconds(5);
@@ -31,7 +32,9 @@ public sealed class CimdFetcher(IHttpClientFactory http, IMemoryCache cache, IOp
             return known;
 
         var (doc, maxAge) = await DownloadAsync(url, clientId, ct);
-        cache.Set(key, doc, doc is null ? FailedFor : maxAge is { } age && age < KeepFor ? age : KeepFor);
+        // max-age=0 / no-store / absent would make Set throw or defeat the cache; floor it, and cap it at a day.
+        var keep = maxAge is { } age && age > TimeSpan.Zero ? TimeSpan.FromTicks(Math.Clamp(age.Ticks, MinKeep.Ticks, KeepFor.Ticks)) : MinKeep;
+        cache.Set(key, doc, doc is null ? FailedFor : keep);
         return doc;
     }
 
@@ -68,7 +71,7 @@ public sealed class CimdFetcher(IHttpClientFactory http, IMemoryCache cache, IOp
             var name = root.TryGetProperty("client_name", out var n2) && n2.ValueKind == JsonValueKind.String ? n2.GetString() : null;
             return (new ClientMetadataDocument(name is { Length: <= 100 } ? name : null, redirects), response.Headers.CacheControl?.MaxAge);
         }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException && !ct.IsCancellationRequested)
+        catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException or InvalidOperationException or OperationCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogWarning("Client metadata fetch failed: {Error}", ex.GetType().Name);
             return (null, null);

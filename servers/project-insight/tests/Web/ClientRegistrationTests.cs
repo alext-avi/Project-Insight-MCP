@@ -59,4 +59,50 @@ public class ClientRegistrationTests
         _ = factory.Client();
         Assert.Null(await factory.Services.GetRequiredService<ClientResolver>().ResolveAsync("dcr_made_up", default));
     }
+
+    [Theory]
+    [InlineData("""{"redirect_uris":["\uD800"]}""")]
+    [InlineData("""{"redirect_uris":["http://127.0.0.1/callback"],"client_name":"\uD800"}""")]
+    public async Task Lone_surrogates_are_a_400_not_a_500(string json)
+    {
+        using var factory = new WebFactory();
+        var response = await factory.Client().PostAsync("/register", new StringContent(json, System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Response_omits_client_name_when_none_was_sent()
+    {
+        using var factory = new WebFactory();
+        var response = await factory.Client().PostAsJsonAsync("/register", new { redirect_uris = new[] { "http://127.0.0.1/callback" } });
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.False(body.TryGetProperty("client_name", out _));
+    }
+
+    [Theory]
+    [InlineData("dcr_a/b")]
+    [InlineData("dcr_#fragment")]
+    [InlineData("dcr_\u0001control")]
+    [InlineData("dcr_short")]
+    [InlineData("anything-else")]
+    public async Task Malformed_client_ids_never_reach_the_store(string id) => await NeverReachesStore(id);
+
+    [Fact]
+    public async Task Huge_client_ids_never_reach_the_store() => await NeverReachesStore("dcr_" + new string('a', 2048));
+
+    private static async Task NeverReachesStore(string id)
+    {
+        using var factory = new WebFactory();
+        _ = factory.Client();
+        var resolver = new ClientResolver(new ThrowingStore(), factory.Services.GetRequiredService<CimdFetcher>(), factory.Services.GetRequiredService<RedirectPolicy>());
+        Assert.Null(await resolver.ResolveAsync(id, default));
+    }
+
+    private sealed class ThrowingStore : ProjectInsightMCP.Web.Storage.IClientStore
+    {
+        public Task<ProjectInsightMCP.Web.Storage.RegisteredClient?> GetAsync(string clientId, CancellationToken ct) => throw new InvalidOperationException("store touched");
+        public Task<bool> TryAddAsync(ProjectInsightMCP.Web.Storage.RegisteredClient client, int max, CancellationToken ct) => throw new InvalidOperationException();
+        public Task TouchAsync(string clientId, DateTimeOffset at, CancellationToken ct) => throw new InvalidOperationException();
+        public Task PruneAsync(DateTimeOffset unusedSince, CancellationToken ct) => throw new InvalidOperationException();
+    }
 }

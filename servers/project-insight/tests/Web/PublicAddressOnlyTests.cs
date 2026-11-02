@@ -32,16 +32,31 @@ public class PublicAddressOnlyTests
     [InlineData("64:ff9b::a00:1")]
     [InlineData("2002:a00:1::")]
     [InlineData("2001:0:4136:e378:8000:63bf:3fff:fdd2")]
+    [InlineData("::127.0.0.1")]
+    [InlineData("::8.8.8.8")]
+    [InlineData("64:ff9b:1::a00:1")]
     public void Internal_and_tunnelled_addresses_are_refused(string ip) => Assert.False(PublicAddressOnly.IsPublic(IPAddress.Parse(ip)));
 
     [Theory]
     [InlineData("localhost")]
     [InlineData("127.0.0.1")]
     [InlineData("[::1]")]
-    public async Task Connect_callback_refuses_loopback_hosts_at_connect_time(string host)
+    public async Task Connect_callback_refuses_loopback_hosts_before_connecting(string host)
     {
-        // Loopback only: proves the callback is invoked by SocketsHttpHandler and blocks before any socket opens.
-        using var client = new HttpClient(new System.Net.Http.SocketsHttpHandler { ConnectCallback = PublicAddressOnly.ConnectAsync });
-        await Assert.ThrowsAsync<HttpRequestException>(() => client.GetAsync($"http://{host}:9/x"));
+        // A live loopback listener: without the guard the request would connect to it.
+        var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            using var client = new HttpClient(new SocketsHttpHandler { ConnectCallback = PublicAddressOnly.ConnectAsync });
+            var ex = await Assert.ThrowsAsync<HttpRequestException>(() => client.GetAsync($"http://{host}:{port}/x"));
+            Assert.Contains("does not resolve to public addresses only", ex.ToString());
+            Assert.False(listener.Pending());
+        }
+        finally
+        {
+            listener.Stop();
+        }
     }
 }

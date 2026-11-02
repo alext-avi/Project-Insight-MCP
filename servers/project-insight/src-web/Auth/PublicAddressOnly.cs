@@ -29,10 +29,14 @@ public static class PublicAddressOnly
             || address.IsIPv6LinkLocal || address.IsIPv6SiteLocal || address.IsIPv6Multicast || address.IsIPv6UniqueLocal || address.IsIPv6Teredo)
             return false;
         var bytes = address.GetAddressBytes();
+        if (bytes[..12].All(b => b == 0))
+            return false; // IPv4-compatible (::/96): some stacks route ::a.b.c.d to the IPv4 address
         if (bytes[0] == 0x20 && bytes[1] == 0x02)
             return false; // 6to4 embeds an IPv4 address
         if (bytes is [0x00, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0, ..])
             return IsPublic(new IPAddress(bytes[12..])); // NAT64 well-known prefix
+        if (bytes is [0x00, 0x64, 0xff, 0x9b, 0x00, 0x01, ..])
+            return false; // local-use NAT64 prefix (64:ff9b:1::/48)
         return true;
     }
 
@@ -41,17 +45,28 @@ public static class PublicAddressOnly
         var addresses = await Dns.GetHostAddressesAsync(context.DnsEndPoint.Host, ct);
         if (addresses.Length == 0 || addresses.Any(a => !IsPublic(a)))
             throw new HttpRequestException("Client metadata host does not resolve to public addresses only.");
-        var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
-        try
+        // Every address was vetted above, so any of them may be tried; keep the last failure if none connects.
+        Exception? last = null;
+        foreach (var address in addresses)
         {
-            await socket.ConnectAsync(new IPEndPoint(addresses[0], context.DnsEndPoint.Port), ct);
-            return new NetworkStream(socket, ownsSocket: true);
+            var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+            try
+            {
+                await socket.ConnectAsync(new IPEndPoint(address, context.DnsEndPoint.Port), ct);
+                return new NetworkStream(socket, ownsSocket: true);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                socket.Dispose();
+                last = ex;
+            }
+            catch
+            {
+                socket.Dispose();
+                throw;
+            }
         }
-        catch
-        {
-            socket.Dispose();
-            throw;
-        }
+        throw last!;
     }
 
     private static bool InNetwork(IPAddress address, IPAddress network, int prefix)
