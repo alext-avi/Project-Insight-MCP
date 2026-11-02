@@ -33,6 +33,8 @@ public static class WebHost
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
             {
                 AllowAutoRedirect = false,
+                // A proxy would make ConnectCallback vet the proxy's address, not the target's.
+                UseProxy = false,
                 AutomaticDecompression = System.Net.DecompressionMethods.None,
                 UseCookies = false,
                 ConnectCallback = PublicAddressOnly.ConnectAsync
