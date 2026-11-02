@@ -53,6 +53,36 @@ public class AuthorizeHardeningTests
         Assert.Equal(0, s.Attempts);
     }
 
+    private sealed class AbortAfterClaimStore(ISessionStore inner) : ISessionStore
+    {
+        private int _gets;
+        public Task<bool> TryCreateAsync(SignInSession s, int max, DateTimeOffset now, CancellationToken ct) => inner.TryCreateAsync(s, max, now, ct);
+        // 1st read validates the request, 2nd is the re-read right after the claim: that one is aborted.
+        public Task<SignInSession?> GetAsync(string id, CancellationToken ct)
+            => Interlocked.Increment(ref _gets) == 2 ? throw new OperationCanceledException() : inner.GetAsync(id, ct);
+        public Task<bool> TryReplaceAsync(SignInSession u, CancellationToken ct) => inner.TryReplaceAsync(u, ct);
+        public Task DeleteAsync(string id, CancellationToken ct) => inner.DeleteAsync(id, ct);
+        public Task PruneAsync(DateTimeOffset now, CancellationToken ct) => inner.PruneAsync(now, ct);
+    }
+
+    [Fact]
+    public async Task Abort_on_the_re_read_right_after_the_claim_leaves_the_session_pending()
+    {
+        using var factory = new WebFactory
+        {
+            ExtraServices = s => s.AddSingleton<ISessionStore>(new AbortAfterClaimStore(new MemorySessionStore()))
+        };
+        var flow = new AuthorizeFlow(factory);
+        var id = await flow.StartAsync(AuthorizeFlow.Query(await flow.RegisterAsync()));
+
+        var response = await flow.CompleteAsync(id, PiStub.ActivationCode);
+
+        Assert.NotEqual(HttpStatusCode.Redirect, response.StatusCode);
+        var s = await Session(factory, id);
+        Assert.Equal(SessionStatus.Pending, s!.Status);
+        Assert.Equal(0, s.Attempts);
+    }
+
     [Fact]
     public async Task Pi_call_after_the_claim_does_not_observe_the_request_abort_token()
     {

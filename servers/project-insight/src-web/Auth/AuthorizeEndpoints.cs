@@ -94,12 +94,14 @@ public static class AuthorizeEndpoints
             var claimed = session with { Status = SessionStatus.Completing };
             if (!await sessions.TryReplaceAsync(claimed, ct))
                 return AuthorizePages.Error(409, "This sign-in is already finished or in progress. Start again from Claude or ChatGPT.");
-            claimed = await sessions.GetAsync(session.Id, ct) ?? claimed;
 
             // Past the claim nothing may depend on the request staying open: a double-click aborts the first
             // POST, and PI may already have minted a token. The client's own timeout still bounds the call.
             try
             {
+                // The re-read supplies the store's new Version for the later replace.
+                claimed = await sessions.GetAsync(session.Id, CancellationToken.None) ?? claimed;
+
                 var result = await pi.CompleteAsync(session.PiActivationId, code, auth.Value.PiTokenLifetimeDays * 24 * 60, CancellationToken.None);
                 if (result.Outcome != PiActivationOutcome.Ok)
                 {
