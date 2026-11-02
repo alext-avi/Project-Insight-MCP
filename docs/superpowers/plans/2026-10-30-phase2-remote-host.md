@@ -3892,7 +3892,7 @@ dotnet run --project servers/project-insight/src-web -c Release
 - **Revocation** (the go-live gate):
   - Revoke one client's token in PI. That client's next call gets a 401 and offers to sign in again, while the other clients keep working.
   - Write down where revocation lives in PI, for `docs/REMOTE.md` (Task C3).
-- **No echo:** the host's console output contains no bearer token, authorization code or activation code (`grep -E "eyJ|Bearer "` finds nothing).
+- **No echo:** the host's console output contains no bearer token, authorization code or activation code (`grep -E 'eyJ|Bearer [A-Za-z0-9._~+/-]{20,}'` finds nothing; the scheme name "PiBearer" alone is fine).
 
 ### Task B9: No echo: scrub PI errors, tool results, logs and telemetry
 
