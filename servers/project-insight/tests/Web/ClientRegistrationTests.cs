@@ -85,6 +85,7 @@ public class ClientRegistrationTests
     [InlineData("dcr_\u0001control")]
     [InlineData("dcr_short")]
     [InlineData("anything-else")]
+    [InlineData("dcr_AAAAAAAAAAAAAAAAAAAAAA\n")]
     public async Task Malformed_client_ids_never_reach_the_store(string id) => await NeverReachesStore(id);
 
     [Fact]

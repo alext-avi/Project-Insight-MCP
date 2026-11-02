@@ -22,6 +22,6 @@ public sealed partial class ClientResolver(IClientStore store, CimdFetcher cimd,
             : null;
     }
 
-    [GeneratedRegex("^dcr_[A-Za-z0-9_-]{22}$")]
+    [GeneratedRegex("^dcr_[A-Za-z0-9_-]{22}\\z")]
     private static partial Regex IssuedId();
 }

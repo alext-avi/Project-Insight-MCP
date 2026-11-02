@@ -49,7 +49,7 @@ public class PublicAddressOnlyTests
         try
         {
             var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-            using var client = new HttpClient(new SocketsHttpHandler { ConnectCallback = PublicAddressOnly.ConnectAsync });
+            using var client = new HttpClient(new SocketsHttpHandler { ConnectCallback = PublicAddressOnly.ConnectAsync }) { Timeout = TimeSpan.FromSeconds(5) };
             var ex = await Assert.ThrowsAsync<HttpRequestException>(() => client.GetAsync($"http://{host}:{port}/x"));
             Assert.Contains("does not resolve to public addresses only", ex.ToString());
             Assert.False(listener.Pending());
