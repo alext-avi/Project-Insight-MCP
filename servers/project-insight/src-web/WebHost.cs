@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using ModelContextProtocol.AspNetCore;
 using ProjectInsightMCP.Server;
 using ProjectInsightMCP.Services;
+using ProjectInsightMCP.TimeChanges;
 using ProjectInsightMCP.Web.Auth;
 using ProjectInsightMCP.Web.Storage;
 
@@ -30,6 +31,19 @@ public static class WebHost
         services.AddAuthentication(PiBearerHandler.SchemeName)
             .AddScheme<AuthenticationSchemeOptions, PiBearerHandler>(PiBearerHandler.SchemeName, null);
         services.AddAuthorization();
+
+        // Per-request PI services. Nothing here may be a singleton: each request carries its own user's token.
+        services.AddHttpClient<ProjectInsightApiService>();
+        services.AddScoped(sp => new McpServerService(
+            sp.GetRequiredService<ProjectInsightApiService>(),
+            sp.GetRequiredService<ILogger<McpServerService>>(),
+            sp.GetRequiredService<ApiTokenAccessor>(),
+            deviceActivation: null,       // no device-activation sign-in, pending state or credential file on a shared server
+            keyVaultTokenService: null));
+        services.AddScoped<ITimeEntryGateway, ProjectInsightTimeEntryGateway>();
+        services.AddScoped<TimeChangePlanner>();
+        services.AddScoped<TimeChangeCommitter>();
+        services.AddScoped<TimeChangeService>();
 
         services.AddProjectInsightMcp(new ProjectInsightMcpOptions
         {
