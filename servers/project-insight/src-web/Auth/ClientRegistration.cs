@@ -70,7 +70,7 @@ public static class ClientRegistration
             if (name is not null) // clients' schemas reject a null here
                 response["client_name"] = name;
             return Results.Json(response, statusCode: 201);
-        });
+        }).WithOAuthHeaders();
     }
 
     private static IResult Error(string error, string description)

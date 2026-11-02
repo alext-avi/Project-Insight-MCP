@@ -39,6 +39,8 @@ public static class WebHost
                 UseCookies = false,
                 ConnectCallback = PublicAddressOnly.ConnectAsync
             });
+        services.AddHttpClient(PiActivationClient.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(8));
+        services.AddSingleton<IPiActivationClient, PiActivationClient>();
         services.AddScoped<ApiTokenAccessor>();
         services.AddScoped<PiCaller>();
         services.AddAuthentication(PiBearerHandler.SchemeName)
@@ -86,6 +88,9 @@ public static class WebHost
         app.UseAuthorization();
         app.MapOAuthMetadata();
         app.MapClientRegistration();
+        app.MapAuthorize();
+        var css = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "wwwroot", "oauth.css"));
+        app.MapGet("/oauth.css", () => Results.Bytes(css, "text/css"));
         app.MapMcp("/mcp").RequireAuthorization();
 
         app.MapGet("/healthz", () => Results.Json(new { status = "ok", version = Version }));
