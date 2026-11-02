@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using ModelContextProtocol.AspNetCore;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace ProjectInsightMCP.Tests.Web;
@@ -34,5 +36,17 @@ public class HostTests
 
         Assert.NotNull(ex);
         Assert.Contains(named, ex!.ToString());
+    }
+
+    [Fact]
+    public void Startup_refuses_a_stateful_mcp_endpoint()
+    {
+        using var factory = new WebFactory();
+        factory.ExtraServices = services => services.Configure<HttpServerTransportOptions>(o => o.Stateless = false);
+
+        var ex = Record.Exception(() => factory.Client());
+
+        Assert.NotNull(ex);
+        Assert.Contains("stateless", ex!.ToString());
     }
 }
