@@ -26,6 +26,17 @@ public static class WebHost
             // A redirect would carry the bearer token to wherever PI points; treat any 3xx as an outage instead.
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         services.AddSingleton<PiIdentityClient>();
+        services.AddSingleton<RedirectPolicy>();
+        services.AddSingleton<CimdFetcher>();
+        services.AddSingleton<ClientResolver>();
+        services.AddHttpClient(CimdFetcher.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(5))
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                AutomaticDecompression = System.Net.DecompressionMethods.None,
+                UseCookies = false,
+                ConnectCallback = PublicAddressOnly.ConnectAsync
+            });
         services.AddScoped<ApiTokenAccessor>();
         services.AddScoped<PiCaller>();
         services.AddAuthentication(PiBearerHandler.SchemeName)
@@ -72,6 +83,7 @@ public static class WebHost
         app.UseAuthentication();
         app.UseAuthorization();
         app.MapOAuthMetadata();
+        app.MapClientRegistration();
         app.MapMcp("/mcp").RequireAuthorization();
 
         app.MapGet("/healthz", () => Results.Json(new { status = "ok", version = Version }));
