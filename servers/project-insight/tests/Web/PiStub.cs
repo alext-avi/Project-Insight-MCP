@@ -19,6 +19,9 @@ public sealed class PiStub : HttpMessageHandler
     public const string StrangerToken = "pi-token-for-a-stranger";
     public const string RejectedToken = "pi-token-pi-rejects";
     public const string BrokenToken = "pi-token-pi-is-down";
+    public const string NotFoundToken = "pi-token-pi-answers-404";
+    public const string RedirectToken = "pi-token-pi-redirects";
+    public const string TimeoutToken = "pi-token-pi-times-out";
     public const string ActivationCode = "GOOD-CODE";
     public const string ActivationId = "act-1";
 
@@ -49,6 +52,16 @@ public sealed class PiStub : HttpMessageHandler
 
         if (token == BrokenToken)
             return new HttpResponseMessage(HttpStatusCode.InternalServerError);
+        if (token == TimeoutToken)
+            throw new TaskCanceledException("simulated PI timeout");
+        if (path == "/api/user/me" && token == NotFoundToken)
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        if (path == "/api/user/me" && token == RedirectToken)
+        {
+            var redirect = new HttpResponseMessage(HttpStatusCode.Found);
+            redirect.Headers.Location = new Uri("https://elsewhere.test/me");
+            return redirect;
+        }
         if (path == "/api/user/me")
             return token switch
             {

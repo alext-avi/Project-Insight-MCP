@@ -39,7 +39,9 @@ public class BearerAuthTests
         using var factory = new WebFactory();
         var client = factory.Client();
 
-        Assert.Equal(HttpStatusCode.Unauthorized, (await client.SendAsync(McpPost(PiStub.RejectedToken))).StatusCode);
+        var first = await client.SendAsync(McpPost(PiStub.RejectedToken));
+        Assert.Equal(HttpStatusCode.Unauthorized, first.StatusCode);
+        Assert.Contains("resource_metadata=", first.Headers.WwwAuthenticate.ToString());
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.SendAsync(McpPost(PiStub.RejectedToken))).StatusCode);
 
         Assert.Single(factory.Pi.ToPath("/api/user/me"));
@@ -50,6 +52,44 @@ public class BearerAuthTests
     {
         using var factory = new WebFactory();
         var response = await factory.Client().SendAsync(McpPost(PiStub.BrokenToken));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.NotNull(response.Headers.RetryAfter);
+        Assert.Empty(response.Headers.WwwAuthenticate);
+    }
+
+    [Fact]
+    public async Task Valid_token_is_checked_with_pi_once()
+    {
+        using var factory = new WebFactory();
+        var client = factory.Client();
+
+        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(McpPost(PiStub.TokenA))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(McpPost(PiStub.TokenA))).StatusCode);
+
+        Assert.Single(factory.Pi.ToPath("/api/user/me"));
+    }
+
+    [Fact]
+    public async Task Pi_outage_is_not_remembered()
+    {
+        using var factory = new WebFactory();
+        var client = factory.Client();
+
+        await client.SendAsync(McpPost(PiStub.BrokenToken));
+        await client.SendAsync(McpPost(PiStub.BrokenToken));
+
+        Assert.Equal(2, factory.Pi.ToPath("/api/user/me").Count());
+    }
+
+    [Theory]
+    [InlineData(PiStub.NotFoundToken)]
+    [InlineData(PiStub.RedirectToken)]
+    [InlineData(PiStub.TimeoutToken)]
+    public async Task Unexpected_pi_answers_are_outages_not_bad_tokens(string token)
+    {
+        using var factory = new WebFactory();
+        var response = await factory.Client().SendAsync(McpPost(token));
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.NotNull(response.Headers.RetryAfter);
@@ -114,7 +154,7 @@ public class BearerAuthTests
         factory.Settings["Auth:AllowedOrigins:0"] = "https://claude.ai";
         var response = await factory.Client().SendAsync(McpPost(PiStub.TokenA, origin: "https://claude.ai"));
 
-        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]

@@ -54,7 +54,8 @@ public sealed class PiIdentityClient(IHttpClientFactory http, IMemoryCache cache
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             using var response = await http.CreateClient(HttpClientName).SendAsync(request, ct);
             var status = (int)response.StatusCode;
-            if (status is >= 400 and < 500 and not 408 and not 429)
+            // Only 401/403 say the token is bad; anything else (404, 3xx, 5xx) is PI misbehaving, so don't blame the token.
+            if (status is 401 or 403)
                 return new PiIdentity(PiIdentityStatus.Rejected, null);
             if (!response.IsSuccessStatusCode)
             {

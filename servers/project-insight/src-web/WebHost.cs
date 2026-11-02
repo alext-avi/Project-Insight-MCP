@@ -21,7 +21,9 @@ public static class WebHost
         services.AddWebStorage();
 
         services.AddMemoryCache();
-        services.AddHttpClient(PiIdentityClient.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(10));
+        services.AddHttpClient(PiIdentityClient.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(10))
+            // A redirect would carry the bearer token to wherever PI points; treat any 3xx as an outage instead.
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         services.AddSingleton<PiIdentityClient>();
         services.AddScoped<ApiTokenAccessor>();
         services.AddScoped<PiCaller>();
