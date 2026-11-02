@@ -1,5 +1,6 @@
 using System.Reflection;
 using Microsoft.Extensions.Options;
+using ProjectInsightMCP.Web.Storage;
 
 namespace ProjectInsightMCP.Web;
 
@@ -11,6 +12,7 @@ public static class WebHost
         services.AddOptions<WebOptions>().BindConfiguration("Web");
         services.AddOptions<AuthOptions>().BindConfiguration("Auth");
         services.AddSingleton(TimeProvider.System);
+        services.AddWebStorage();
     }
 
     public static void UseProjectInsightWeb(this WebApplication app)
