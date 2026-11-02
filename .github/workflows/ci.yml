@@ -27,3 +27,6 @@ jobs:
 
             - name: Test
               run: dotnet test servers/project-insight/tests --configuration Release
+              env:
+                  # UTC+14: a PI expiry read in local time instead of UTC would be off by 14 hours, which UTC CI can't catch.
+                  TZ: Pacific/Kiritimati

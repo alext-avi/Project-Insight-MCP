@@ -32,7 +32,9 @@ public sealed class PiStub : HttpMessageHandler
     public TimeSpan ToolCallDelay { get; set; } = TimeSpan.Zero;
     public int MaxToolCallsInFlight => _maxToolCallsInFlight;
     /// <summary>Activation completions return this token and user.</summary>
-    public (string Token, string UserId, string Expiry) ActivationResult { get; set; } = (TokenA, UserA, "2027-01-28T12:00:00");
+    public (string Token, string UserId, string? Expiry) ActivationResult { get; set; } = (TokenA, UserA, DefaultExpiry.ToString("yyyy-MM-ddTHH:mm:ss"));
+    /// <summary>PI sends the expiry without a UTC marker; relative to now so no test depends on the calendar.</summary>
+    public static DateTime DefaultExpiry { get; } = DateTime.UtcNow.AddDays(30);
     /// <summary>Extra canned responses by exact absolute URI (e.g. a client metadata document).</summary>
     public Dictionary<string, Func<HttpResponseMessage>> Fixed { get; } = new();
 

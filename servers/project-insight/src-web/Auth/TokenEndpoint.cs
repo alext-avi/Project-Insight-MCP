@@ -12,9 +12,10 @@ public static class TokenEndpoint
         app.MapPost("/token", async (HttpRequest request, ICodeStore codes, IOptions<WebOptions> web, TimeProvider time,
             CancellationToken ct) =>
         {
-            if (!request.HasFormContentType)
+            if (!FormInput.IsUrlEncoded(request))
                 return Error("invalid_request", "Use application/x-www-form-urlencoded.");
-            var form = await request.ReadFormAsync(ct);
+            if (await FormInput.ReadAsync(request, ct) is not { } form)
+                return Error("invalid_request", "The request body is malformed or too large.");
             if (form["grant_type"] != "authorization_code")
                 return Error("unsupported_grant_type", "Only authorization_code is supported.");
             string code = form["code"].ToString(), verifier = form["code_verifier"].ToString(),
@@ -30,6 +31,7 @@ public static class TokenEndpoint
             var payload = JsonSerializer.Deserialize<CodePayload>(plain)!;
             if (payload.ClientId != clientId || payload.RedirectUri != redirect)
                 return Error("invalid_grant", "The code was issued to another client or redirect URI.");
+            // Single-resource server: /authorize only accepts this server's resource, so payload.Resource equals it by construction.
             if (resource.Length > 0 && !web.Value.IsResource(resource))
                 return Error("invalid_target", "Unknown resource.");
             if (!Pkce.Verify(verifier, payload.CodeChallenge))

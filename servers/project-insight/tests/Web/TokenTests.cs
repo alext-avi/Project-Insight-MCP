@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using ProjectInsightMCP.Web.Auth;
+using ProjectInsightMCP.Web.Storage;
 using Xunit;
 
 namespace ProjectInsightMCP.Tests.Web;
@@ -40,7 +43,7 @@ public class TokenTests
         Assert.Equal(PiStub.TokenA, json.GetProperty("access_token").GetString());
         Assert.Equal("Bearer", json.GetProperty("token_type").GetString());
         Assert.False(json.TryGetProperty("refresh_token", out _));
-        var expected = (new DateTimeOffset(2027, 1, 28, 12, 0, 0, TimeSpan.Zero) - DateTimeOffset.UtcNow).TotalSeconds;
+        var expected = (DateTime.SpecifyKind(PiStub.DefaultExpiry, DateTimeKind.Utc) - DateTime.UtcNow).TotalSeconds;
         Assert.InRange(json.GetProperty("expires_in").GetInt32(), expected - 60, expected + 60);
     }
 
@@ -78,7 +81,10 @@ public class TokenTests
             ? Form(code, "dcr_someone_else")
             : Form(code, clientId, redirect: "https://chatgpt.com/connector_platform_oauth_redirect"));
 
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal("invalid_grant", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString());
+        // The mismatch burned the code: the right client can't use it afterwards.
+        Assert.Equal(HttpStatusCode.BadRequest, (await flow.Browser.PostAsync("/token", Form(code, clientId))).StatusCode);
     }
 
     [Theory]
@@ -125,5 +131,70 @@ public class TokenTests
         var json = await (await flow.Browser.PostAsync("/token", Form(code, clientId))).Content.ReadFromJsonAsync<JsonElement>();
 
         Assert.InRange(json.GetProperty("expires_in").GetInt32(), 90 * 86400 - 120, 90 * 86400 + 5);
+    }
+
+    [Fact]
+    public async Task Pi_expiry_missing_falls_back_to_the_configured_token_lifetime()
+    {
+        using var factory = new WebFactory();
+        factory.Pi.ActivationResult = (PiStub.TokenA, PiStub.UserA, null);
+        var flow = new AuthorizeFlow(factory);
+        var clientId = await flow.RegisterAsync();
+        var code = await flow.CodeForAsync(clientId);
+
+        var json = await (await flow.Browser.PostAsync("/token", Form(code, clientId))).Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.InRange(json.GetProperty("expires_in").GetInt32(), 90 * 86400 - 30, 90 * 86400 + 5);
+    }
+
+    [Fact]
+    public async Task A_code_past_its_expiry_is_invalid_grant()
+    {
+        using var factory = new WebFactory();
+        var client = factory.Client();
+        var code = CodeProtector.NewCode();
+        var payload = new CodePayload(PiStub.TokenA, DateTimeOffset.UtcNow.AddDays(30), "dcr_x", AuthorizeFlow.ClaudeCallback,
+            AuthorizeFlow.Challenge, null, PiStub.UserA);
+        await factory.Services.GetRequiredService<ICodeStore>().SaveAsync(new StoredCode(CodeProtector.Hash(code),
+            CodeProtector.Seal(code, JsonSerializer.SerializeToUtf8Bytes(payload)), DateTimeOffset.UtcNow.AddMinutes(-1)), CancellationToken.None);
+
+        var response = await client.PostAsync("/token", Form(code, "dcr_x"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("invalid_grant", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task Non_form_body_is_invalid_request_and_errors_are_not_cacheable()
+    {
+        using var factory = new WebFactory();
+        var response = await factory.Client().PostAsync("/token", new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("invalid_request", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString());
+        Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
+        Assert.Contains("no-cache", response.Headers.Pragma.ToString());
+    }
+
+    [Fact]
+    public async Task Multipart_body_is_invalid_request()
+    {
+        using var factory = new WebFactory();
+        var multipart = new MultipartFormDataContent { { new StringContent("authorization_code"), "grant_type" } };
+        var response = await factory.Client().PostAsync("/token", multipart);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("invalid_request", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task Form_with_too_many_fields_is_a_400_not_a_500()
+    {
+        using var factory = new WebFactory();
+        var fields = Enumerable.Range(0, 1100).ToDictionary(i => "f" + i, i => "v");
+        var response = await factory.Client().PostAsync("/token", new FormUrlEncodedContent(fields));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("invalid_request", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString());
     }
 }

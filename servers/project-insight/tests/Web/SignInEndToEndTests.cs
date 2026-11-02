@@ -19,6 +19,8 @@ public class SignInEndToEndTests
         var me = await mcp.CallToolAsync("get_current_user", new Dictionary<string, object?>());
 
         Assert.NotEqual(true, me.IsError);
+        Assert.Contains(PiStub.UserA, string.Concat(me.Content.OfType<ModelContextProtocol.Protocol.TextContentBlock>().Select(t => t.Text)));
+        Assert.Contains(factory.Pi.Requests, r => r.Authorization == "Bearer " + PiStub.TokenA);
     }
 
     [Fact]
@@ -50,6 +52,7 @@ public class SignInEndToEndTests
             ["client_id"] = clientId,
             ["redirect_uri"] = redirect
         }));
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
         return (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("access_token").GetString()!;
     }
 }

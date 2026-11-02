@@ -29,7 +29,8 @@ public static class AuthorizeEndpoints
         {
             if (CrossSiteOrNotForm(http, web.Value) is { } refused)
                 return refused;
-            var form = await http.Request.ReadFormAsync(ct);
+            if (await FormInput.ReadAsync(http.Request, ct) is not { } form)
+                return AuthorizePages.Error(400, "This request was malformed or too large.");
             var fields = form.ToDictionary(f => f.Key, f => (string?)f.Value.ToString());
             var (request, failure) = await AuthorizeRequest.ValidateAsync(fields, clients, policy, web.Value, ct);
             if (failure is not null)
@@ -72,7 +73,8 @@ public static class AuthorizeEndpoints
             var logger = loggers.CreateLogger("ProjectInsightMCP.Web.Authorize");
             if (CrossSiteOrNotForm(http, web.Value) is { } refused)
                 return refused;
-            var form = await http.Request.ReadFormAsync(ct);
+            if (await FormInput.ReadAsync(http.Request, ct) is not { } form)
+                return AuthorizePages.Error(400, "This request was malformed or too large.");
             var sessionId = form["session_id"].ToString();
             var code = form["activation_code"].ToString().Trim();
             var now = time.GetUtcNow();
@@ -172,7 +174,7 @@ public static class AuthorizeEndpoints
         var origin = http.Request.Headers.Origin.ToString();
         if (origin.Length > 0 && !SameOrigin(origin, web.Issuer))
             return AuthorizePages.Error(403, "This request came from another site. Start again from Claude or ChatGPT.");
-        if (!http.Request.HasFormContentType)
+        if (!FormInput.IsUrlEncoded(http.Request))
             return AuthorizePages.Error(400, "This request must be a form post.");
         return null;
     }
