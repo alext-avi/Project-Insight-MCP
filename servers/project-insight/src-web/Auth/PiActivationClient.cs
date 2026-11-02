@@ -71,12 +71,13 @@ public sealed class PiActivationClient(IHttpClientFactory http, IConfiguration c
             if (body is not { ApiToken: { Length: > 0 } token, UserId: { Length: > 0 } userId })
                 return new PiActivationResult(PiActivationOutcome.WrongCode);
             // PI's expiry comes without an offset; it is UTC.
+            // An explicit offset or Z arrives as Utc/Local and converts properly.
             DateTimeOffset? expires = body.ApiTokenExpirationDateTimeUTC is { } at
-                ? new DateTimeOffset(DateTime.SpecifyKind(at, DateTimeKind.Utc))
+                ? new DateTimeOffset(at.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(at, DateTimeKind.Utc) : at.ToUniversalTime())
                 : null;
             return new PiActivationResult(PiActivationOutcome.Ok, token, userId, expires);
         }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException && !ct.IsCancellationRequested)
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or IOException or TaskCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogWarning("PI complete-request failed: {Error}", ex.GetType().Name);
             return new PiActivationResult(PiActivationOutcome.Unavailable);

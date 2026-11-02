@@ -9,7 +9,8 @@ public static class AuthorizePages
     private static readonly string[] FormFields =
         ["response_type", "client_id", "redirect_uri", "state", "code_challenge", "code_challenge_method", "scope", "resource"];
 
-    // An apostrophe is inert in text and in the double-quoted attributes used here, so keep messages readable.
+    // Un-encoding the apostrophe is safe only for text content and double-quoted attributes. Never use E() output
+    // in single-quoted or unquoted attributes, script, style or URLs.
     private static string E(string? s) => HtmlEncoder.Default.Encode(s ?? "").Replace("&#x27;", "'");
 
     public static IResult Consent(AuthorizeRequest r, IReadOnlyDictionary<string, string?> fields)
@@ -33,10 +34,11 @@ public static class AuthorizePages
         return Page("Connect Project Insight", body.ToString(), 200);
     }
 
-    public static IResult Activation(string sessionId, Uri activationUrl, string? error)
+    public static IResult Activation(string sessionId, Uri activationUrl, string redirectHost, string? error)
     {
         var body = new StringBuilder();
-        body.Append("<h1>Sign in to Project Insight</h1><ol>");
+        body.Append("<h1>Sign in to Project Insight</h1>");
+        body.Append($"<p>Connecting <strong>{E(redirectHost)}</strong> to your Project Insight account.</p><ol>");
         body.Append($"<li><a href=\"{E(activationUrl.AbsoluteUri)}\" target=\"_blank\" rel=\"noopener noreferrer\">Open Project Insight</a> and sign in</li>");
         body.Append("<li>Copy the activation code it shows and paste it here.</li></ol>");
         if (error is not null)

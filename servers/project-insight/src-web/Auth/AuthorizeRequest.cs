@@ -4,6 +4,8 @@ namespace ProjectInsightMCP.Web.Auth;
 
 public sealed record AuthorizeRequest(OAuthClient Client, string RedirectUri, string? State, string CodeChallenge, string? Resource)
 {
+    public const int MaxState = 2048;
+
     public static async Task<(AuthorizeRequest? Request, IResult? Failure)> ValidateAsync(
         IReadOnlyDictionary<string, string?> p, ClientResolver clients, RedirectPolicy policy, WebOptions web, CancellationToken ct)
     {
@@ -19,16 +21,19 @@ public sealed record AuthorizeRequest(OAuthClient Client, string RedirectUri, st
             return (null, AuthorizePages.Error(400, "This app's return address isn't allowed."));
 
         var state = Get("state");
-        IResult Back(string error, string description)
+        IResult Back(string error, string description, bool echoState = true)
         {
             var query = new Dictionary<string, string?> { ["error"] = error, ["error_description"] = description };
-            if (state is not null)
+            if (state is not null && echoState)
                 query["state"] = state;
             query["iss"] = web.Issuer;
             // redirect has passed Parse: visible ASCII only, so no header injection.
             return Results.Redirect(QueryHelpers.AddQueryString(redirect, query));
         }
 
+        // Decided before any PI call; an oversized state is not echoed back.
+        if (state is { Length: > MaxState })
+            return (null, Back("invalid_request", "The state parameter is too long.", echoState: false));
         if (Get("response_type") != "code")
             return (null, Back("unsupported_response_type", "Only response_type=code is supported."));
         var challenge = Get("code_challenge");
