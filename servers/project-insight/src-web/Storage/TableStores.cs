@@ -52,7 +52,10 @@ public sealed class TableCodeStore(TableClient table) : ICodeStore
         try
         {
             // ETag-conditional delete: of two concurrent takers, only one deletes.
-            await table.DeleteEntityAsync(Partition, codeHash, entity.ETag, ct);
+            // A missing row is not an exception here: the loser gets a 404 response back.
+            var deleted = await table.DeleteEntityAsync(Partition, codeHash, entity.ETag, ct);
+            if (deleted.Status == 404)
+                return null;
         }
         catch (RequestFailedException ex) when (ex.Status is 404 or 412)
         {

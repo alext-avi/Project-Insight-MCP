@@ -22,15 +22,38 @@ public abstract class CodeStoreContract
     }
 
     [SkippableFact]
-    public async Task Concurrent_takes_give_the_code_to_exactly_one_caller()
+    public async Task Concurrent_takes_give_each_code_to_exactly_one_caller()
     {
         Skip.IfNot(Available);
         var store = await CreateAsync();
-        await store.SaveAsync(new StoredCode("h2", [9], Now.AddMinutes(5)), default);
 
-        var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => store.TryTakeAsync("h2", default)));
+        for (var i = 0; i < 50; i++)
+        {
+            var hash = "race" + i;
+            await store.SaveAsync(new StoredCode(hash, [9], Now.AddMinutes(5)), default);
+            using var gate = new ManualResetEventSlim();
+            var takers = Enumerable.Range(0, 8).Select(_ => Task.Run(async () =>
+            {
+                gate.Wait();
+                return await store.TryTakeAsync(hash, default);
+            })).ToArray();
+            gate.Set();
 
-        Assert.Single(results, r => r is not null);
+            var results = await Task.WhenAll(takers);
+
+            Assert.True(results.Count(r => r is not null) == 1, $"code {hash} was taken by {results.Count(r => r is not null)} callers");
+        }
+    }
+
+    [SkippableFact]
+    public async Task Pruning_twice_in_a_row_is_harmless()
+    {
+        Skip.IfNot(Available);
+        var store = await CreateAsync();
+        await store.SaveAsync(new StoredCode("old", [1], Now.AddMinutes(-1)), default);
+
+        await store.PruneAsync(Now, default);
+        await store.PruneAsync(Now, default);
     }
 
     [SkippableFact]
@@ -211,6 +234,18 @@ public abstract class SessionStoreContract
             .Select(i => store.TryReplaceAsync(read with { Attempts = i + 1, Status = SessionStatus.Completing }, default)));
 
         Assert.Single(results, r => r);
+    }
+
+    [SkippableFact]
+    public async Task Deleting_a_missing_session_and_pruning_twice_do_not_throw()
+    {
+        Skip.IfNot(Available);
+        var store = await CreateAsync();
+        await store.TryCreateAsync(Session("old", Now.AddMinutes(-1)), 10, Now, default);
+
+        await store.DeleteAsync("never-existed", default);
+        await store.PruneAsync(Now, default);
+        await store.PruneAsync(Now, default);
     }
 
     [SkippableFact]
