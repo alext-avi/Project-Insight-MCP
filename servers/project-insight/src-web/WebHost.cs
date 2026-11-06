@@ -114,7 +114,8 @@ public static class WebHost
         // Configuration is complete only after Build(), so validation runs here.
         StartupChecks.Validate(app.Configuration,
             app.Services.GetRequiredService<IOptions<WebOptions>>().Value,
-            app.Services.GetRequiredService<IOptions<AuthOptions>>().Value);
+            app.Services.GetRequiredService<IOptions<AuthOptions>>().Value,
+            app.Environment);
 
         if (!app.Services.GetRequiredService<IOptions<HttpServerTransportOptions>>().Value.Stateless)
             throw new InvalidOperationException("The MCP endpoint must run stateless: per-request PI services depend on it.");

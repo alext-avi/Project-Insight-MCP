@@ -15,6 +15,9 @@ public sealed class WebFactory : WebApplicationFactory<Program>
 
     public PiStub Pi { get; } = new();
 
+    /// <summary>Hosting environment; tests of production-only startup checks change it.</summary>
+    public string Environment { get; set; } = "Testing";
+
     public Dictionary<string, string?> Settings { get; } = new()
     {
         ["Web:PublicBaseUrl"] = "https://mcp.test",
@@ -29,7 +32,7 @@ public sealed class WebFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         Settings["ProjectInsight:DraftsPath"] = _drafts;
-        builder.UseEnvironment("Testing");
+        builder.UseEnvironment(Environment);
         builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(Settings));
         builder.ConfigureTestServices(services =>
         {
