@@ -7,7 +7,6 @@ using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using ProjectInsightMCP.Services;
-using ProjectInsightMCP.TimeChanges;
 using Shared.MCP;
 
 namespace ProjectInsightMCP.Server;
