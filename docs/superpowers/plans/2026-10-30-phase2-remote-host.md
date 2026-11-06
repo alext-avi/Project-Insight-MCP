@@ -3857,10 +3857,10 @@ The tests check the OAuth exchange only against our reading of the clients' docs
   - `Web:PublicBaseUrl` must be https (`StartupChecks`), so every client goes through the tunnel, Codex included. We don't add an http-localhost exception to a security check for a test.
   - The free ngrok tier shows a one-time warning page to browsers; click through it.
 - Find your PI user id: `get_current_user` in the Desktop bundle, or your PI profile.
-- Run the host from the repo root:
+- Run the host from the repo root. `ASPNETCORE_ENVIRONMENT=Development` is required: in any other environment `StartupChecks` refuses local storage, and a clean shell defaults to Production.
 
 ```bash
-ASPNETCORE_URLS=http://127.0.0.1:5080 \
+ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://127.0.0.1:5080 \
 Web__PublicBaseUrl=https://<ngrok host> \
 AllowedHosts="<ngrok host>;localhost" \
 ProjectInsight__BaseUrl=<your PI API URL> \
@@ -3890,7 +3890,8 @@ dotnet run --project servers/project-insight/src-web -c Release
   - Each client's sign-in creates its own PI token, with an "MCP connector (…)" label in PI.
   - PI shows an expiry about 90 days out.
 - **Revocation** (the go-live gate):
-  - Revoke one client's token in PI. That client's next call gets a 401 and offers to sign in again, while the other clients keep working.
+  - Revoke one client's token in PI. Within 10 minutes that client's next call gets a 401 and offers to sign in again, while the other clients keep working.
+  - Not immediately: `PiIdentityClient` caches a successful identity lookup for up to 10 minutes, so a call made shortly before the revocation can let the next few through. That window is accepted (PI checks the token itself on every tool call); to see the 401 at once, restart the host after revoking.
   - Write down where revocation lives in PI, for `docs/REMOTE.md` (Task C3).
 - **No echo:** the host's console output contains no bearer token, authorization code or activation code (`grep -E 'eyJ|Bearer [A-Za-z0-9._~+/-]{20,}'` finds nothing; the scheme name "PiBearer" alone is fine).
 

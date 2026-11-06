@@ -158,7 +158,7 @@ Caching: valid documents for 24 hours, or less if `Cache-Control` says so; failu
 **DCR:** `POST /register` (JSON) accepts `client_name`, `redirect_uris` and `token_endpoint_auth_method` = `none` (public clients only).
 
 - **Validation:** every redirect URI must be on the allowlist, or the registration is refused (`invalid_redirect_uri`).
-- **Storage:** the registration is stored in Table `OAuthClients`, keyed by a random `client_id`, and pruned after 90 days unused. At most 500 registrations are kept.
+- **Storage:** the registration is stored in Table `OAuthClients`, keyed by a random `client_id`, and pruned once unused for the token lifetime plus 30 days, or after 24 hours if no sign-in ever finished with it. At most 500 registrations are kept; when full, the oldest never-used one makes room, so unused registrations can't lock out new clients.
 - **At `/authorize`:** a DCR client must exist, and the `redirect_uri` must exactly match one it registered.
 
 ### Authorize
@@ -265,7 +265,7 @@ No tool result (text or `structuredContent`), error message, health output, log 
 | - | - | - | - |
 | CIMD documents | memory | client id URL | 24 hours or `Cache-Control`; failures for 5 minutes |
 | Token → PI user id | memory | SHA-256 of the token | 10 minutes; rejections for 60 seconds |
-| DCR registrations | Table `OAuthClients` | client id | redirect URIs, client name; pruned after 90 days unused; at most 500 |
+| DCR registrations | Table `OAuthClients` | client id | redirect URIs, client name; pruned after token lifetime + 30 days unused (24 hours if never used); at most 500, oldest never-used evicted when full |
 | Sign-in sessions | Table `OAuthSessions` | session id | 15 minutes: client, redirect URI, state, code challenge, resource, PI activation id, cookie hash, attempts, status; at most 200 outstanding |
 | Authorization codes | Table `OAuthCodes` | SHA-256 of the code | 5 minutes, single use, payload encrypted with a key derived from the code |
 | Time-change drafts | Blob container `drafts`, `<piUserId>/<draftId>.json` | PI user id + draft id | `BlobDraftStore : IDraftStore`. Owner and id are checked with the same patterns as `FileDraftStore`. `TryTransitionAsync` uses ETag `If-Match`, the same compare-and-set the file store gets from its lock. Blob, not Table, because a draft with avatars can exceed Table's 64 KB property limit. |
