@@ -103,6 +103,20 @@ public abstract class DraftStoreContract : IDisposable
         Assert.NotNull(await store.GetAsync("u-2", "d_new2"));
     }
 
+    [SkippableFact]
+    public async Task Owner_ids_that_differ_only_in_case_reach_the_same_drafts()
+    {
+        Skip.IfNot(Available);
+        var store = await CreateAsync();
+        await store.CreateAsync(Drafts.New("AB-1", "d_case1"));
+
+        Assert.NotNull(await store.GetAsync("ab-1", "d_case1"));
+        Assert.NotNull(await store.TryTransitionAsync("aB-1", "d_case1", DraftStatus.Draft, d => d.Status = DraftStatus.Committing));
+        Time.Now = Drafts.T0.AddDays(8);
+        await store.PruneAsync("Ab-1");
+        Assert.Null(await store.GetAsync("AB-1", "d_case1"));
+    }
+
     [SkippableTheory]
     [InlineData("u-1", "../u-2/d_abc")]
     [InlineData("u-1", "")]

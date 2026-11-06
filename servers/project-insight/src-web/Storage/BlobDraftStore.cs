@@ -9,7 +9,8 @@ namespace ProjectInsightMCP.Web.Storage;
 
 /// <summary>
 /// Drafts as blobs at &lt;ownerId&gt;/&lt;id&gt;.json. Status changes are compare-and-set on the blob's
-/// ETag, the same guarantee FileDraftStore gets from its lock file.
+/// ETag, the same guarantee FileDraftStore gets from its lock file. Owner ids are lower-cased: PI's GUID
+/// casing is not guaranteed stable, and one user must always find their own drafts.
 /// </summary>
 public sealed partial class BlobDraftStore(BlobContainerClient container, TimeProvider time) : IDraftStore
 {
@@ -70,7 +71,7 @@ public sealed partial class BlobDraftStore(BlobContainerClient container, TimePr
         if (!OwnerPattern().IsMatch(ownerId))
             return;
         var cutoff = time.GetUtcNow() - Keep;
-        await foreach (var item in container.GetBlobsAsync(BlobTraits.None, BlobStates.None, ownerId + "/", ct))
+        await foreach (var item in container.GetBlobsAsync(BlobTraits.None, BlobStates.None, ownerId.ToLowerInvariant() + "/", ct))
         {
             var blob = container.GetBlobClient(item.Name);
             if (await ReadAsync(blob, ct) is var (draft, etag) && draft.UpdatedAt < cutoff)
@@ -86,7 +87,7 @@ public sealed partial class BlobDraftStore(BlobContainerClient container, TimePr
     }
 
     private BlobClient? BlobFor(string ownerId, string id)
-        => OwnerPattern().IsMatch(ownerId) && IdPattern().IsMatch(id) ? container.GetBlobClient($"{ownerId}/{id}.json") : null;
+        => OwnerPattern().IsMatch(ownerId) && IdPattern().IsMatch(id) ? container.GetBlobClient($"{ownerId.ToLowerInvariant()}/{id}.json") : null;
 
     private static async Task<(Draft Draft, ETag ETag)?> ReadAsync(BlobClient blob, CancellationToken ct)
     {

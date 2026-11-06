@@ -112,15 +112,33 @@ public abstract class ClientStoreContract
     }
 
     [SkippableFact]
-    public async Task Adding_stops_at_the_cap()
+    public async Task At_the_cap_the_oldest_never_used_client_makes_room()
+    {
+        Skip.IfNot(Available);
+        var store = await CreateAsync();
+        await store.TryAddAsync(Client("signed-in", Now.AddHours(-3), used: true), 3, default);
+        await store.TryAddAsync(Client("never-older", Now.AddHours(-2)), 3, default);
+        await store.TryAddAsync(Client("never-newer", Now.AddHours(-1)), 3, default);
+
+        Assert.True(await store.TryAddAsync(Client("new"), 3, default));
+
+        Assert.NotNull(await store.GetAsync("new", default));
+        Assert.NotNull(await store.GetAsync("signed-in", default));
+        Assert.Null(await store.GetAsync("never-older", default));
+        Assert.NotNull(await store.GetAsync("never-newer", default));
+    }
+
+    [SkippableFact]
+    public async Task Adding_stops_at_the_cap_only_when_every_client_has_signed_in()
     {
         Skip.IfNot(Available);
         var store = await CreateAsync();
 
-        Assert.True(await store.TryAddAsync(Client("a"), 2, default));
-        Assert.True(await store.TryAddAsync(Client("b"), 2, default));
+        Assert.True(await store.TryAddAsync(Client("a", used: true), 2, default));
+        Assert.True(await store.TryAddAsync(Client("b", used: true), 2, default));
         Assert.False(await store.TryAddAsync(Client("c"), 2, default));
         Assert.Null(await store.GetAsync("c", default));
+        Assert.NotNull(await store.GetAsync("a", default));
     }
 
     [SkippableFact]

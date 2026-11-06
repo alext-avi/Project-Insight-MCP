@@ -59,6 +59,8 @@ public static class WebHost
                 ConnectCallback = PublicAddressOnly.ConnectAsync
             });
         services.AddHttpClient(PiActivationClient.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(8))
+            // A redirect's Location could repeat the activation code to wherever PI points.
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
             .AddHttpMessageHandler<PiErrorScrubbingHandler>()
             // Its URLs carry the activation code in the query string.
             .RemoveAllLoggers();
@@ -70,7 +72,10 @@ public static class WebHost
         services.AddAuthorization();
 
         // Per-request PI services. Nothing here may be a singleton: each request carries its own user's token.
-        services.AddHttpClient<ProjectInsightApiService>().AddHttpMessageHandler<PiErrorScrubbingHandler>();
+        services.AddHttpClient<ProjectInsightApiService>()
+            // Same as the identity client: PI never redirects its API, so a 3xx is an outage, not a new destination.
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+            .AddHttpMessageHandler<PiErrorScrubbingHandler>();
         services.AddScoped(sp => new McpServerService(
             sp.GetRequiredService<ProjectInsightApiService>(),
             sp.GetRequiredService<ILogger<McpServerService>>(),

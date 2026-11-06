@@ -134,9 +134,25 @@ public sealed class TableClientStore(TableClient table) : IClientStore
 
     public async Task<bool> TryAddAsync(RegisteredClient client, int max, CancellationToken ct)
     {
-        if (await TableUtil.CountAtMostAsync(table, $"PartitionKey eq '{Partition}'", max, ct) >= max)
+        if (await TableUtil.CountAtMostAsync(table, $"PartitionKey eq '{Partition}'", max, ct) >= max
+            && !await TryEvictOldestNeverUsedAsync(ct))
             return false;
         await table.AddEntityAsync(ToEntity(client), ct);
+        return true;
+    }
+
+    private async Task<bool> TryEvictOldestNeverUsedAsync(CancellationToken ct)
+    {
+        // Tables can't sort, but the cap keeps this scan to a few hundred rows.
+        TableEntity? oldest = null;
+        await foreach (var e in table.QueryAsync<TableEntity>($"PartitionKey eq '{Partition}' and Used eq false",
+            select: ["PartitionKey", "RowKey", "LastUsed"], cancellationToken: ct))
+            if (oldest is null || e.GetDateTimeOffset("LastUsed") < oldest.GetDateTimeOffset("LastUsed"))
+                oldest = e;
+        if (oldest is null)
+            return false;
+        // A concurrent registration may have evicted the same row; either way there is room.
+        await table.DeleteEntityAsync(Partition, oldest.RowKey, ETag.All, ct);
         return true;
     }
 

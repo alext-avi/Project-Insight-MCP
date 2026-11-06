@@ -16,7 +16,12 @@ public sealed class MemoryClientStore : IClientStore
         lock (_gate)
         {
             if (_clients.Count >= max)
-                return Task.FromResult(false);
+            {
+                var oldest = _clients.Values.Where(c => !c.Used).MinBy(c => c.LastUsed);
+                if (oldest is null)
+                    return Task.FromResult(false);
+                _clients.TryRemove(oldest.ClientId, out _);
+            }
             _clients[client.ClientId] = client;
             return Task.FromResult(true);
         }

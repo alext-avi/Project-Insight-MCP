@@ -9,7 +9,10 @@ public sealed record RegisteredClient(string ClientId, string? ClientName, IRead
 public interface IClientStore
 {
     Task<RegisteredClient?> GetAsync(string clientId, CancellationToken ct);
-    /// <summary>False when the store already holds <paramref name="max"/> clients.</summary>
+    /// <summary>
+    /// At <paramref name="max"/> clients, removes the oldest never-used one to make room, so registrations nobody
+    /// signs in with can't lock out new ones. False only when every client held has signed in.
+    /// </summary>
     Task<bool> TryAddAsync(RegisteredClient client, int max, CancellationToken ct);
     /// <summary>Marks the client as used at <paramref name="at"/> (a sign-in finished).</summary>
     Task TouchAsync(string clientId, DateTimeOffset at, CancellationToken ct);

@@ -165,30 +165,11 @@ public class CimdFetcherTests
     public void Configured_handler_never_follows_redirects_uses_a_proxy_or_skips_the_address_check()
     {
         using var factory = new WebFactory();
-        _ = factory.Client();
-        var options = factory.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<Microsoft.Extensions.Http.HttpClientFactoryOptions>>().Get(CimdFetcher.HttpClientName);
-        // The fixture replaces the primary handler afterwards, so capture what the app itself configured.
-        var builder = new CapturingBuilder(factory.Services);
-        SocketsHttpHandler? configured = null;
-        foreach (var action in options.HttpMessageHandlerBuilderActions)
-        {
-            action(builder);
-            configured ??= builder.PrimaryHandler as SocketsHttpHandler;
-        }
+        using var configured = ConfiguredHandler.Of<SocketsHttpHandler>(factory, CimdFetcher.HttpClientName);
 
         Assert.NotNull(configured);
         Assert.False(configured!.UseProxy);
         Assert.False(configured.AllowAutoRedirect);
         Assert.NotNull(configured.ConnectCallback);
-        configured.Dispose();
-    }
-
-    private sealed class CapturingBuilder(IServiceProvider services) : Microsoft.Extensions.Http.HttpMessageHandlerBuilder
-    {
-        public override string? Name { get; set; }
-        public override HttpMessageHandler PrimaryHandler { get; set; } = new HttpClientHandler();
-        public override IList<DelegatingHandler> AdditionalHandlers { get; } = new List<DelegatingHandler>();
-        public override IServiceProvider Services { get; } = services;
-        public override HttpMessageHandler Build() => PrimaryHandler;
     }
 }

@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using ProjectInsightMCP.Services;
 using ProjectInsightMCP.Web.Auth;
 using Xunit;
 
@@ -65,5 +66,19 @@ public class NoEchoWiringTests
 
         Assert.Contains("[redacted]", body);
         Assert.DoesNotContain("ACT-SECRET-99", body);
+    }
+
+    [Theory]
+    [InlineData(PiIdentityClient.HttpClientName)]
+    [InlineData(PiActivationClient.HttpClientName)]
+    [InlineData(nameof(ProjectInsightApiService))] // the typed client's name
+    public void Pi_clients_never_follow_redirects(string clientName)
+    {
+        using var factory = new WebFactory();
+        // A followed redirect would carry the bearer token or activation code to wherever PI points.
+        using var configured = ConfiguredHandler.Of<HttpClientHandler>(factory, clientName);
+
+        Assert.NotNull(configured);
+        Assert.False(configured!.AllowAutoRedirect);
     }
 }
