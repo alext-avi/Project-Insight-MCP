@@ -332,7 +332,7 @@ public class ProjectInsightApiService
             }
 
             var content = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogInformation("Task API response content: {Content}", content);
+            _logger.LogDebug("Task API response content: {Content}", content);
 
             // Handle different response formats like in SearchProjectsAsync
             if (content.TrimStart().StartsWith("["))

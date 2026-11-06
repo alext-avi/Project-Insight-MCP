@@ -7,6 +7,7 @@ namespace ProjectInsightMCP.TimeChanges;
 /// One JSON file per record at &lt;root&gt;/&lt;ownerId&gt;/&lt;id&gt;.json, readable only by the
 /// current OS user. Writes go to a temp file and are renamed into place. Status changes hold an
 /// exclusive lock file, so two server processes (two Claude windows) can't both commit a draft.
+/// Owner ids are lower-cased: PI's GUID casing is not guaranteed stable.
 /// </summary>
 public sealed partial class FileDraftStore(string root, TimeProvider time) : IDraftStore
 {
@@ -25,7 +26,7 @@ public sealed partial class FileDraftStore(string root, TimeProvider time) : IDr
 
     public async Task<Draft?> GetAsync(string ownerId, string id, CancellationToken ct = default)
     {
-        var path = PathFor(ownerId, id);
+        var path = ExistingPathFor(ownerId, id);
         return path is null ? null : await ReadAsync(path, ct);
     }
 
@@ -45,7 +46,7 @@ public sealed partial class FileDraftStore(string root, TimeProvider time) : IDr
 
     public async Task<Draft?> TryTransitionAsync(string ownerId, string id, string expectedStatus, Action<Draft> update, CancellationToken ct = default)
     {
-        var path = PathFor(ownerId, id);
+        var path = ExistingPathFor(ownerId, id);
         if (path is null || !File.Exists(path))
             return null;
         using (await LockAsync(path, ct))
@@ -62,9 +63,12 @@ public sealed partial class FileDraftStore(string root, TimeProvider time) : IDr
 
     public async Task PruneAsync(string ownerId, CancellationToken ct = default)
     {
-        if (!OwnerPattern().IsMatch(ownerId))
-            return;
-        var dir = Path.Combine(root, ownerId);
+        if (OwnerPattern().IsMatch(ownerId))
+            await PruneDirectoryAsync(Path.Combine(root, ownerId.ToLowerInvariant()), ct);
+    }
+
+    private async Task PruneDirectoryAsync(string dir, CancellationToken ct)
+    {
         if (!Directory.Exists(dir))
             return;
         var cutoff = time.GetUtcNow() - Keep;
@@ -85,13 +89,25 @@ public sealed partial class FileDraftStore(string root, TimeProvider time) : IDr
         foreach (var dir in Directory.EnumerateDirectories(root))
         {
             var name = Path.GetFileName(dir);
+            // By path, not PruneAsync: folders written before owner ids were lower-cased still age out.
             if (OwnerPattern().IsMatch(name))
-                await PruneAsync(name, ct);
+                await PruneDirectoryAsync(dir, ct);
         }
     }
 
     private string? PathFor(string ownerId, string id)
-        => OwnerPattern().IsMatch(ownerId) && IdPattern().IsMatch(id) ? Path.Combine(root, ownerId, id + ".json") : null;
+        => OwnerPattern().IsMatch(ownerId) && IdPattern().IsMatch(id) ? Path.Combine(root, ownerId.ToLowerInvariant(), id + ".json") : null;
+
+    // Drafts written before owner ids were lower-cased sit under the id's own casing; on a case-sensitive
+    // file system they are only found there until they age out.
+    private string? ExistingPathFor(string ownerId, string id)
+    {
+        var path = PathFor(ownerId, id);
+        if (path is null || File.Exists(path))
+            return path;
+        var legacy = Path.Combine(root, ownerId, id + ".json");
+        return File.Exists(legacy) ? legacy : path;
+    }
 
     private static async Task<Draft?> ReadAsync(string path, CancellationToken ct)
     {

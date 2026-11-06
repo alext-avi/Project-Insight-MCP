@@ -15,21 +15,13 @@ updates:
           minor-and-patch:
               update-types: [minor, patch]
 
-    # Core (net8.0;net10.0) and the in-process Functions host (net8.0). Azure.Core 1.64+
-    # requires Microsoft.Extensions.* 10.x, so everything is on 10.x now. The in-process
-    # Functions SDK pins Mvc.Core and WebJobs.Extensions.Http to the versions it was built
-    # against; hold those (and the SDK) until the host is replaced (#4).
+    # Core, the shared MCP wiring's dependencies and the web host. Lock files are updated with them.
     - package-ecosystem: nuget
       directories:
           - "/servers/project-insight/core"
-          - "/servers/project-insight/src"
+          - "/servers/project-insight/src-web"
       schedule:
           interval: weekly
-      ignore:
-          - dependency-name: "Microsoft.AspNetCore.Mvc.Core"
-          - dependency-name: "Microsoft.Azure.WebJobs.Extensions.Http"
-          - dependency-name: "Microsoft.NET.Sdk.Functions"
-            update-types: ["version-update:semver-major"]
       groups:
           minor-and-patch:
               update-types: [minor, patch]
