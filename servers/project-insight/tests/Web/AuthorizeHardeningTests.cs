@@ -123,6 +123,7 @@ public class AuthorizeHardeningTests
     [InlineData("Sec-Fetch-Site", "none")]
     [InlineData("Origin", "https://evil.example")]
     [InlineData("Origin", "http://mcp.test")]
+    [InlineData("Origin", "null")]
     public async Task Cross_site_posts_are_refused_before_any_pi_call(string header, string value)
     {
         using var factory = new WebFactory();
@@ -253,7 +254,7 @@ public class AuthorizeHardeningTests
             Assert.Equal("no-store", r.Headers.CacheControl?.ToString());
             Assert.Contains("frame-ancestors 'none'", r.Headers.GetValues("Content-Security-Policy").Single());
             Assert.Equal("nosniff", r.Headers.GetValues("X-Content-Type-Options").Single());
-            Assert.Equal("no-referrer", r.Headers.GetValues("Referrer-Policy").Single());
+            Assert.Equal("same-origin", r.Headers.GetValues("Referrer-Policy").Single());
         }
     }
 

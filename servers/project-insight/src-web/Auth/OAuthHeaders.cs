@@ -11,7 +11,8 @@ public static class OAuthHeaders
         response.Headers.Pragma = "no-cache";
         response.Headers.ContentSecurityPolicy = Csp;
         response.Headers.XContentTypeOptions = "nosniff";
-        response.Headers["Referrer-Policy"] = "no-referrer";
+        // Not no-referrer: under it, browsers send "Origin: null" on the page's own form posts, which the cross-site guard refuses.
+        response.Headers["Referrer-Policy"] = "same-origin";
     }
 
     /// <summary>Endpoint filter for /authorize, /authorize/*, /token and /register.</summary>

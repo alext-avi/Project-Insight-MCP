@@ -207,7 +207,7 @@ It then renders the consent page. Link unfurlers, Safe Links and crawlers that f
 - `Cache-Control: no-store` and `Pragma: no-cache`;
 - `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'` (no `form-action`, which would block the redirect after the POST);
 - `X-Content-Type-Options: nosniff`;
-- `Referrer-Policy: no-referrer`.
+- `Referrer-Policy: same-origin`. Not `no-referrer`: under it, browsers send `Origin: null` on the consent page's own form posts, and the cross-site check refuses them (found in the first live sign-in).
 
 No inline script.
 
