@@ -78,6 +78,7 @@ public sealed partial class PiBearerHandler(
                 return Response.WriteAsync("Project Insight is not responding. Try again shortly.");
             case "limited":
                 Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                Response.Headers.RetryAfter = "60";
                 return Task.CompletedTask;
             case "forbidden":
                 Response.StatusCode = StatusCodes.Status403Forbidden;

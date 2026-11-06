@@ -8,7 +8,8 @@ public sealed class PruneService(IServiceProvider services, TimeProvider time, I
 {
     private static readonly TimeSpan Every = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan ClientUnusedFor = TimeSpan.FromDays(90);
-    private int _ticks;
+    private readonly object _gate = new();
+    private DateTimeOffset _nextHourly = DateTimeOffset.MinValue;
 
     protected override async Task ExecuteAsync(CancellationToken stop)
     {
@@ -23,23 +24,34 @@ public sealed class PruneService(IServiceProvider services, TimeProvider time, I
     public async Task PruneOnceAsync(CancellationToken ct)
     {
         var now = time.GetUtcNow();
-        await TryAsync("sign-in sessions", () => services.GetRequiredService<ISessionStore>().PruneAsync(now, ct));
-        await TryAsync("authorization codes", () => services.GetRequiredService<ICodeStore>().PruneAsync(now, ct));
-        if (Interlocked.Increment(ref _ticks) % 12 == 1)
+        await TryAsync("sign-in sessions", () => services.GetRequiredService<ISessionStore>().PruneAsync(now, ct), ct);
+        await TryAsync("authorization codes", () => services.GetRequiredService<ICodeStore>().PruneAsync(now, ct), ct);
+        if (HourlyDue(now))
         {
-            await TryAsync("drafts", () => services.GetRequiredService<IDraftStore>().PruneAllAsync(ct));
-            await TryAsync("clients", () => services.GetRequiredService<IClientStore>().PruneAsync(now - ClientUnusedFor, ct));
+            await TryAsync("drafts", () => services.GetRequiredService<IDraftStore>().PruneAllAsync(ct), ct);
+            await TryAsync("clients", () => services.GetRequiredService<IClientStore>().PruneAsync(now - ClientUnusedFor, ct), ct);
+        }
+    }
+
+    private bool HourlyDue(DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            if (now < _nextHourly)
+                return false;
+            _nextHourly = now + TimeSpan.FromHours(1);
+            return true;
         }
     }
 
     // A failed prune is retried next tick; it must never stop the server.
-    private async Task TryAsync(string what, Func<Task> prune)
+    private async Task TryAsync(string what, Func<Task> prune, CancellationToken ct)
     {
         try
         {
             await prune();
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Pruning {What} failed", what);
         }

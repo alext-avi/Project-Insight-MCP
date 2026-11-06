@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ProjectInsightMCP.Tests.TimeChanges;
@@ -22,6 +23,7 @@ public class HardeningTests
 
         var eleventh = await client.PostAsJsonAsync("/register", new { redirect_uris = new[] { "http://127.0.0.1/callback" } });
         Assert.Equal(HttpStatusCode.TooManyRequests, eleventh.StatusCode);
+        Assert.True(eleventh.Headers.RetryAfter is not null);
     }
 
     [Fact]
@@ -30,15 +32,59 @@ public class HardeningTests
         using var factory = new WebFactory();
         var client = factory.Client();
         var statuses = new List<HttpStatusCode>();
+        HttpResponseMessage last = null!;
         for (var i = 0; i < 31; i++)
         {
             var request = new HttpRequestMessage(HttpMethod.Post, "/mcp") { Content = JsonContent.Create(new { jsonrpc = "2.0", id = 1, method = "tools/list" }) };
             request.Headers.TryAddWithoutValidation("Authorization", $"Bearer random-token-{i}");
-            statuses.Add((await client.SendAsync(request)).StatusCode);
+            last = await client.SendAsync(request);
+            statuses.Add(last.StatusCode);
         }
 
         Assert.Equal(HttpStatusCode.TooManyRequests, statuses[^1]);
+        Assert.Equal(HttpStatusCode.TooManyRequests, last.StatusCode);
+        Assert.True(last.Headers.RetryAfter is not null);
         Assert.Equal(30, factory.Pi.ToPath("/api/user/me").Count());
+    }
+
+    [Fact]
+    public void Client_key_is_the_address_with_ipv6_grouped_by_64()
+    {
+        string Key(string? ip)
+        {
+            var ctx = new DefaultHttpContext();
+            ctx.Connection.RemoteIpAddress = ip is null ? null : IPAddress.Parse(ip);
+            return RateLimits.ClientKey(ctx);
+        }
+
+        Assert.Equal("203.0.113.7", Key("203.0.113.7"));
+        Assert.Equal("203.0.113.7", Key("::ffff:203.0.113.7"));
+        Assert.Equal(Key("2001:db8:1:2::1"), Key("2001:db8:1:2:aaaa:bbbb:cccc:dddd"));
+        Assert.NotEqual(Key("2001:db8:1:2::1"), Key("2001:db8:1:3::1"));
+        Assert.Equal("unknown", Key(null));
+    }
+
+    [Fact]
+    public async Task Rate_limit_partition_is_the_right_most_forwarded_address()
+    {
+        using var factory = new WebFactory();
+        var client = factory.Client();
+        async Task<HttpStatusCode> Register(string forwardedFor)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, "/register")
+            {
+                Content = JsonContent.Create(new { redirect_uris = new[] { "http://127.0.0.1/callback" } })
+            };
+            request.Headers.TryAddWithoutValidation("X-Forwarded-For", forwardedFor);
+            return (await client.SendAsync(request)).StatusCode;
+        }
+
+        // The left-most entry is client-supplied and varies; the right-most is what the front end saw.
+        for (var i = 0; i < 10; i++)
+            Assert.Equal(HttpStatusCode.Created, await Register($"198.51.100.{i + 1}, 203.0.113.9"));
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, await Register("198.51.100.200, 203.0.113.9"));
+        Assert.Equal(HttpStatusCode.Created, await Register("198.51.100.1, 203.0.113.10"));
     }
 
     [Fact]
@@ -68,9 +114,7 @@ public class HardeningTests
         time.Now = time.Now.AddDays(8);
 
         var prune = factory.Services.GetServices<IHostedService>().OfType<PruneService>().Single();
-        // Drafts are pruned on every 12th run, and the host's own first run may have used the first.
-        for (var i = 0; i < 12; i++)
-            await prune.PruneOnceAsync(default);
+        await prune.PruneOnceAsync(default);
 
         Assert.Null(await sessions.GetAsync("s-old", default));
         Assert.Null(await drafts.GetAsync(PiStub.UserA, old.Id));

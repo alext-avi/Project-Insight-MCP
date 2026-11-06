@@ -24,11 +24,13 @@ public sealed class PiIdentityClient(IHttpClientFactory http, IMemoryCache cache
     // Caps how hard random bearer tokens can push on PI.
     private readonly SemaphoreSlim _calls = new(8, 8);
 
-    public bool IsCached(string token) => cache.TryGetValue("pi-identity:" + TokenHash.Of(token), out _);
+    public bool IsCached(string token) => cache.TryGetValue(Key(token), out _);
+
+    private static string Key(string token) => "pi-identity:" + TokenHash.Of(token);
 
     public async Task<PiIdentity> ResolveAsync(string token, CancellationToken ct)
     {
-        var key = "pi-identity:" + TokenHash.Of(token);
+        var key = Key(token);
         if (cache.TryGetValue(key, out PiIdentity? known))
             return known!;
         if (!await _calls.WaitAsync(QueueFor, ct))
