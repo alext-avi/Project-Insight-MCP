@@ -26,15 +26,15 @@ public sealed class MemoryClientStore : IClientStore
     {
         lock (_gate)
             if (_clients.TryGetValue(clientId, out var c))
-                _clients[clientId] = c with { LastUsed = at };
+                _clients[clientId] = c with { LastUsed = at, Used = true };
         return Task.CompletedTask;
     }
 
-    public Task PruneAsync(DateTimeOffset unusedSince, CancellationToken ct)
+    public Task PruneAsync(DateTimeOffset unusedSince, DateTimeOffset neverUsedSince, CancellationToken ct)
     {
         lock (_gate)
             foreach (var (id, c) in _clients)
-                if (c.LastUsed < unusedSince)
+                if (c.LastUsed < (c.Used ? unusedSince : neverUsedSince))
                     _clients.TryRemove(id, out _);
         return Task.CompletedTask;
     }

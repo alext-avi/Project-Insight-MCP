@@ -123,7 +123,7 @@ public class TokenTests
     {
         using var factory = new WebFactory();
         var expiry = DateTime.UtcNow.AddDays(90);
-        factory.Pi.ActivationResult = (PiStub.TokenA, PiStub.UserA, expiry.ToString("yyyy-MM-ddTHH:mm:ss"));
+        factory.Pi.ActivationResult = (PiStub.TokenA, PiStub.UserA, expiry.ToString("yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture));
         var flow = new AuthorizeFlow(factory);
         var clientId = await flow.RegisterAsync();
         var code = await flow.CodeForAsync(clientId);
@@ -196,5 +196,46 @@ public class TokenTests
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal("invalid_request", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task A_successful_exchange_touches_the_dcr_client_and_a_failed_one_does_not()
+    {
+        var (factory, flow, clientId, code) = await SignedInAsync();
+        using var owned = factory;
+        var clients = factory.Services.GetRequiredService<IClientStore>();
+        Assert.False((await clients.GetAsync(clientId, default))!.Used);
+
+        await flow.Browser.PostAsync("/token", Form(code, clientId, verifier: new string('a', 43)));
+        Assert.False((await clients.GetAsync(clientId, default))!.Used);
+
+        var second = await flow.CodeForAsync(clientId);
+        Assert.Equal(HttpStatusCode.OK, (await flow.Browser.PostAsync("/token", Form(second, clientId))).StatusCode);
+        Assert.True((await clients.GetAsync(clientId, default))!.Used);
+    }
+
+    [Fact]
+    public async Task A_failing_client_store_touch_does_not_fail_the_token_response()
+    {
+        using var factory = new WebFactory
+        {
+            ExtraServices = s => s.AddSingleton<IClientStore>(new TouchFailsStore(new MemoryClientStore()))
+        };
+        var flow = new AuthorizeFlow(factory);
+        var clientId = await flow.RegisterAsync();
+        var code = await flow.CodeForAsync(clientId);
+
+        var response = await flow.Browser.PostAsync("/token", Form(code, clientId));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(PiStub.TokenA, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("access_token").GetString());
+    }
+
+    private sealed class TouchFailsStore(IClientStore inner) : IClientStore
+    {
+        public Task<RegisteredClient?> GetAsync(string clientId, CancellationToken ct) => inner.GetAsync(clientId, ct);
+        public Task<bool> TryAddAsync(RegisteredClient client, int max, CancellationToken ct) => inner.TryAddAsync(client, max, ct);
+        public Task TouchAsync(string clientId, DateTimeOffset at, CancellationToken ct) => throw new InvalidOperationException("store down");
+        public Task PruneAsync(DateTimeOffset unusedSince, DateTimeOffset neverUsedSince, CancellationToken ct) => inner.PruneAsync(unusedSince, neverUsedSince, ct);
     }
 }

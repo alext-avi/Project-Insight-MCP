@@ -1,14 +1,20 @@
 namespace ProjectInsightMCP.Web.Storage;
 
-public sealed record RegisteredClient(string ClientId, string? ClientName, IReadOnlyList<string> RedirectUris, DateTimeOffset LastUsed);
+/// <summary>
+/// <paramref name="LastUsed"/> is the registration time until the first successful sign-in, then the latest one;
+/// <paramref name="Used"/> says which, so a registration nobody finished can be pruned sooner.
+/// </summary>
+public sealed record RegisteredClient(string ClientId, string? ClientName, IReadOnlyList<string> RedirectUris, DateTimeOffset LastUsed, bool Used = false);
 
 public interface IClientStore
 {
     Task<RegisteredClient?> GetAsync(string clientId, CancellationToken ct);
     /// <summary>False when the store already holds <paramref name="max"/> clients.</summary>
     Task<bool> TryAddAsync(RegisteredClient client, int max, CancellationToken ct);
+    /// <summary>Marks the client as used at <paramref name="at"/> (a sign-in finished).</summary>
     Task TouchAsync(string clientId, DateTimeOffset at, CancellationToken ct);
-    Task PruneAsync(DateTimeOffset unusedSince, CancellationToken ct);
+    /// <summary>Removes used clients last used before <paramref name="unusedSince"/> and never-used ones registered before <paramref name="neverUsedSince"/>.</summary>
+    Task PruneAsync(DateTimeOffset unusedSince, DateTimeOffset neverUsedSince, CancellationToken ct);
 }
 
 public static class SessionStatus { public const string Pending = "pending", Completing = "completing"; }

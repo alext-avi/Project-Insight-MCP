@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Azure;
 using Azure.Data.Tables;
@@ -10,11 +11,15 @@ internal static class TableUtil
     public const string Partition = "p";
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    /// <summary>An OData datetime literal. Invariant culture: the default formats ':' with the culture's time separator.</summary>
+    public static string DateTime(DateTimeOffset at)
+        => string.Create(CultureInfo.InvariantCulture, $"datetime'{at.UtcDateTime:yyyy-MM-ddTHH:mm:ssZ}'");
+
     public static string Before(string property, DateTimeOffset at)
-        => $"PartitionKey eq '{Partition}' and {property} lt datetime'{at.UtcDateTime:yyyy-MM-ddTHH:mm:ssZ}'";
+        => $"PartitionKey eq '{Partition}' and {property} lt {DateTime(at)}";
 
     public static string NotBefore(string property, DateTimeOffset at)
-        => $"PartitionKey eq '{Partition}' and {property} ge datetime'{at.UtcDateTime:yyyy-MM-ddTHH:mm:ssZ}'";
+        => $"PartitionKey eq '{Partition}' and {property} ge {DateTime(at)}";
 
     public static async Task DeleteMatchingAsync(TableClient table, string filter, CancellationToken ct)
     {
@@ -145,8 +150,9 @@ public sealed class TableClientStore(TableClient table) : IClientStore
             // Merge only the changed fields; a missing row (pruned meanwhile) is fine.
             await table.UpdateEntityAsync(new TableEntity(Partition, clientId)
             {
-                ["Json"] = JsonSerializer.Serialize(current with { LastUsed = at }, TableUtil.Json),
-                ["LastUsed"] = at
+                ["Json"] = JsonSerializer.Serialize(current with { LastUsed = at, Used = true }, TableUtil.Json),
+                ["LastUsed"] = at,
+                ["Used"] = true
             }, ETag.All, TableUpdateMode.Merge, ct);
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
@@ -154,12 +160,14 @@ public sealed class TableClientStore(TableClient table) : IClientStore
         }
     }
 
-    public Task PruneAsync(DateTimeOffset unusedSince, CancellationToken ct)
-        => TableUtil.DeleteMatchingAsync(table, TableUtil.Before("LastUsed", unusedSince), ct);
+    public Task PruneAsync(DateTimeOffset unusedSince, DateTimeOffset neverUsedSince, CancellationToken ct)
+        => TableUtil.DeleteMatchingAsync(table,
+            $"PartitionKey eq '{Partition}' and ((Used eq true and LastUsed lt {TableUtil.DateTime(unusedSince)}) or (Used eq false and LastUsed lt {TableUtil.DateTime(neverUsedSince)}))", ct);
 
     private static TableEntity ToEntity(RegisteredClient c) => new(Partition, c.ClientId)
     {
         ["Json"] = JsonSerializer.Serialize(c, TableUtil.Json),
-        ["LastUsed"] = c.LastUsed
+        ["LastUsed"] = c.LastUsed,
+        ["Used"] = c.Used
     };
 }

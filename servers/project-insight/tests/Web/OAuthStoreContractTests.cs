@@ -94,8 +94,8 @@ public abstract class ClientStoreContract
     protected abstract Task<IClientStore> CreateAsync();
     private static readonly DateTimeOffset Now = new(2026, 11, 2, 9, 0, 0, TimeSpan.Zero);
 
-    private static RegisteredClient Client(string id, DateTimeOffset? lastUsed = null) =>
-        new(id, "Claude", ["https://claude.ai/api/mcp/auth_callback", "http://127.0.0.1:5000/callback"], lastUsed ?? Now);
+    private static RegisteredClient Client(string id, DateTimeOffset? lastUsed = null, bool used = false) =>
+        new(id, "Claude", ["https://claude.ai/api/mcp/auth_callback", "http://127.0.0.1:5000/callback"], lastUsed ?? Now, used);
 
     [SkippableFact]
     public async Task A_added_client_reads_back_with_its_redirect_uris()
@@ -133,11 +133,32 @@ public abstract class ClientStoreContract
 
         await store.TouchAsync("touched", Now, default);
         Assert.Equal(Now, (await store.GetAsync("touched", default))!.LastUsed);
+        Assert.True((await store.GetAsync("touched", default))!.Used);
 
-        await store.PruneAsync(Now.AddDays(-30), default);
+        await store.PruneAsync(Now.AddDays(-30), Now.AddHours(-24), default);
 
         Assert.Null(await store.GetAsync("stale", default));
         Assert.NotNull(await store.GetAsync("touched", default));
+    }
+
+    [SkippableFact]
+    public async Task Prune_applies_the_used_cutoff_to_used_clients_and_the_never_used_cutoff_to_the_rest()
+    {
+        Skip.IfNot(Available);
+        var store = await CreateAsync();
+        var unusedSince = Now.AddDays(-120);
+        var neverUsedSince = Now.AddHours(-24);
+        await store.TryAddAsync(Client("used-recent", Now.AddDays(-100), used: true), 10, default);
+        await store.TryAddAsync(Client("used-old", Now.AddDays(-130), used: true), 10, default);
+        await store.TryAddAsync(Client("never-fresh", Now.AddHours(-1)), 10, default);
+        await store.TryAddAsync(Client("never-old", Now.AddHours(-25)), 10, default);
+
+        await store.PruneAsync(unusedSince, neverUsedSince, default);
+
+        Assert.NotNull(await store.GetAsync("used-recent", default));
+        Assert.Null(await store.GetAsync("used-old", default));
+        Assert.NotNull(await store.GetAsync("never-fresh", default));
+        Assert.Null(await store.GetAsync("never-old", default));
     }
 }
 

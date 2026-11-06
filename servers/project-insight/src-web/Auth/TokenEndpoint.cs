@@ -10,8 +10,8 @@ public static class TokenEndpoint
 {
     public static void MapToken(this WebApplication app)
     {
-        app.MapPost("/token", async (HttpRequest request, ICodeStore codes, IOptions<WebOptions> web, TimeProvider time,
-            CancellationToken ct) =>
+        app.MapPost("/token", async (HttpRequest request, ICodeStore codes, IClientStore clients, IOptions<WebOptions> web, TimeProvider time,
+            ILoggerFactory loggers, CancellationToken ct) =>
         {
             if (!FormInput.IsUrlEncoded(request))
                 return Error("invalid_request", "Use application/x-www-form-urlencoded.");
@@ -37,6 +37,19 @@ public static class TokenEndpoint
                 return Error("invalid_target", "Unknown resource.");
             if (!Pkce.Verify(verifier, payload.CodeChallenge))
                 return Error("invalid_grant", "PKCE verification failed.");
+
+            // The client just completed a sign-in: keep its registration alive. Never fails the exchange.
+            if (clientId.StartsWith("dcr_", StringComparison.Ordinal))
+            {
+                try
+                {
+                    await clients.TouchAsync(clientId, now, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    loggers.CreateLogger("ProjectInsightMCP.Web.Token").LogWarning("Could not record use of a registered client: {Error}", ex.GetType().Name);
+                }
+            }
 
             var expiresIn = (long)Math.Max(60, (payload.ExpiresAt - now).TotalSeconds);
             return Results.Json(new Dictionary<string, object>

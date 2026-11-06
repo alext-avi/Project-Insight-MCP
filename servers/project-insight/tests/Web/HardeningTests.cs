@@ -119,4 +119,73 @@ public class HardeningTests
         Assert.Null(await sessions.GetAsync("s-old", default));
         Assert.Null(await drafts.GetAsync(PiStub.UserA, old.Id));
     }
+
+    private static async Task SignInAsync(AuthorizeFlow flow, string clientId)
+    {
+        var code = await flow.CodeForAsync(clientId);
+        var token = await flow.Browser.PostAsync("/token", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "authorization_code", ["code"] = code, ["code_verifier"] = AuthorizeFlow.Verifier,
+            ["client_id"] = clientId, ["redirect_uri"] = AuthorizeFlow.ClaudeCallback
+        }));
+        Assert.Equal(HttpStatusCode.OK, token.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_client_that_keeps_signing_in_survives_pruning_past_the_token_lifetime()
+    {
+        var time = new ManualTimeProvider(new DateTimeOffset(2026, 11, 2, 9, 0, 0, TimeSpan.Zero));
+        using var factory = new WebFactory { ExtraServices = s => s.AddSingleton<TimeProvider>(time) };
+        var flow = new AuthorizeFlow(factory);
+        var clientId = await flow.RegisterAsync();
+        var clients = factory.Services.GetRequiredService<IClientStore>();
+        var prune = factory.Services.GetServices<IHostedService>().OfType<PruneService>().Single();
+
+        time.Now = time.Now.AddHours(1);
+        await SignInAsync(flow, clientId);
+        time.Now = time.Now.AddDays(89);
+        await SignInAsync(flow, clientId);
+        time.Now = time.Now.AddDays(11);
+        await prune.PruneOnceAsync(default);
+
+        Assert.NotNull(await clients.GetAsync(clientId, default));
+
+        // 90-day token + 30 days of grace after the last sign-in (day 89): gone after day 209.
+        time.Now = time.Now.AddDays(110);
+        await prune.PruneOnceAsync(default);
+        Assert.Null(await clients.GetAsync(clientId, default));
+    }
+
+    [Fact]
+    public async Task A_registration_nobody_signed_in_with_is_pruned_after_a_day_but_a_used_one_is_kept()
+    {
+        var time = new ManualTimeProvider(new DateTimeOffset(2026, 11, 2, 9, 0, 0, TimeSpan.Zero));
+        using var factory = new WebFactory { ExtraServices = s => s.AddSingleton<TimeProvider>(time) };
+        var flow = new AuthorizeFlow(factory);
+        var never = await flow.RegisterAsync();
+        var used = await flow.RegisterAsync();
+        await SignInAsync(flow, used);
+        var clients = factory.Services.GetRequiredService<IClientStore>();
+        var prune = factory.Services.GetServices<IHostedService>().OfType<PruneService>().Single();
+
+        time.Now = time.Now.AddHours(25);
+        await prune.PruneOnceAsync(default);
+
+        Assert.Null(await clients.GetAsync(never, default));
+        Assert.NotNull(await clients.GetAsync(used, default));
+    }
+
+    [Fact]
+    public async Task A_client_registered_under_a_day_ago_is_not_pruned()
+    {
+        var time = new ManualTimeProvider(new DateTimeOffset(2026, 11, 2, 9, 0, 0, TimeSpan.Zero));
+        using var factory = new WebFactory { ExtraServices = s => s.AddSingleton<TimeProvider>(time) };
+        var clientId = await new AuthorizeFlow(factory).RegisterAsync();
+        var prune = factory.Services.GetServices<IHostedService>().OfType<PruneService>().Single();
+
+        time.Now = time.Now.AddHours(23);
+        await prune.PruneOnceAsync(default);
+
+        Assert.NotNull(await factory.Services.GetRequiredService<IClientStore>().GetAsync(clientId, default));
+    }
 }

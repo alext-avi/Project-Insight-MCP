@@ -1,13 +1,17 @@
+using Microsoft.Extensions.Options;
 using ProjectInsightMCP.TimeChanges;
 using ProjectInsightMCP.Web.Storage;
 
 namespace ProjectInsightMCP.Web.Hosting;
 
 /// <summary>Deletes expired sign-in records every 5 minutes, and old drafts and unused clients hourly.</summary>
-public sealed class PruneService(IServiceProvider services, TimeProvider time, ILogger<PruneService> logger) : BackgroundService
+public sealed class PruneService(IServiceProvider services, TimeProvider time, IOptions<AuthOptions> auth, ILogger<PruneService> logger) : BackgroundService
 {
     private static readonly TimeSpan Every = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan ClientUnusedFor = TimeSpan.FromDays(90);
+    // A used client must outlive the token it was issued for, or it is forgotten just when it must sign in again.
+    private static readonly TimeSpan ClientGrace = TimeSpan.FromDays(30);
+    // A registration nobody signed in with: the cap of 500 must not be fillable by those.
+    private static readonly TimeSpan ClientNeverUsedFor = TimeSpan.FromHours(24);
     private readonly object _gate = new();
     private DateTimeOffset _nextHourly = DateTimeOffset.MinValue;
 
@@ -29,7 +33,7 @@ public sealed class PruneService(IServiceProvider services, TimeProvider time, I
         if (HourlyDue(now))
         {
             await TryAsync("drafts", () => services.GetRequiredService<IDraftStore>().PruneAllAsync(ct), ct);
-            await TryAsync("clients", () => services.GetRequiredService<IClientStore>().PruneAsync(now - ClientUnusedFor, ct), ct);
+            await TryAsync("clients", () => services.GetRequiredService<IClientStore>().PruneAsync(now - TimeSpan.FromDays(auth.Value.PiTokenLifetimeDays) - ClientGrace, now - ClientNeverUsedFor, ct), ct);
         }
     }
 
