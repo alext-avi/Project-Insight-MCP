@@ -160,6 +160,19 @@ public abstract class ClientStoreContract
         Assert.NotNull(await store.GetAsync("never-fresh", default));
         Assert.Null(await store.GetAsync("never-old", default));
     }
+
+    [SkippableFact]
+    public async Task A_touch_marks_the_client_used_so_the_never_used_cutoff_no_longer_applies()
+    {
+        Skip.IfNot(Available);
+        var store = await CreateAsync();
+        await store.TryAddAsync(Client("signed-in-once", Now.AddHours(-48)), 10, default);
+        await store.TouchAsync("signed-in-once", Now.AddHours(-47), default);
+
+        await store.PruneAsync(Now.AddDays(-120), Now.AddHours(-24), default);
+
+        Assert.NotNull(await store.GetAsync("signed-in-once", default));
+    }
 }
 
 public sealed class MemoryClientStoreTests : ClientStoreContract

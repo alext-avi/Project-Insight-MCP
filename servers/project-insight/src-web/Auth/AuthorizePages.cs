@@ -3,7 +3,7 @@ using System.Text.Encodings.Web;
 
 namespace ProjectInsightMCP.Web.Auth;
 
-/// <summary>Server-rendered pages. Every dynamic value is HTML-encoded; no script, no inline style.</summary>
+/// <summary>Server-rendered pages. Every dynamic value is HTML-encoded; no inline script or style (one same-origin /oauth.js).</summary>
 public static class AuthorizePages
 {
     private static readonly string[] FormFields =

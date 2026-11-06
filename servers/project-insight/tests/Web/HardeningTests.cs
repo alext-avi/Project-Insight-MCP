@@ -147,13 +147,14 @@ public class HardeningTests
         await SignInAsync(flow, clientId);
         time.Now = time.Now.AddDays(89);
         await SignInAsync(flow, clientId);
-        time.Now = time.Now.AddDays(11);
+        // Day 150: past 120 days from the first sign-in, so the client survives only because day 89 counted.
+        time.Now = time.Now.AddDays(61);
         await prune.PruneOnceAsync(default);
 
         Assert.NotNull(await clients.GetAsync(clientId, default));
 
         // 90-day token + 30 days of grace after the last sign-in (day 89): gone after day 209.
-        time.Now = time.Now.AddDays(110);
+        time.Now = time.Now.AddDays(60);
         await prune.PruneOnceAsync(default);
         Assert.Null(await clients.GetAsync(clientId, default));
     }

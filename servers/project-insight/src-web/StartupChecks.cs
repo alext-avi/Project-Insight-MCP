@@ -22,8 +22,9 @@ public static class StartupChecks
             if (RedirectPolicy.Parse(entry) is null)
                 throw new InvalidOperationException($"Auth:AllowedRedirectUris has an entry that is not a valid callback URL: '{entry}'.");
         // UseForwardedHeaders runs in the app with the proxy lists cleared; a second pass by the framework would trust client-sent headers.
-        if (IsTrue(config["ASPNETCORE_FORWARDEDHEADERS_ENABLED"]))
-            throw new InvalidOperationException("ASPNETCORE_FORWARDEDHEADERS_ENABLED must not be set: the app handles forwarded headers itself, and a second pass would let clients spoof their address.");
+        // The framework reads ForwardedHeaders_Enabled, which the ASPNETCORE_-prefixed env var also maps to.
+        if (IsTrue(config["ASPNETCORE_FORWARDEDHEADERS_ENABLED"]) || IsTrue(config["ForwardedHeaders_Enabled"]))
+            throw new InvalidOperationException("ASPNETCORE_FORWARDEDHEADERS_ENABLED must be false or unset: the app handles forwarded headers itself, and a second pass would let clients spoof their address.");
         CheckStorage(config, environment);
     }
 

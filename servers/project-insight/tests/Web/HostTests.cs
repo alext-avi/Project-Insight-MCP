@@ -59,13 +59,14 @@ public class HostTests
     }
 
     [Theory]
-    [InlineData("true")]
-    [InlineData("True")]
-    [InlineData("1")]
-    public void Startup_refuses_the_frameworks_own_forwarded_headers_switch(string value)
+    [InlineData("ASPNETCORE_FORWARDEDHEADERS_ENABLED", "true")]
+    [InlineData("ASPNETCORE_FORWARDEDHEADERS_ENABLED", "True")]
+    [InlineData("ASPNETCORE_FORWARDEDHEADERS_ENABLED", "1")]
+    [InlineData("ForwardedHeaders_Enabled", "true")]
+    public void Startup_refuses_the_frameworks_own_forwarded_headers_switch(string key, string value)
     {
         using var factory = new WebFactory();
-        factory.Settings["ASPNETCORE_FORWARDEDHEADERS_ENABLED"] = value;
+        factory.Settings[key] = value;
 
         var ex = Record.Exception(() => factory.Client());
 
