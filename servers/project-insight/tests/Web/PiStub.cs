@@ -35,6 +35,8 @@ public sealed class PiStub : HttpMessageHandler
     public (string Token, string UserId, string? Expiry) ActivationResult { get; set; } = (TokenA, UserA, DefaultExpiry.ToString("yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture));
     /// <summary>PI sends the expiry without a UTC marker; relative to now so no test depends on the calendar.</summary>
     public static DateTime DefaultExpiry { get; } = DateTime.UtcNow.AddDays(30);
+    /// <summary>Activation completions wait for this first; a test holds it to keep a sign-in mid-flight.</summary>
+    public Task ActivationCompletionGate { get; set; } = Task.CompletedTask;
     /// <summary>Extra canned responses by exact absolute URI (e.g. a client metadata document).</summary>
     public Dictionary<string, Func<HttpResponseMessage>> Fixed { get; } = new();
 
@@ -75,9 +77,12 @@ public sealed class PiStub : HttpMessageHandler
         if (path == "/api/device-activation/create-request")
             return Json(new { DeviceActivationId = ActivationId, DeviceActivationRequestUrl = "https://pi.test/device/activate/" + ActivationId });
         if (path == "/api/device-activation/complete-request")
+        {
+            await ActivationCompletionGate.WaitAsync(TimeSpan.FromSeconds(10), ct);
             return request.RequestUri.Query.Contains("activationCode=" + ActivationCode)
                 ? Json(new { ApiToken = ActivationResult.Token, UserId = ActivationResult.UserId, ApiTokenExpirationDateTimeUTC = ActivationResult.Expiry })
                 : new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("Invalid activation code") };
+        }
         if (path.Contains("echo"))
             return new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent($"bad token {token} rejected {request.RequestUri.Query}") };
         if (request.Method == HttpMethod.Post && path == "/api/project")

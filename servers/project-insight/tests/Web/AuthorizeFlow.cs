@@ -48,7 +48,11 @@ public sealed partial class AuthorizeFlow(WebFactory factory)
         LastAuthCookieValue = response.Headers.TryGetValues("Set-Cookie", out var cookies)
             ? cookies.Select(c => c.Split(';')[0]).FirstOrDefault(c => c.StartsWith("__Host-pi_auth=", StringComparison.Ordinal))?["__Host-pi_auth=".Length..]
             : null;
-        return SessionField().Match(html).Groups[1].Value;
+        // Fail here, not later: an error page would hand back "" and let a test pass for the wrong reason.
+        var field = SessionField().Match(html);
+        if (response.StatusCode != HttpStatusCode.OK || !field.Success)
+            throw new InvalidOperationException($"Expected the activation page, got {(int)response.StatusCode}: {html}");
+        return field.Groups[1].Value;
     }
 
     public Task<HttpResponseMessage> CompleteAsync(string sessionId, string code)

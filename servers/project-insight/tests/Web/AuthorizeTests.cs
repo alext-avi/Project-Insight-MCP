@@ -1,5 +1,7 @@
 using System.Net;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.DependencyInjection;
+using ProjectInsightMCP.Web.Storage;
 using Xunit;
 
 namespace ProjectInsightMCP.Tests.Web;
@@ -143,16 +145,28 @@ public class AuthorizeTests
     [Fact]
     public async Task Double_submit_gives_exactly_one_redirect_and_a_plain_page_for_the_other()
     {
-        using var factory = new WebFactory();
-        factory.Pi.ToolCallDelay = TimeSpan.Zero;
+        var bothRead = new Rendezvous();
+        using var factory = new WebFactory
+        {
+            ExtraServices = s => s.AddSingleton<ISessionStore>(new RendezvousSessionStore(new MemorySessionStore(), bothRead))
+        };
+        var releasePi = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        factory.Pi.ActivationCompletionGate = releasePi.Task;
         var flow = new AuthorizeFlow(factory);
         var session = await flow.StartAsync(AuthorizeFlow.Query(await flow.RegisterAsync()));
 
-        var responses = await Task.WhenAll(flow.CompleteAsync(session, PiStub.ActivationCode), flow.CompleteAsync(session, PiStub.ActivationCode));
+        // Both posts read the session while it is still pending; the winner is then held inside PI,
+        // so the other must answer on its own instead of waiting for the winner to finish.
+        bothRead.Arm();
+        var first = flow.CompleteAsync(session, PiStub.ActivationCode);
+        var second = flow.CompleteAsync(session, PiStub.ActivationCode);
+        var loser = await (await Task.WhenAny(first, second).WaitAsync(TimeSpan.FromSeconds(10)));
+        releasePi.SetResult();
+        var responses = await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(10));
 
+        Assert.Equal(HttpStatusCode.Conflict, loser.StatusCode);
         Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Redirect);
-        Assert.Single(responses, r => r.StatusCode is HttpStatusCode.OK or HttpStatusCode.Conflict or HttpStatusCode.BadRequest);
-        Assert.DoesNotContain(responses, r => (int)r.StatusCode >= 500);
+        Assert.Single(factory.Pi.ToPath("/api/device-activation/complete-request"));
     }
 
     [Fact]

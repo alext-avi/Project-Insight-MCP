@@ -60,6 +60,28 @@ public class TokenTests
     }
 
     [Fact]
+    public async Task Two_concurrent_redemptions_of_one_code_give_exactly_one_token()
+    {
+        var bothTake = new Rendezvous();
+        using var factory = new WebFactory
+        {
+            ExtraServices = s => s.AddSingleton<ICodeStore>(new RendezvousCodeStore(new MemoryCodeStore(), bothTake))
+        };
+        var flow = new AuthorizeFlow(factory);
+        var clientId = await flow.RegisterAsync();
+        var code = await flow.CodeForAsync(clientId);
+
+        bothTake.Arm();
+        var responses = await Task.WhenAll(
+            flow.Browser.PostAsync("/token", Form(code, clientId)),
+            flow.Browser.PostAsync("/token", Form(code, clientId))).WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Single(responses, r => r.StatusCode == HttpStatusCode.OK);
+        var refused = Assert.Single(responses, r => r.StatusCode == HttpStatusCode.BadRequest);
+        Assert.Equal("invalid_grant", (await refused.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString());
+    }
+
+    [Fact]
     public async Task Wrong_verifier_is_invalid_grant_and_burns_the_code()
     {
         var (factory, flow, clientId, code) = await SignedInAsync();
