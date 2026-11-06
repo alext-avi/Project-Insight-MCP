@@ -138,6 +138,19 @@ public sealed class FileDraftStoreContractTests : DraftStoreContract
     protected override bool Available => true;
     protected override Task<IDraftStore> CreateAsync() => Task.FromResult<IDraftStore>(new FileDraftStore(_dir.Root, Time));
     public override void Dispose() => _dir.Dispose();
+
+    [Fact]
+    public async Task A_draft_saved_under_a_mixed_case_owner_folder_before_lower_casing_is_still_found()
+    {
+        using var other = new TempDraftRoot();
+        await new FileDraftStore(other.Root, Time).CreateAsync(Drafts.New("ab-1", "d_legacy1"));
+        Directory.CreateDirectory(Path.Combine(_dir.Root, "AB-1"));
+        File.Copy(Path.Combine(other.Root, "ab-1", "d_legacy1.json"), Path.Combine(_dir.Root, "AB-1", "d_legacy1.json"));
+        var store = await CreateAsync();
+
+        Assert.NotNull(await store.GetAsync("AB-1", "d_legacy1"));
+        Assert.NotNull(await store.TryTransitionAsync("AB-1", "d_legacy1", DraftStatus.Draft, d => d.Status = DraftStatus.Committing));
+    }
 }
 
 public sealed class BlobDraftStoreContractTests : DraftStoreContract

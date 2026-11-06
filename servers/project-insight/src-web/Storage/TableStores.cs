@@ -143,17 +143,28 @@ public sealed class TableClientStore(TableClient table) : IClientStore
 
     private async Task<bool> TryEvictOldestNeverUsedAsync(CancellationToken ct)
     {
-        // Tables can't sort, but the cap keeps this scan to a few hundred rows.
-        TableEntity? oldest = null;
-        await foreach (var e in table.QueryAsync<TableEntity>($"PartitionKey eq '{Partition}' and Used eq false",
-            select: ["PartitionKey", "RowKey", "LastUsed"], cancellationToken: ct))
-            if (oldest is null || e.GetDateTimeOffset("LastUsed") < oldest.GetDateTimeOffset("LastUsed"))
-                oldest = e;
-        if (oldest is null)
-            return false;
-        // A concurrent registration may have evicted the same row; either way there is room.
-        await table.DeleteEntityAsync(Partition, oldest.RowKey, ETag.All, ct);
-        return true;
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            // Tables can't sort, but the cap keeps this scan to a few hundred rows.
+            TableEntity? oldest = null;
+            await foreach (var e in table.QueryAsync<TableEntity>($"PartitionKey eq '{Partition}' and Used eq false",
+                select: ["PartitionKey", "RowKey", "LastUsed"], cancellationToken: ct))
+                if (oldest is null || e.GetDateTimeOffset("LastUsed") < oldest.GetDateTimeOffset("LastUsed"))
+                    oldest = e;
+            if (oldest is null)
+                return false;
+            try
+            {
+                // Only the row as read: a sign-in that finished meanwhile (TouchAsync) changes the ETag and keeps it.
+                await table.DeleteEntityAsync(Partition, oldest.RowKey, oldest.ETag, ct);
+                return true;
+            }
+            catch (RequestFailedException ex) when (ex.Status is 404 or 412)
+            {
+                // Touched or evicted by someone else; pick again.
+            }
+        }
+        return false;
     }
 
     public async Task TouchAsync(string clientId, DateTimeOffset at, CancellationToken ct)

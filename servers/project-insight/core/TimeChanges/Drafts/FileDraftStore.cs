@@ -26,7 +26,7 @@ public sealed partial class FileDraftStore(string root, TimeProvider time) : IDr
 
     public async Task<Draft?> GetAsync(string ownerId, string id, CancellationToken ct = default)
     {
-        var path = PathFor(ownerId, id);
+        var path = ExistingPathFor(ownerId, id);
         return path is null ? null : await ReadAsync(path, ct);
     }
 
@@ -46,7 +46,7 @@ public sealed partial class FileDraftStore(string root, TimeProvider time) : IDr
 
     public async Task<Draft?> TryTransitionAsync(string ownerId, string id, string expectedStatus, Action<Draft> update, CancellationToken ct = default)
     {
-        var path = PathFor(ownerId, id);
+        var path = ExistingPathFor(ownerId, id);
         if (path is null || !File.Exists(path))
             return null;
         using (await LockAsync(path, ct))
@@ -97,6 +97,17 @@ public sealed partial class FileDraftStore(string root, TimeProvider time) : IDr
 
     private string? PathFor(string ownerId, string id)
         => OwnerPattern().IsMatch(ownerId) && IdPattern().IsMatch(id) ? Path.Combine(root, ownerId.ToLowerInvariant(), id + ".json") : null;
+
+    // Drafts written before owner ids were lower-cased sit under the id's own casing; on a case-sensitive
+    // file system they are only found there until they age out.
+    private string? ExistingPathFor(string ownerId, string id)
+    {
+        var path = PathFor(ownerId, id);
+        if (path is null || File.Exists(path))
+            return path;
+        var legacy = Path.Combine(root, ownerId, id + ".json");
+        return File.Exists(legacy) ? legacy : path;
+    }
 
     private static async Task<Draft?> ReadAsync(string path, CancellationToken ct)
     {
