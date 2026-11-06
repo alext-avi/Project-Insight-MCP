@@ -24,6 +24,8 @@ public class HardeningTests
         var eleventh = await client.PostAsJsonAsync("/register", new { redirect_uris = new[] { "http://127.0.0.1/callback" } });
         Assert.Equal(HttpStatusCode.TooManyRequests, eleventh.StatusCode);
         Assert.True(eleventh.Headers.RetryAfter is not null);
+        Assert.Equal("Too many requests. Wait a minute and try again.", await eleventh.Content.ReadAsStringAsync());
+        Assert.Equal("text/plain", eleventh.Content.Headers.ContentType?.MediaType);
     }
 
     [Fact]

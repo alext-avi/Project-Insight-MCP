@@ -6,5 +6,6 @@ namespace ProjectInsightMCP.Web.Auth;
 public sealed class PiCaller : IToolCallKey
 {
     public string? UserId { get; set; }
-    public string Key => UserId ?? throw new InvalidOperationException("No signed-in PI user on this request.");
+    // PI's GUID casing is not guaranteed stable; one user must always share one queue.
+    public string Key => UserId?.ToLowerInvariant() ?? throw new InvalidOperationException("No signed-in PI user on this request.");
 }

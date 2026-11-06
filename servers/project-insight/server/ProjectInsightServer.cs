@@ -93,7 +93,7 @@ public static class ProjectInsightServer
     {
         options ??= new ProjectInsightMcpOptions();
         services.TryAddSingleton<ToolCallGate>();
-        // One queue for the whole process unless the host registers a per-user key first.
+        // One queue for the whole process unless the host replaces this with a per-user key (the web host does, after this call).
         services.TryAddSingleton<IToolCallKey>(SingleUserToolCallKey.Instance);
 
         return services

@@ -21,6 +21,9 @@ public sealed partial class AuthorizeFlow(WebFactory factory)
         HandleCookies = true
     });
 
+    /// <summary>The __Host-pi_auth cookie value the last consent POST set, for tests that scan for it.</summary>
+    public string? LastAuthCookieValue { get; private set; }
+
     public static Dictionary<string, string?> Query(string clientId, string redirect = ClaudeCallback, string? resource = "https://mcp.test/mcp") => new()
     {
         ["response_type"] = "code",
@@ -42,6 +45,9 @@ public sealed partial class AuthorizeFlow(WebFactory factory)
         var response = await Browser.PostAsync("/authorize/start",
             new FormUrlEncodedContent(query.Where(kv => kv.Value is not null)!));
         var html = await response.Content.ReadAsStringAsync();
+        LastAuthCookieValue = response.Headers.TryGetValues("Set-Cookie", out var cookies)
+            ? cookies.Select(c => c.Split(';')[0]).FirstOrDefault(c => c.StartsWith("__Host-pi_auth=", StringComparison.Ordinal))?["__Host-pi_auth=".Length..]
+            : null;
         return SessionField().Match(html).Groups[1].Value;
     }
 

@@ -14,11 +14,13 @@ public static class RateLimits
         services.AddRateLimiter(o =>
         {
             o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-            o.OnRejected = (context, _) =>
+            o.OnRejected = async (context, ct) =>
             {
                 if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
                     context.HttpContext.Response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString();
-                return ValueTask.CompletedTask;
+                // A browser on /authorize would otherwise show a blank page.
+                context.HttpContext.Response.ContentType = "text/plain; charset=utf-8";
+                await context.HttpContext.Response.WriteAsync("Too many requests. Wait a minute and try again.", ct);
             };
             o.AddPolicy(Register, ctx => Fixed(ctx, 10, TimeSpan.FromHours(1)));
             o.AddPolicy(Authorize, ctx => Fixed(ctx, 30, TimeSpan.FromMinutes(10)));
