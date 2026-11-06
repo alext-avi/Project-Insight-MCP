@@ -131,7 +131,9 @@ public static class WebHost
         app.MapAuthorize();
         app.MapToken();
         var css = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "wwwroot", "oauth.css"));
-        app.MapGet("/oauth.css", () => Results.Bytes(css, "text/css"));
+        app.MapGet("/oauth.css", () => Results.Bytes(css, "text/css")).WithOAuthHeaders();
+        var js = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "wwwroot", "oauth.js"));
+        app.MapGet("/oauth.js", () => Results.Bytes(js, "text/javascript")).WithOAuthHeaders();
         app.MapMcp("/mcp").RequireAuthorization().RequireRateLimiting(RateLimits.Mcp);
 
         app.MapGet("/healthz", () => Results.Json(new { status = "ok", version = Version }));

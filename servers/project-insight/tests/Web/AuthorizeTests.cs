@@ -181,4 +181,28 @@ public class AuthorizeTests
 
         Assert.DoesNotContain("evil.example", await response.Content.ReadAsStringAsync());
     }
+
+    [Fact]
+    public async Task Both_sign_in_pages_load_the_same_origin_script_that_disables_the_buttons_on_submit()
+    {
+        using var factory = new WebFactory();
+        var flow = new AuthorizeFlow(factory);
+        var query = AuthorizeFlow.Query(await flow.RegisterAsync());
+
+        var consent = await (await flow.GetAuthorizeAsync(query)).Content.ReadAsStringAsync();
+        var activation = await (await flow.Browser.PostAsync("/authorize/start",
+            new FormUrlEncodedContent(query.Where(kv => kv.Value is not null)!))).Content.ReadAsStringAsync();
+        var script = await flow.Browser.GetAsync("/oauth.js");
+
+        Assert.Contains("<script src=\"/oauth.js\" defer></script>", consent);
+        Assert.Contains("<script src=\"/oauth.js\" defer></script>", activation);
+        Assert.DoesNotContain("onsubmit", consent + activation);
+        Assert.Equal(HttpStatusCode.OK, script.StatusCode);
+        Assert.Equal("text/javascript", script.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("nosniff", script.Headers.GetValues("X-Content-Type-Options").Single());
+        var body = await script.Content.ReadAsStringAsync();
+        Assert.Contains("\"submit\"", body);
+        Assert.Contains("button.disabled = true", body);
+        Assert.Contains("Checking", body);
+    }
 }

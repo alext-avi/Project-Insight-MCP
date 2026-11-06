@@ -93,9 +93,10 @@ public static class AuthorizeEndpoints
             if (code.Length is 0 or > 64)
                 return AuthorizePages.Activation(session.Id, activationUrl, new Uri(session.RedirectUri).Host, "Paste the activation code Project Insight shows.");
 
-            // Claim the session before calling PI, so a double submit completes it exactly once.
+            // Claim the session before calling PI, so a double submit completes it exactly once. Not tied to the
+            // request: an aborted POST must not leave the claim undecided while the work below carries on.
             var claimed = session with { Status = SessionStatus.Completing };
-            if (!await sessions.TryReplaceAsync(claimed, ct))
+            if (!await sessions.TryReplaceAsync(claimed, CancellationToken.None))
                 return AuthorizePages.Error(409, "This sign-in is already finished or in progress. Start again from Claude or ChatGPT.");
 
             // Past the claim nothing may depend on the request staying open: a double-click aborts the first

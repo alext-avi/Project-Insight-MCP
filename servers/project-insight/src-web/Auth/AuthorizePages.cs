@@ -56,6 +56,6 @@ public static class AuthorizePages
     private static IResult Page(string title, string body, int status)
         => Results.Content($"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">" +
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
-            $"<title>{E(title)}</title><link rel=\"stylesheet\" href=\"/oauth.css\"></head><body><main>{body}</main></body></html>",
+            $"<title>{E(title)}</title><link rel=\"stylesheet\" href=\"/oauth.css\"><script src=\"/oauth.js\" defer></script></head><body><main>{body}</main></body></html>",
             "text/html; charset=utf-8", statusCode: status);
 }
