@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using ProjectInsightMCP.Server;
 using ProjectInsightMCP.Services;
 using ProjectInsightMCP.Stdio;
 using Xunit;

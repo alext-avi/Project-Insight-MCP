@@ -1,6 +1,6 @@
 name: CI
 
-# Builds both hosts and runs the tests. Deployment is separate (deploy.yml, manual-only).
+# Builds the hosts (the shared server project builds with them) and runs the tests. Deployment is separate (deploy.yml, manual-only).
 on:
     pull_request:
     push:

@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../core/ProjectInsightMCP.Core.csproj" />
+    <ProjectReference Include="../server/ProjectInsightMCP.Server.csproj" />
     <ProjectReference Include="../src-stdio/ProjectInsightMCP.Stdio.csproj" />
   </ItemGroup>
 
