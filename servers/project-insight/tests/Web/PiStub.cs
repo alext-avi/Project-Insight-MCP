@@ -79,7 +79,11 @@ public sealed class PiStub : HttpMessageHandler
                 ? Json(new { ApiToken = ActivationResult.Token, UserId = ActivationResult.UserId, ApiTokenExpirationDateTimeUTC = ActivationResult.Expiry })
                 : new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("Invalid activation code") };
         if (path.Contains("echo"))
-            return new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent($"bad token {token} rejected") };
+            return new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent($"bad token {token} rejected {request.RequestUri.Query}") };
+        if (request.Method == HttpMethod.Post && path == "/api/project")
+            return new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent($"cannot create, token {token}") };
+        if (path.Contains("leak"))
+            return Json(new { id = "leak", name = $"name {token}" });
         if (path.Contains("boom"))
             return new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent($"server error for {token}") };
         if (path.Contains("slow"))

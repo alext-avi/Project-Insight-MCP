@@ -6,6 +6,7 @@ namespace ProjectInsightMCP.Web.Security;
 /// <summary>Last line of defence: the caller's token never reaches the model through a tool result.</summary>
 public static class ToolResultScrubber
 {
+    // Only text blocks and structured content are scrubbed: no tool returns other block types today.
     public static CallToolResult Scrub(CallToolResult result, string secret)
     {
         foreach (var text in result.Content.OfType<TextContentBlock>())

@@ -32,6 +32,21 @@ public class ScrubberTests
     }
 
     [Fact]
+    public async Task Handler_redacts_activation_values_taken_from_the_request_query()
+    {
+        var inner = new StubHandler(r => new HttpResponseMessage(System.Net.HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent("bad code CODE-8842 for request REQ-5521")
+        });
+        using var client = new HttpClient(new PiErrorScrubbingHandler { InnerHandler = inner });
+
+        var body = await (await client.GetAsync("https://pi.test/api/x?activationRequestId=REQ-5521&activationCode=CODE-8842"))
+            .Content.ReadAsStringAsync();
+
+        Assert.Equal("bad code [redacted] for request [redacted]", body);
+    }
+
+    [Fact]
     public void Tool_results_lose_the_secret_in_text_and_structured_content()
     {
         var result = new CallToolResult

@@ -16,12 +16,31 @@ public sealed class PiErrorScrubbingHandler : DelegatingHandler
         var response = await base.SendAsync(request, ct);
         if (response.IsSuccessStatusCode)
             return response;
-        var body = await response.Content.ReadAsStringAsync(ct);
+        var original = response.Content;
+        var body = await ReadBoundedAsync(original, ct);
         var scrubbed = Scrub(body, SecretsIn(request));
         if (scrubbed.Length > MaxErrorBody)
             scrubbed = scrubbed[..MaxErrorBody] + "…";
-        response.Content = new StringContent(scrubbed, Encoding.UTF8, response.Content.Headers.ContentType?.MediaType ?? "text/plain");
+        response.Content = new StringContent(scrubbed, Encoding.UTF8, original.Headers.ContentType?.MediaType ?? "text/plain");
+        original.Dispose();
         return response;
+    }
+
+    // A secret can only straddle the cut if it sits within the last few bytes; the cap is generous enough
+    // that anything surviving the truncation below was scrubbed whole first.
+    private static async Task<string> ReadBoundedAsync(HttpContent content, CancellationToken ct)
+    {
+        await using var stream = await content.ReadAsStreamAsync(ct);
+        var buffer = new byte[MaxErrorBody * 4];
+        var read = 0;
+        while (read < buffer.Length)
+        {
+            var n = await stream.ReadAsync(buffer.AsMemory(read), ct);
+            if (n == 0)
+                break;
+            read += n;
+        }
+        return Encoding.UTF8.GetString(buffer, 0, read);
     }
 
     public static string Scrub(string text, IEnumerable<string> secrets)
