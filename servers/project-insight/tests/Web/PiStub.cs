@@ -80,6 +80,10 @@ public sealed class PiStub : HttpMessageHandler
                 : new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("Invalid activation code") };
         if (path.Contains("echo"))
             return new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent($"bad token {token} rejected") };
+        if (path.Contains("boom"))
+            return new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent($"server error for {token}") };
+        if (path.Contains("slow"))
+            throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout of 30 seconds elapsing.");
 
         var now = Interlocked.Increment(ref _toolCallsInFlight);
         int seen;

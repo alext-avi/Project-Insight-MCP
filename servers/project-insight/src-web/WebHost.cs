@@ -1,12 +1,15 @@
 using System.Reflection;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.AspNetCore;
+using OpenTelemetry.Trace;
 using ProjectInsightMCP.Server;
 using ProjectInsightMCP.Services;
 using ProjectInsightMCP.TimeChanges;
 using ProjectInsightMCP.Web.Auth;
+using ProjectInsightMCP.Web.Security;
 using ProjectInsightMCP.Web.Storage;
 
 namespace ProjectInsightMCP.Web;
@@ -22,9 +25,11 @@ public static class WebHost
         services.AddWebStorage();
 
         services.AddMemoryCache();
+        services.AddTransient<PiErrorScrubbingHandler>();
         services.AddHttpClient(PiIdentityClient.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(10))
             // A redirect would carry the bearer token to wherever PI points; treat any 3xx as an outage instead.
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+            .AddHttpMessageHandler<PiErrorScrubbingHandler>();
         services.AddSingleton<PiIdentityClient>();
         services.AddSingleton<RedirectPolicy>();
         services.AddSingleton<CimdFetcher>();
@@ -39,7 +44,10 @@ public static class WebHost
                 UseCookies = false,
                 ConnectCallback = PublicAddressOnly.ConnectAsync
             });
-        services.AddHttpClient(PiActivationClient.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(8));
+        services.AddHttpClient(PiActivationClient.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(8))
+            .AddHttpMessageHandler<PiErrorScrubbingHandler>()
+            // Its URLs carry the activation code in the query string.
+            .RemoveAllLoggers();
         services.AddSingleton<IPiActivationClient, PiActivationClient>();
         services.AddScoped<ApiTokenAccessor>();
         services.AddScoped<PiCaller>();
@@ -48,7 +56,7 @@ public static class WebHost
         services.AddAuthorization();
 
         // Per-request PI services. Nothing here may be a singleton: each request carries its own user's token.
-        services.AddHttpClient<ProjectInsightApiService>();
+        services.AddHttpClient<ProjectInsightApiService>().AddHttpMessageHandler<PiErrorScrubbingHandler>();
         services.AddScoped(sp => new McpServerService(
             sp.GetRequiredService<ProjectInsightApiService>(),
             sp.GetRequiredService<ILogger<McpServerService>>(),
@@ -64,9 +72,23 @@ public static class WebHost
         {
             ServerVersion = ProjectInsightServer.VersionOf(typeof(WebHost).Assembly),
             ExposeTool = name => !HiddenTools.Contains(name)
-        }).WithHttpTransport(o => o.Stateless = true);
+        }).WithHttpTransport(o => o.Stateless = true)
+            .WithRequestFilters(f => f.AddCallToolFilter(next => async (context, ct) =>
+            {
+                var result = await next(context, ct);
+                var token = context.Services!.GetRequiredService<ApiTokenAccessor>().ApiToken;
+                return string.IsNullOrEmpty(token) ? result : ToolResultScrubber.Scrub(result, token);
+            }));
         // Per-user tool queue instead of the single-user default.
         services.Replace(ServiceDescriptor.Scoped<IToolCallKey>(sp => sp.GetRequiredService<PiCaller>()));
+
+        // Unlike the rest of the setup this reads configuration before Build(): it is an environment
+        // variable on App Service, and tests never set it.
+        if (!string.IsNullOrEmpty(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
+            services.AddOpenTelemetry()
+                // Added before UseAzureMonitor, so it runs before the exporter sees the activity.
+                .WithTracing(t => t.AddProcessor(new QueryRedactionProcessor()))
+                .UseAzureMonitor();
     }
 
     /// <summary>Device-activation sign-in tools: the connector's OAuth sign-in replaces them.</summary>
