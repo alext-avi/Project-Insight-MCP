@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.RateLimiting;
+using ProjectInsightMCP.Web.Hosting;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using ProjectInsightMCP.Web.Storage;
@@ -44,7 +46,7 @@ public static class TokenEndpoint
                 ["token_type"] = "Bearer",
                 ["expires_in"] = expiresIn
             });
-        }).WithOAuthHeaders();
+        }).WithOAuthHeaders().RequireRateLimiting(RateLimits.Token);
     }
 
     private static IResult Error(string error, string description)

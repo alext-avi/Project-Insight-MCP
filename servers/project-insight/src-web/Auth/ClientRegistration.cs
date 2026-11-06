@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.RateLimiting;
+using ProjectInsightMCP.Web.Hosting;
 using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -70,7 +72,7 @@ public static class ClientRegistration
             if (name is not null) // clients' schemas reject a null here
                 response["client_name"] = name;
             return Results.Json(response, statusCode: 201);
-        }).WithOAuthHeaders();
+        }).WithOAuthHeaders().RequireRateLimiting(RateLimits.Register);
     }
 
     private static IResult Error(string error, string description)

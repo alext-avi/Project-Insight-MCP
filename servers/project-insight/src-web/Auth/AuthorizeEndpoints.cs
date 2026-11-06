@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.RateLimiting;
+using ProjectInsightMCP.Web.Hosting;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -22,7 +24,7 @@ public static class AuthorizeEndpoints
             var fields = http.Query.ToDictionary(q => q.Key, q => (string?)q.Value.ToString());
             var (request, failure) = await AuthorizeRequest.ValidateAsync(fields, clients, policy, web.Value, ct);
             return failure ?? AuthorizePages.Consent(request!, fields);
-        }).WithOAuthHeaders();
+        }).WithOAuthHeaders().RequireRateLimiting(RateLimits.Authorize);
 
         app.MapPost("/authorize/start", async (HttpContext http, ClientResolver clients, RedirectPolicy policy, IOptions<WebOptions> web,
             IPiActivationClient pi, ISessionStore sessions, IConfiguration config, TimeProvider time, CancellationToken ct) =>
@@ -65,7 +67,7 @@ public static class AuthorizeEndpoints
                 Secure = true, HttpOnly = true, SameSite = SameSiteMode.Lax, Path = "/", MaxAge = SessionLife
             });
             return AuthorizePages.Activation(session.Id, activation.ActivationUrl, redirectHost, error: null);
-        }).WithOAuthHeaders();
+        }).WithOAuthHeaders().RequireRateLimiting(RateLimits.Authorize);
 
         app.MapPost("/authorize/complete", async (HttpContext http, ISessionStore sessions, ICodeStore codes, IPiActivationClient pi,
             IOptions<WebOptions> web, IOptions<AuthOptions> auth, TimeProvider time, ILoggerFactory loggers, CancellationToken ct) =>
@@ -145,7 +147,7 @@ public static class AuthorizeEndpoints
                 await RestorePendingAsync(sessions, session.Id, logger);
                 return AuthorizePages.Error(503, "Something went wrong finishing the sign-in. Start again from Claude or ChatGPT.");
             }
-        }).WithOAuthHeaders();
+        }).WithOAuthHeaders().RequireRateLimiting(RateLimits.Complete);
     }
 
     /// <summary>Best effort: puts a claimed session back to Pending without counting an attempt.</summary>

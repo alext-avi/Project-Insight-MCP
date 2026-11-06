@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using System.Text.RegularExpressions;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using ProjectInsightMCP.Services;
@@ -13,7 +14,8 @@ namespace ProjectInsightMCP.Web.Auth;
 /// </summary>
 public sealed partial class PiBearerHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder,
-    PiIdentityClient identity, IOptions<AuthOptions> auth, IOptions<WebOptions> web)
+    PiIdentityClient identity, IOptions<AuthOptions> auth, IOptions<WebOptions> web,
+    PartitionedRateLimiter<HttpContext> unknownTokens)
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     public const string SchemeName = "PiBearer";
@@ -31,6 +33,16 @@ public sealed partial class PiBearerHandler(
         var token = header["Bearer ".Length..].Trim();
         if (token.Length is 0 or > 4096 || !Token68().IsMatch(token))
             return AuthenticateResult.Fail("Malformed bearer token.");
+
+        if (!identity.IsCached(token))
+        {
+            using var lease = unknownTokens.AttemptAcquire(Context);
+            if (!lease.IsAcquired)
+            {
+                Context.Items[Outcome] = "limited";
+                return AuthenticateResult.Fail("Too many unrecognised tokens.");
+            }
+        }
 
         var who = await identity.ResolveAsync(token, Context.RequestAborted);
         switch (who.Status)
@@ -64,6 +76,9 @@ public sealed partial class PiBearerHandler(
                 Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                 Response.Headers.RetryAfter = "30";
                 return Response.WriteAsync("Project Insight is not responding. Try again shortly.");
+            case "limited":
+                Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                return Task.CompletedTask;
             case "forbidden":
                 Response.StatusCode = StatusCodes.Status403Forbidden;
                 return Response.WriteAsync("This server isn't open to your Project Insight account.");

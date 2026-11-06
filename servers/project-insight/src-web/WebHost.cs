@@ -1,6 +1,8 @@
 using System.Reflection;
 using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.AspNetCore;
@@ -9,6 +11,7 @@ using ProjectInsightMCP.Server;
 using ProjectInsightMCP.Services;
 using ProjectInsightMCP.TimeChanges;
 using ProjectInsightMCP.Web.Auth;
+using ProjectInsightMCP.Web.Hosting;
 using ProjectInsightMCP.Web.Security;
 using ProjectInsightMCP.Web.Storage;
 
@@ -23,6 +26,18 @@ public static class WebHost
         services.AddOptions<AuthOptions>().BindConfiguration("Auth");
         services.AddSingleton(TimeProvider.System);
         services.AddWebStorage();
+        services.AddWebRateLimits();
+        services.AddHostedService<PruneService>();
+        services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(60)); // let in-flight commits finish on deploy
+        services.AddHsts(o => o.MaxAge = TimeSpan.FromDays(365));
+        services.Configure<ForwardedHeadersOptions>(o =>
+        {
+            // App Service's front end is the single proxy hop.
+            o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            o.ForwardLimit = 1;
+            o.KnownIPNetworks.Clear(); // named KnownNetworks before .NET 10
+            o.KnownProxies.Clear();
+        });
 
         services.AddMemoryCache();
         services.AddTransient<PiErrorScrubbingHandler>();
@@ -105,7 +120,11 @@ public static class WebHost
         if (!app.Services.GetRequiredService<IOptions<HttpServerTransportOptions>>().Value.Stateless)
             throw new InvalidOperationException("The MCP endpoint must run stateless: per-request PI services depend on it.");
 
+        app.UseForwardedHeaders();
+        if (!app.Environment.IsDevelopment())
+            app.UseHsts();
         app.UseMiddleware<OriginGuard>();
+        app.UseRateLimiter();
         app.UseAuthentication();
         app.UseAuthorization();
         app.MapOAuthMetadata();
@@ -114,7 +133,7 @@ public static class WebHost
         app.MapToken();
         var css = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "wwwroot", "oauth.css"));
         app.MapGet("/oauth.css", () => Results.Bytes(css, "text/css"));
-        app.MapMcp("/mcp").RequireAuthorization();
+        app.MapMcp("/mcp").RequireAuthorization().RequireRateLimiting(RateLimits.Mcp);
 
         app.MapGet("/healthz", () => Results.Json(new { status = "ok", version = Version }));
     }
