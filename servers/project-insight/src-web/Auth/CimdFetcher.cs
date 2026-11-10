@@ -11,10 +11,15 @@ public sealed record ClientMetadataDocument(string? ClientName, IReadOnlyList<st
 /// Client ID Metadata Documents, from allowlisted hosts only. Anything else is refused before a
 /// request is made, so an /authorize link can't turn this server into a fetcher for arbitrary URLs.
 /// </summary>
-public sealed class CimdFetcher(IHttpClientFactory http, IMemoryCache cache, IOptions<AuthOptions> auth, ILogger<CimdFetcher> logger)
+public sealed class CimdFetcher(IHttpClientFactory http, IOptions<AuthOptions> auth, ILogger<CimdFetcher> logger) : IDisposable
 {
     public const string HttpClientName = "cimd";
     public const int MaxBytes = 5 * 1024;
+    public const int MaxClientIdLength = 255;
+    public const int MaxCached = 256;
+    // Its own bounded cache: client ids come from anonymous /authorize requests, so any path on an allowed host
+    // could otherwise add an entry. Over the limit new entries are simply not kept.
+    private readonly MemoryCache _cache = new(new MemoryCacheOptions { SizeLimit = MaxCached });
     private static readonly TimeSpan KeepFor = TimeSpan.FromHours(24);
     private static readonly TimeSpan MinKeep = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan FailedFor = TimeSpan.FromMinutes(5);
@@ -23,20 +28,32 @@ public sealed class CimdFetcher(IHttpClientFactory http, IMemoryCache cache, IOp
 
     public async Task<ClientMetadataDocument?> FetchAsync(string clientId, CancellationToken ct)
     {
-        if (!Uri.TryCreate(clientId, UriKind.Absolute, out var url) || url.Scheme != Uri.UriSchemeHttps || !url.IsDefaultPort
-            || url.UserInfo.Length > 0 || url.Fragment.Length > 0 || url.AbsolutePath == "/" || !auth.Value.CimdHosts.Contains(url.Host))
+        // A real client id is a short path; a query or fragment (even an empty one) is never part of one.
+        if (clientId.Length > MaxClientIdLength || clientId.AsSpan().IndexOfAny('?', '#') >= 0
+            || !Uri.TryCreate(clientId, UriKind.Absolute, out var url) || url.Scheme != Uri.UriSchemeHttps || !url.IsDefaultPort
+            || url.UserInfo.Length > 0 || url.AbsolutePath == "/" || !auth.Value.CimdHosts.Contains(url.Host))
             return null;
 
-        var key = "cimd:" + clientId;
-        if (cache.TryGetValue(key, out ClientMetadataDocument? known))
+        if (_cache.TryGetValue(clientId, out ClientMetadataDocument? known))
             return known;
 
         var (doc, maxAge) = await DownloadAsync(url, clientId, ct);
         // max-age=0 / no-store / absent would make Set throw or defeat the cache; floor it, and cap it at a day.
         var keep = maxAge is { } age && age > TimeSpan.Zero ? TimeSpan.FromTicks(Math.Clamp(age.Ticks, MinKeep.Ticks, KeepFor.Ticks)) : MinKeep;
-        cache.Set(key, doc, doc is null ? FailedFor : keep);
+        _cache.Set(clientId, doc, new MemoryCacheEntryOptions
+        {
+            Size = 1,
+            AbsoluteExpirationRelativeToNow = doc is null ? FailedFor : keep,
+            // When the cache compacts, remembered failures go before real documents.
+            Priority = doc is null ? CacheItemPriority.Low : CacheItemPriority.High
+        });
         return doc;
     }
+
+    /// <summary>Entries held now; never more than <see cref="MaxCached"/>.</summary>
+    public int CachedCount => _cache.Count;
+
+    public void Dispose() => _cache.Dispose();
 
     private async Task<(ClientMetadataDocument?, TimeSpan?)> DownloadAsync(Uri url, string clientId, CancellationToken ct)
     {
@@ -69,7 +86,7 @@ public sealed class CimdFetcher(IHttpClientFactory http, IMemoryCache cache, IOp
             if (redirects.Count == 0)
                 return (null, null);
             var name = root.TryGetProperty("client_name", out var n2) && n2.ValueKind == JsonValueKind.String ? n2.GetString() : null;
-            return (new ClientMetadataDocument(name is { Length: <= 100 } ? name : null, redirects), response.Headers.CacheControl?.MaxAge);
+            return (new ClientMetadataDocument(name is { Length: <= ClientName.MaxLength } ? ClientName.Clean(name) : null, redirects), response.Headers.CacheControl?.MaxAge);
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException or InvalidOperationException or OperationCanceledException && !ct.IsCancellationRequested)
         {

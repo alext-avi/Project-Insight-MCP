@@ -21,8 +21,9 @@ public static class AuthorizePages
         body.Append($"<p><strong>{E(AppLabel(redirect))}</strong> is asking to use your Project Insight account.</p>");
         if (r.Client.IsMetadataDocument && Uri.TryCreate(r.Client.ClientId, UriKind.Absolute, out var id))
             body.Append($"<p>App identity: <strong>{E(id.Host)}</strong></p>");
-        if (!string.IsNullOrWhiteSpace(r.Client.Name))
-            body.Append($"<p>It calls itself “{E(r.Client.Name)}” (unverified).</p>");
+        // Cleaned again here: registrations stored before names were cleaned on the way in.
+        if (ClientName.Clean(r.Client.Name) is { } clientName)
+            body.Append($"<p>It calls itself “{E(clientName)}” (unverified).</p>");
         if (RedirectPolicy.IsLoopback(redirect))
             body.Append("<p class=\"warn\">This app runs on your own computer (localhost). Only continue if you started it yourself, for example Claude Code or Codex.</p>");
         body.Append("<p class=\"warn\">Only continue if you just clicked Connect in Claude or ChatGPT yourself. If someone sent you this link, close this page.</p>");

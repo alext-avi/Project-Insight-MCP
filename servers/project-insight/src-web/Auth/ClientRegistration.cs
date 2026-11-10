@@ -51,8 +51,9 @@ public static class ClientRegistration
             }
             if (redirects.Count is 0 or > 5 || redirects.Any(r => !policy.IsAllowed(r)))
                 return Error("invalid_redirect_uri", "Every redirect URI must be an allowed callback.");
-            if (name is { Length: > 100 })
+            if (name is { Length: > ClientName.MaxLength })
                 return Error("invalid_client_metadata", "client_name is too long.");
+            name = ClientName.Clean(name);
 
             var now = time.GetUtcNow();
             var client = new RegisteredClient("dcr_" + Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(16)), name, redirects!, now);
