@@ -18,11 +18,12 @@ public static class AuthorizePages
         var redirect = new Uri(r.RedirectUri);
         var body = new StringBuilder();
         body.Append("<h1>Connect Project Insight</h1>");
-        body.Append($"<p><strong>{E(redirect.Host)}</strong> is asking to use your Project Insight account.</p>");
+        body.Append($"<p><strong>{E(AppLabel(redirect))}</strong> is asking to use your Project Insight account.</p>");
         if (r.Client.IsMetadataDocument && Uri.TryCreate(r.Client.ClientId, UriKind.Absolute, out var id))
             body.Append($"<p>App identity: <strong>{E(id.Host)}</strong></p>");
-        if (!string.IsNullOrWhiteSpace(r.Client.Name))
-            body.Append($"<p>It calls itself “{E(r.Client.Name)}” (unverified).</p>");
+        // Cleaned again here: registrations stored before names were cleaned on the way in.
+        if (ClientName.Clean(r.Client.Name) is { } clientName)
+            body.Append($"<p>It calls itself “{E(clientName)}” (unverified).</p>");
         if (RedirectPolicy.IsLoopback(redirect))
             body.Append("<p class=\"warn\">This app runs on your own computer (localhost). Only continue if you started it yourself, for example Claude Code or Codex.</p>");
         body.Append("<p class=\"warn\">Only continue if you just clicked Connect in Claude or ChatGPT yourself. If someone sent you this link, close this page.</p>");
@@ -34,11 +35,11 @@ public static class AuthorizePages
         return Page("Connect Project Insight", body.ToString(), 200);
     }
 
-    public static IResult Activation(string sessionId, Uri activationUrl, string redirectHost, string? error)
+    public static IResult Activation(string sessionId, Uri activationUrl, Uri redirect, string? error)
     {
         var body = new StringBuilder();
         body.Append("<h1>Sign in to Project Insight</h1>");
-        body.Append($"<p>Connecting <strong>{E(redirectHost)}</strong> to your Project Insight account.</p><ol>");
+        body.Append($"<p>Connecting <strong>{E(AppLabel(redirect))}</strong> to your Project Insight account.</p><ol>");
         body.Append($"<li><a href=\"{E(activationUrl.AbsoluteUri)}\" target=\"_blank\" rel=\"noopener noreferrer\">Open Project Insight</a> and sign in</li>");
         body.Append("<li>Copy the activation code it shows and paste it here.</li></ol>");
         if (error is not null)
@@ -49,6 +50,11 @@ public static class AuthorizePages
         body.Append("<button>Continue</button></form>");
         return Page("Sign in to Project Insight", body.ToString(), 200);
     }
+
+    // A loopback redirect means a client on the user's own machine (Claude Code, Codex); "127.0.0.1" alone reads like
+    // a server address.
+    private static string AppLabel(Uri redirect)
+        => RedirectPolicy.IsLoopback(redirect) ? "An app on this computer" : redirect.Host;
 
     public static IResult Error(int status, string message)
         => Page("Couldn't connect", $"<h1>Couldn't connect</h1><p>{E(message)}</p>", status);

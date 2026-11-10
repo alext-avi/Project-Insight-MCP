@@ -1,129 +1,80 @@
 # MCP Usage Examples
 
-This directory contains examples of how to integrate and use the AVI MCP Tools servers.
+Examples of connecting an MCP client to the Project Insight server.
 
-## GitHub Copilot Integration
+## Local (stdio)
 
-### 1. Basic Setup
-Add to your VS Code settings.json:
+Install the tool (`dotnet tool install -g ProjectInsight.MCP`), then point your client at it.
+VS Code `mcp.json`:
+
 ```json
 {
-  "mcp.servers": {
+  "servers": {
     "project-insight": {
-      "name": "Project Insight",
-      "transport": {
-        "type": "http", 
-        "url": "http://localhost:7071/api/mcp"
+      "type": "stdio",
+      "command": "projectinsight-mcp",
+      "env": {
+        "ProjectInsight__BaseUrl": "https://your-tenant.projectinsight.net/api/"
       }
     }
   }
 }
 ```
 
-### 2. Example Conversations
+Claude Desktop can use the `.mcpb` bundle instead; see the [server guide](../servers/project-insight/README.md).
 
-**Project Management:**
+## Remote (HTTP)
+
+If the server's owner runs the remote web host, connect to `https://<app>/mcp`. You sign in with
+your own Project Insight account through OAuth; there is no token to paste.
+
+```bash
+claude mcp add --transport http project-insight https://<app>/mcp
+```
+
+Steps for Claude, ChatGPT and Codex are in [docs/REMOTE.md](../docs/REMOTE.md).
+
+## Example conversations
+
+**Project management:**
 ```
 User: "Show me all active projects in Project Insight"
-Copilot: Uses search_projects tool to fetch and display active projects
+Assistant: Uses search_projects to fetch and display active projects
 
 User: "What tasks are assigned to project ABC-123?"
-Copilot: Uses get_project_tasks with the project ID to show specific tasks
-
-User: "Create a new project for website redesign"
-Copilot: Uses create_project tool to create the project with appropriate details
+Assistant: Uses get_project_tasks with the project ID to show its tasks
 ```
 
-**Analysis and Reporting:**
+**Time:**
 ```
-User: "Which projects are behind schedule?"
-Copilot: Searches projects and analyzes completion percentages and dates
+User: "Show my time for last week"
+Assistant: Reads your time entries for the week and summarizes them
 
-User: "Show me projects managed by John Smith"
-Copilot: Filters projects by project manager name/ID
-```
-
-## MCP Client Integration
-
-### Direct API Usage
-```bash
-# Test connection
-curl -X POST http://localhost:7071/api/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}'
-
-# Search projects
-curl -X POST http://localhost:7071/api/mcp \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0", 
-    "id": 1, 
-    "method": "tools/call", 
-    "params": {
-      "name": "search_projects", 
-      "arguments": {"isActive": true}
-    }
-  }'
+User: "Log 3 hours to the redesign task yesterday"
+Assistant: Plans the change as a draft, asks you to confirm, then commits it
 ```
 
-### Claude Desktop Integration
-Add to your Claude configuration:
+## Multiple servers
+
 ```json
 {
-  "mcpServers": {
+  "servers": {
     "project-insight": {
-      "command": "curl",
-      "args": [
-        "-s", "-X", "POST",
-        "http://localhost:7071/api/mcp",
-        "-H", "Content-Type: application/json",
-        "--data-binary", "@-"
-      ]
-    }
-  }
-}
-```
-
-## Multiple Server Setup
-
-When using multiple MCP servers:
-```json
-{
-  "mcp.servers": {
-    "project-insight": {
-      "name": "Project Insight",
-      "transport": {
-        "type": "http", 
-        "url": "http://localhost:7071/api/mcp"
-      }
+      "type": "stdio",
+      "command": "projectinsight-mcp",
+      "env": { "ProjectInsight__BaseUrl": "https://your-tenant.projectinsight.net/api/" }
     },
-    "future-server": {
-      "name": "Future AVI Server",
-      "transport": {
-        "type": "http", 
-        "url": "http://localhost:7072/api/mcp"
-      }
+    "another-server": {
+      "type": "http",
+      "url": "https://example.com/mcp"
     }
   }
 }
 ```
 
-## Development Examples
+## Development
 
-### Adding a New MCP Tool
-See [Project Insight implementation](../servers/project-insight/src/) for examples of:
-- Tool definition in `McpServerService.cs`
-- API integration in `ProjectInsightApiService.cs`
-- Model definitions in `Models/`
-
-### Testing Your Integration
-```bash
-# Start the server
-cd servers/project-insight/src
-func start --port 7071
-
-# In another terminal, test tools
-curl -X POST http://localhost:7071/api/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}'
-```
+See the [implementation](../servers/project-insight/) for how tools are built:
+- Tool definitions and handlers in `server/`
+- API integration and models in `core/`
+- The remote web host in `src-web/` and the local stdio host in `src-stdio/`

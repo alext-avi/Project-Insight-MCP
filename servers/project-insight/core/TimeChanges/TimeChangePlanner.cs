@@ -1,4 +1,6 @@
 using System.Globalization;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ProjectInsightMCP.TimeChanges;
 
@@ -13,7 +15,7 @@ public sealed class PlanResult
 /// Builds drafts: resolves names, reads each affected person-week once, and works out context,
 /// totals, warnings and day fingerprints. Reads from PI; never writes to it.
 /// </summary>
-public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, TimeProvider time)
+public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, TimeProvider time, ILogger<TimeChangePlanner>? logger = null)
 {
     public const int MaxChanges = 100;
     public const int MaxIntentLength = 200;
@@ -124,9 +126,10 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         {
             await store.PruneAsync(caller.Id, ct);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Pruning is housekeeping; never fail a plan over it.
+            // Pruning is housekeeping, and the draft is already saved: never fail a plan over it.
+            (logger ?? NullLogger<TimeChangePlanner>.Instance).LogWarning("Pruning old drafts after a plan failed: {Error}", ex.GetType().Name);
         }
         return new PlanResult { Draft = draft, ConfirmToken = token };
     }

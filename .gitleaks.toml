@@ -1,0 +1,68 @@
+# Default rules, plus hostnames this public repo must never contain.
+# The allowlists are anchored to the whole match: a bare \b would also pass "acme-example.azurewebsites.net".
+[extend]
+useDefault = true
+
+[[rules]]
+id = "pi-tenant-host"
+description = "A Project Insight tenant hostname"
+regex = '''(?i)[a-z0-9-]+\.projectinsight\.net'''
+  [rules.allowlist]
+  regexes = ['''(?i)^(yourdomain|your-domain|your-tenant|your-company|example|api)\.projectinsight\.net$''']
+
+[[rules]]
+id = "app-service-host"
+description = "An Azure App Service or Functions hostname"
+regex = '''(?i)[a-z0-9-]+\.azurewebsites\.net'''
+  [rules.allowlist]
+  regexes = ['''(?i)^(your-function-app|your-function-app-name|func-your-function-app|your-app|example)\.azurewebsites\.net$''']
+
+# Azure identifiers this repo was scrubbed of. Each rule captures only the identifier (secretGroup), so the
+# allowlists below test the GUID or account name alone, anchored with ^...$.
+[[rules]]
+id = "azure-resource-id"
+description = "An Azure resource id with a real subscription GUID"
+regex = '''(?i)/subscriptions/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'''
+secretGroup = 1
+keywords = ["/subscriptions/"]
+
+# The label, then up to a few quote, backtick, bold, table-cell or space characters around an optional ':' '=' or
+# '=>', then the GUID. Labels: tenant, subscription and sub alone; tenant, subscription, client, app(lication),
+# object, principal and directory followed by "id" (joined, or with '-', '_' or a space); the portal's
+# "Application (client) ID" and "Directory (tenant) ID"; AZURE_*_ID and ARM_*_ID; and the CLI's -s flag.
+[[rules]]
+id = "azure-id-assignment"
+description = "A GUID given as a tenant, subscription, client, app, object or principal id"
+regex = '''(?im)(?:\b(?:sub|tenant|subscription|(?:tenant|subscription|client|app(?:lication)?|object|principal|directory)[-_ ]?id|(?:application|directory) ?\((?:client|tenant)\) ?id|(?:azure|arm)_[a-z0-9_]*?_id)\b|(?:^|\s)-s)[\s"'`*|]{0,6}(?:[:=]|=>)?[\s"'`*|]{0,6}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b'''
+secretGroup = 1
+keywords = ["tenant", "sub", "client", "app", "object", "principal", "directory", "azure_", "arm_", "-s"]
+
+[[rules]]
+id = "app-insights-key"
+description = "An Application Insights instrumentation key or application id (as in a connection string)"
+regex = '''(?i)\b(?:InstrumentationKey|ApplicationId)["']?\s{0,3}[:=]\s{0,3}["']?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b'''
+secretGroup = 1
+keywords = ["instrumentationkey", "applicationid"]
+
+[[rules]]
+id = "azure-storage-host"
+description = "An Azure Storage account hostname"
+# A private-endpoint name, <account>.privatelink.blob.core.windows.net, captures the account, not "privatelink".
+regex = '''(?i)\b([a-z0-9]{3,24})\.(?:privatelink\.)?(?:blob|table|queue|file|dfs)\.core\.windows\.net'''
+secretGroup = 1
+keywords = [".core.windows.net"]
+  [rules.allowlist]
+  # Placeholders, the Azurite account, and the private-endpoint DNS zone named on its own.
+  regexes = ['''(?i)^(acct|account|myaccount|youraccount|mystorageaccount|yourstorageaccount|storageaccount|example|devstoreaccount1|privatelink)$''']
+
+# GUIDs that identify nobody: the all-zero placeholder, built-in Azure role definitions used in bicep/
+# (Storage Table Data Contributor, Storage Blob Data Contributor, Website Contributor), and the fake PI user
+# ids in the tests.
+[[allowlists]]
+description = "Placeholder, built-in role and test GUIDs"
+targetRules = ["azure-resource-id", "azure-id-assignment", "app-insights-key"]
+regexes = [
+  '''^0{8}-0{4}-0{4}-0{4}-0{12}$''',
+  '''(?i)^(0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3|ba92f5b4-2d11-453d-a403-e96b0029c9fe|de139f84-1756-47ae-9be6-808fbbe84772)$''',
+  '''(?i)^0f0e2a4c-[0-9a-f]{4}-4a4a-9b9b-[0-9a-f]{12}$''',
+]

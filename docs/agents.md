@@ -2,31 +2,34 @@
 
 ## Overview
 
-This is a **Model Context Protocol (MCP) server** that integrates with the **Project Insight API** to provide AI agents with project management capabilities. The local (stdio) server runs on **.NET 10** with the official MCP C# SDK; the remote server is an **Azure Functions** app on **.NET 8.0** (in-process).
+This is a **Model Context Protocol (MCP) server** that integrates with the **Project Insight API** to provide AI agents with project management capabilities. Both hosts run on **.NET 10** with the official MCP C# SDK: a local stdio tool (`projectinsight-mcp`, also shipped as a Claude Desktop bundle) and a remote ASP.NET Core web host on Azure App Service. The web host fronts Project Insight's device activation with OAuth 2.1 and passes each user's own Project Insight token through.
 
 ## 🏗️ Architecture
 
-### Core Components
+### Projects (all under `servers/project-insight/`)
 
-1. **Azure Functions Layer** (`Functions/McpFunction.cs`)
-   - HTTP triggered functions for MCP protocol handling
-   - Health monitoring with API validation
-   - Entry point for all MCP requests
+1. **`core/`**: Project Insight API client and auth helpers
+   - `Services/ProjectInsightApiService.cs`: Project Insight API integration and data transformation
+   - `Services/DeviceActivationService.cs`, `CredentialStorageService.cs`: SSO device activation and the stored credential
+   - `Models/`, `TimeChanges/`: API DTOs and the time-change draft logic
 
-2. **MCP Protocol Layer** (`MCP/McpServerService.cs`)
-   - Handles JSON-RPC 2.0 protocol implementation
-   - Tool discovery and execution
-   - Request/response parsing
+2. **`server/`**: shared MCP wiring
+   - `ProjectInsightServer.cs`: tool definitions and handlers used by both hosts
+   - `TimeChangeTools.cs`: the `plan_time_changes` / `commit_time_changes` family
 
-3. **API Service Layer** (`Services/ProjectInsightApiService.cs`)
-   - Project Insight API integration
-   - Authentication handling
-   - Data transformation
+3. **`src-stdio/`**: the local stdio host (`projectinsight-mcp` dotnet tool and the `.mcpb` bundle)
+   - Signs in with SSO device activation or a static token
 
-4. **Models** (`Models/`)
-   - API request/response DTOs
-   - MCP protocol models
-   - Project Insight domain models
+4. **`src-web/`**: the remote host on App Service
+   - `/mcp` (stateless streamable HTTP), the OAuth endpoints (`/register`, `/authorize`, `/token`) and `/healthz`
+   - The access token a client holds is the user's own PI token; `Auth:AllowedPiUserIds` limits who may connect
+   - Per-IP rate limits, Table and Blob storage for OAuth state and drafts
+   - The sign-in tools (`complete_authentication`, `link_pi_account`, `complete_pi_link`) are hidden here
+
+5. **`tests/`**: xUnit tests, including end-to-end through the MCP SDK client and the web host
+
+Outside that folder: `bicep/` (infrastructure and the owner's one-time setup), `docs/REMOTE.md`
+(connecting a client) and `.github/workflows/deploy.yml` (deploy from `main`).
 
 ## 🛠️ Available MCP Tools
 
@@ -49,46 +52,48 @@ of a commit for 24 hours.
 ## 🚀 Getting Started
 
 ### Prerequisites
-- .NET 10 SDK (plus the .NET 8 runtime to run the Functions host locally)
-- Azure Functions Core Tools v4
-- Project Insight API credentials
+- .NET 10 SDK
+- Project Insight access (SSO, or an API token for the stdio tool)
 
-### Local Development
+### Build and test
 
-1. **Configure Authentication**:
-   ```json
-   // local.settings.json
-   {
-     "Values": {
-       "ProjectInsight__BaseUrl": "https://yourdomain.projectinsight.net/api/",
-       "ProjectInsight__ApiKey": "your-api-token"
-     }
-   }
-   ```
+```bash
+dotnet build servers/project-insight/src-stdio
+dotnet build servers/project-insight/src-web/ProjectInsightMCP.Web.csproj
+dotnet test servers/project-insight/tests -c Release
+```
 
-2. **Build and Run**:
-   ```bash
-   dotnet build
-   func start --verbose
-   ```
+Every project builds with 0 warnings in Release.
 
-3. **Test Health Endpoint**:
-   ```bash
-   curl "http://localhost:7071/api/health?validate-auth=true"
-   ```
+### Run the local stdio tool
 
-4. **Test MCP Tool**:
-   ```bash
-   curl -X POST http://localhost:7071/api/mcp \
-     -H "Content-Type: application/json" \
-     -d '{
-       "method": "tools/call",
-       "params": {
-         "name": "search_projects",
-         "arguments": {}
-       }
-     }'
-   ```
+```bash
+ProjectInsight__BaseUrl=https://your-tenant.projectinsight.net/api/ \
+  dotnet run --project servers/project-insight/src-stdio
+```
+
+Then ask the assistant to "link my Project Insight account", or set `ProjectInsight__ApiToken`.
+Or use the MCP Inspector: `npx @modelcontextprotocol/inspector projectinsight-mcp`.
+
+### Run the web host locally
+
+`Storage__Mode=Local` keeps OAuth state in memory and drafts on local disk. It is accepted only when
+`ASPNETCORE_ENVIRONMENT=Development`.
+
+```bash
+export ASPNETCORE_ENVIRONMENT=Development
+export Storage__Mode=Local
+export ProjectInsight__BaseUrl=https://your-tenant.projectinsight.net/api/
+export ProjectInsight__DraftsPath=/tmp/pi-drafts
+export Web__PublicBaseUrl=https://localhost:5001
+export Auth__AllowedPiUserIds=<your-pi-user-id>
+dotnet run --project servers/project-insight/src-web/ProjectInsightMCP.Web.csproj --urls https://localhost:5001
+```
+
+`Web__PublicBaseUrl` must be an https origin with no path, so trust the dev certificate first
+(`dotnet dev-certs https --trust`). Check `https://localhost:5001/healthz`, then connect a client
+to `https://localhost:5001/mcp`. Do not set `ProjectInsight__ApiToken` on the web host; it refuses
+to start with it. Settings are listed in [CONFIGURATION.md](../CONFIGURATION.md).
 
 ## 🔧 Key Implementation Details
 
@@ -129,7 +134,7 @@ private static string[] GetDefaultModelProperties() => new[]
 
 1. **API Level**: HTTP status validation, JSON parsing errors
 2. **Service Level**: Business logic validation, data transformation
-3. **Function Level**: Request validation, response formatting
+3. **Host Level**: Request validation, response formatting
 4. **Logging**: Comprehensive logging at all levels using ILogger
 
 ## 🔍 Troubleshooting
@@ -141,89 +146,78 @@ private static string[] GetDefaultModelProperties() => new[]
    - Verify JSON body structure includes `modelProperties`
 
 2. **Authentication failures**:
-   - Check API token in `local.settings.json`
-   - Validate token has project read permissions
-   - Test with health endpoint: `?validate-auth=true`
+   - Stdio: run the link flow again, or check `ProjectInsight__ApiToken`
+   - Web: reconnect the connector to sign in again
+   - Validate the account has project read permissions
 
-3. **Function startup issues**:
-   - Ensure .NET 8.0 runtime is installed
-   - Check Azure Functions Core Tools version (v4 required)
-   - Build project first: `dotnet build`
+3. **Web host startup issues**:
+   - The host refuses to start on missing or unsafe settings; read the exception message
+   - Ensure the .NET 10 SDK is installed
+   - Build first: `dotnet build`
 
 4. **Empty project results**:
    - Verify API token permissions
    - Check Project Insight instance accessibility
-   - Review function logs for API errors
+   - Review host logs for API errors
 
 ### Debugging Commands
 
 ```bash
-# Check function logs
-cat function.log
+# Web host liveness
+curl https://localhost:5001/healthz
 
-# Test API connectivity
-curl "http://localhost:7071/api/health?test-api=true&validate-auth=true"
+# Run the tests
+dotnet test servers/project-insight/tests -c Release
 
-# Validate MCP protocol
-curl -X POST http://localhost:7071/api/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"method": "tools/list"}'
-
-# Check running processes
-lsof -i :7071
+# Inspect the local tool
+npx @modelcontextprotocol/inspector projectinsight-mcp
 ```
 
 ## 📁 File Structure
 
 ```
 ProjectInsight/
-├── Functions/
-│   └── McpFunction.cs           # Azure Function entry points
-├── MCP/
-│   ├── McpServerService.cs      # Core MCP protocol handling
-│   └── Models/                  # MCP protocol models
-├── Services/
-│   ├── ProjectInsightApiService.cs  # API integration
-│   └── AuthenticationService.cs     # Auth handling
-├── Models/
-│   ├── ProjectInsight/          # API models
-│   └── MCP/                     # MCP protocol models
-├── local.settings.json          # Local configuration
-├── host.json                    # Azure Functions config
-└── Program.cs                   # DI configuration
+├── servers/project-insight/
+│   ├── core/        # PI API client, auth helpers, models, time-change logic
+│   ├── server/      # shared MCP wiring and tool handlers
+│   ├── src-stdio/   # local stdio host
+│   ├── src-web/     # remote web host (OAuth 2.1, App Service)
+│   ├── tests/       # xUnit tests
+│   ├── mcpb/        # Claude Desktop bundle staging
+│   └── docs/        # setup and auth guides
+├── bicep/           # App Service infrastructure and one-time setup
+├── docs/            # REMOTE.md, agents.md, integration guides
+└── .github/workflows/deploy.yml
 ```
 
 ## 🔐 Security Considerations
 
-1. **API Credentials**: Store in Azure Key Vault for production
-2. **HTTPS**: Always use HTTPS in production environments
-3. **Token Validation**: Implement token expiration handling
-4. **CORS**: Configure appropriately for client access
+1. **No shared token**: the web host passes each user's own PI token through and refuses to start with `ProjectInsight:ApiToken` set
+2. **HTTPS**: the web host is HTTPS only
+3. **Allow list**: `Auth:AllowedPiUserIds` limits who can connect
+4. **Token handling**: bearer tokens, authorization codes and activation codes never appear in logs or telemetry
 5. **Input Validation**: All MCP inputs are validated against schemas
 
 ## 🚀 Deployment
 
-### Azure Functions Deployment
-
-1. **Create Azure Function App** (Linux, .NET 8.0)
-2. **Configure Application Settings**:
-   ```
-   ProjectInsight__BaseUrl = https://yourdomain.projectinsight.net/api/
-   ProjectInsight__ApiKey = <your-api-token>
-   ```
-3. **Deploy**: `func azure functionapp publish <function-app-name>`
+The web host runs on Azure App Service. The owner does the one-time setup from
+[`bicep/README.md`](../bicep/README.md) (infrastructure, OIDC deploy identity, GitHub secrets).
+After that, a push to `main` that touches the web host runs `.github/workflows/deploy.yml`.
+Settings are in [CONFIGURATION.md](../CONFIGURATION.md).
 
 ### MCP Client Integration
 
-For Claude Desktop, add to `claude_desktop_config.json`:
+- **Remote**: connect Claude, ChatGPT, Claude Code or Codex to `https://<app>/mcp` and sign in with your Project Insight account. Steps are in [REMOTE.md](./REMOTE.md).
+- **Local**: install `ProjectInsight.MCP` and point the client at `projectinsight-mcp`:
 
 ```json
 {
   "mcpServers": {
     "project-insight": {
-      "command": "curl",
-      "args": ["-X", "POST", "https://your-function-app.azurewebsites.net/api/mcp"],
-      "env": {}
+      "command": "projectinsight-mcp",
+      "env": {
+        "ProjectInsight__BaseUrl": "https://your-tenant.projectinsight.net/api/"
+      }
     }
   }
 }
@@ -262,14 +256,14 @@ For Claude Desktop, add to `claude_desktop_config.json`:
 3. **HTTP-based MCP clients** - Full streaming support
 4. **VS Code MCP extensions** - Development testing verified
 
-### **Configuration for Warp:**
+### **Configuration for Warp (remote):**
 ```json
 {
   "mcpServers": {
     "project-insight": {
       "transport": {
-        "type": "http", 
-        "url": "http://localhost:7071/api/mcp"
+        "type": "http",
+        "url": "https://<app>/mcp"
       },
       "name": "Project Insight",
       "description": "Project management tools"
@@ -277,6 +271,8 @@ For Claude Desktop, add to `claude_desktop_config.json`:
   }
 }
 ```
+
+The remote server requires an OAuth sign-in, so the client must support MCP authorization.
 
 ## 🔄 Future Enhancements
 
@@ -300,23 +296,21 @@ For Claude Desktop, add to `claude_desktop_config.json`:
 ## 📚 Additional Resources
 
 - [Model Context Protocol Specification](https://modelcontextprotocol.io/docs)
-- [Azure Functions Documentation](https://docs.microsoft.com/en-us/azure/azure-functions/)
+- [Azure App Service Documentation](https://learn.microsoft.com/en-us/azure/app-service/)
 - [Project Insight API Documentation](https://api.projectinsight.net/help)
-- [.NET 8.0 Documentation](https://docs.microsoft.com/en-us/dotnet/)
+- [.NET 10 Documentation](https://learn.microsoft.com/en-us/dotnet/)
 
 ## ✅ Validation Checklist
 
 Before making changes to this system:
 
-- [ ] Build succeeds: `dotnet build`
-- [ ] Function starts: `func start`
-- [ ] Health endpoint responds: `curl http://localhost:7071/api/health`
-- [ ] Authentication works: `curl "http://localhost:7071/api/health?validate-auth=true"`
-- [ ] MCP tools list: `curl -X POST http://localhost:7071/api/mcp -H "Content-Type: application/json" -d '{"method": "tools/list"}'`
-- [ ] Project search works: `curl -X POST http://localhost:7071/api/mcp -H "Content-Type: application/json" -d '{"method": "tools/call", "params": {"name": "search_projects", "arguments": {}}}'`
+- [ ] Builds with 0 warnings: `dotnet build servers/project-insight/src-web/ProjectInsightMCP.Web.csproj -c Release` and the same for `src-stdio`
+- [ ] Tests pass: `dotnet test servers/project-insight/tests -c Release`
+- [ ] Tool list snapshot still matches (part of the test run)
+- [ ] Web host starts locally with `Storage__Mode=Local` and `/healthz` responds
+- [ ] No tokens, tenant hosts or Azure ids in any file (the repo is public)
 
 ---
 
-**Last Updated**: November 24, 2025  
-**Status**: ✅ Fully Functional  
-**Version**: 1.0.0
+**Last Updated**: November 9, 2026  
+**Status**: ✅ Fully Functional

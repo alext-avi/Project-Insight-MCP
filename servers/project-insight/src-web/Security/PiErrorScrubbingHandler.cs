@@ -43,8 +43,9 @@ public sealed class PiErrorScrubbingHandler : DelegatingHandler
         return Encoding.UTF8.GetString(buffer, 0, read);
     }
 
+    // Every JSON spelling too: PI's own serializer may escape characters of a token it echoes.
     public static string Scrub(string text, IEnumerable<string> secrets)
-        => secrets.Where(s => s.Length >= 4).Aggregate(text, (t, s) => t.Replace(s, "[redacted]", StringComparison.Ordinal));
+        => secrets.Where(s => s.Length >= 4).Aggregate(text, SecretForms.Redact);
 
     private static IEnumerable<string> SecretsIn(HttpRequestMessage request)
     {

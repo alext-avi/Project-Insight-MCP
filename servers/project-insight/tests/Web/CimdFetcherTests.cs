@@ -41,6 +41,9 @@ public class CimdFetcherTests
     [InlineData("https://claude.ai:8443/client.json")]     // not port 443
     [InlineData("https://claude.ai/")]                     // no path
     [InlineData("https://user@claude.ai/client.json")]     // userinfo
+    [InlineData("https://claude.ai/client.json?v=1")]      // query
+    [InlineData("https://claude.ai/client.json?")]         // empty query
+    [InlineData("https://claude.ai/client.json#")]         // empty fragment
     public async Task Refused_urls_are_never_fetched(string url)
     {
         var (factory, cimd) = Create();
@@ -48,6 +51,30 @@ public class CimdFetcherTests
 
         Assert.Null(await cimd.FetchAsync(url, default));
         Assert.Empty(factory.Pi.Requests);
+    }
+
+    [Fact]
+    public async Task Overlong_client_ids_are_never_fetched()
+    {
+        var (factory, cimd) = Create();
+        using var _ = factory;
+        var url = "https://claude.ai/" + new string('a', CimdFetcher.MaxClientIdLength - "https://claude.ai/".Length + 1);
+
+        Assert.Null(await cimd.FetchAsync(url, default));
+        Assert.Empty(factory.Pi.Requests);
+    }
+
+    [Fact]
+    public async Task The_cache_holds_a_bounded_number_of_client_ids()
+    {
+        var (factory, cimd) = Create();
+        using var _ = factory;
+
+        // Every path on an allowed host is a distinct client id; each failed fetch would be remembered.
+        for (var i = 0; i < CimdFetcher.MaxCached + 50; i++)
+            await cimd.FetchAsync($"https://claude.ai/random/{i}", default);
+
+        Assert.InRange(cimd.CachedCount, 1, CimdFetcher.MaxCached);
     }
 
     [Fact]

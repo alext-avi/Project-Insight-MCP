@@ -27,11 +27,11 @@ public sealed class MemoryClientStore : IClientStore
         }
     }
 
-    public Task TouchAsync(string clientId, DateTimeOffset at, CancellationToken ct)
+    public Task TouchAsync(string clientId, DateTimeOffset at, bool signedIn, CancellationToken ct)
     {
         lock (_gate)
             if (_clients.TryGetValue(clientId, out var c))
-                _clients[clientId] = c with { LastUsed = at, Used = true };
+                _clients[clientId] = c with { LastUsed = at, Used = c.Used || signedIn };
         return Task.CompletedTask;
     }
 
@@ -54,14 +54,17 @@ public sealed class MemorySessionStore : ISessionStore
 
     private string NextVersion() => Interlocked.Increment(ref _version).ToString();
 
-    public Task<bool> TryCreateAsync(SignInSession session, int maxOutstanding, DateTimeOffset now, CancellationToken ct)
+    public Task<SessionCreate> TryCreateAsync(SignInSession session, int maxOutstanding, int maxPerClient, DateTimeOffset now, CancellationToken ct)
     {
         lock (_gate)
         {
-            if (_sessions.Values.Count(s => s.ExpiresAt > now) >= maxOutstanding)
-                return Task.FromResult(false);
+            var live = _sessions.Values.Where(s => s.ExpiresAt > now).ToList();
+            if (session.ClientKeyHash is not null && live.Count(s => s.ClientKeyHash == session.ClientKeyHash) >= maxPerClient)
+                return Task.FromResult(SessionCreate.ClientFull);
+            if (live.Count >= maxOutstanding)
+                return Task.FromResult(SessionCreate.Full);
             _sessions[session.Id] = session with { Version = NextVersion() };
-            return Task.FromResult(true);
+            return Task.FromResult(SessionCreate.Created);
         }
     }
 
@@ -79,6 +82,14 @@ public sealed class MemorySessionStore : ISessionStore
     public Task DeleteAsync(string id, CancellationToken ct)
     {
         _sessions.TryRemove(id, out _);
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteByCookieAsync(string cookieHash, CancellationToken ct)
+    {
+        foreach (var (id, s) in _sessions)
+            if (s.CookieHash == cookieHash)
+                _sessions.TryRemove(id, out _);
         return Task.CompletedTask;
     }
 

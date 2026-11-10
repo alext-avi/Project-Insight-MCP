@@ -80,3 +80,6 @@ servers/project-insight/src-stdio/bin/mcpb/
 !**/.env.example
 !**/.env.*.example
 .superpowers/
+
+# Real Bicep parameters hold tenant-specific values (bicep/main.bicepparam.example is the template).
+bicep/*.bicepparam

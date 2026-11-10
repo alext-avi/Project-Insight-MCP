@@ -23,6 +23,16 @@ public class HostTests
         Assert.Equal(2, json.EnumerateObject().Count());
     }
 
+    [Fact]
+    public async Task Root_answers_the_platform_ping_with_a_plain_page()
+    {
+        using var factory = new WebFactory();
+        var response = await factory.Client().GetAsync("/");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("text/plain", response.Content.Headers.ContentType?.MediaType);
+    }
+
     [Theory]
     [InlineData("ProjectInsight:ApiToken", "static-token", "ProjectInsight:ApiToken")]
     [InlineData("Web:PublicBaseUrl", "http://mcp.test", "Web:PublicBaseUrl")]
@@ -56,6 +66,32 @@ public class HostTests
 
         Assert.NotNull(ex);
         Assert.Contains("Auth:AllowedRedirectUris", ex!.ToString());
+    }
+
+    [Theory]
+    [InlineData("Auth:AllowedRedirectUris", "https://claude.ai/api/mcp/auth_callback")]
+    [InlineData("Auth:AllowedCimdHosts", "claude.ai")]
+    [InlineData("Auth:AllowedOrigins", "https://claude.ai")]
+    public void Startup_refuses_a_list_setting_given_as_one_value(string key, string value)
+    {
+        // The binder can't turn one value into a list: it would leave the defaults in place without a word.
+        using var factory = new WebFactory();
+        factory.Settings[key] = value;
+
+        var ex = Record.Exception(() => factory.Client());
+
+        Assert.NotNull(ex);
+        Assert.Contains(key.Replace(':', '_').Replace("_", "__") + "__0", ex!.ToString());
+    }
+
+    [Fact]
+    public void A_list_setting_given_entry_by_entry_takes_effect()
+    {
+        using var factory = new WebFactory();
+        factory.Settings["Auth:AllowedCimdHosts:0"] = "claude.ai";
+        _ = factory.Client();
+
+        Assert.Equal(["claude.ai"], factory.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthOptions>>().Value.CimdHosts);
     }
 
     [Theory]

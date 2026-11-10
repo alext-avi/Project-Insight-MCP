@@ -184,6 +184,8 @@ It then renders the consent page. Link unfurlers, Safe Links and crawlers that f
 
 1. Re-validates the request.
 2. Creates the sign-in session (15 minutes) and binds it to the browser with a `__Host-pi_auth` cookie: Secure, HttpOnly, SameSite=Lax, a random value whose hash is stored in the session.
+   - A browser that already holds the cookie gives up the sessions bound to it first: the new cookie replaces it, so they could never be finished.
+   - The session is refused, before PI is asked, when its network (IPv4 address or IPv6 /64) already holds 3 or the server 200: 429 or 503, each with `Retry-After`. The store adds the session, then counts, and takes it back if over a cap, so parallel starts can't overshoot. The network is stored as an HMAC under a random per-process key.
 3. Starts a PI device activation.
    - It uses `clientDevice` = "MCP connector (<redirect host>)", so the user can recognise the token in PI later.
    - It uses `timeoutMinutes` from `Auth:PiTokenLifetimeDays`.
@@ -316,19 +318,35 @@ The connector URL, and with it the app name, is semi-public anyway, and anyone w
 
 gitleaks gets two custom rules: `[a-z0-9-]+\.projectinsight\.net` (allowlisting the `yourdomain` and `your-tenant` placeholders) and `[a-z0-9-]+\.azurewebsites\.net` (allowlisting `<app>` and `your-function-app`).
 
+It also flags the Azure identifiers the history rewrite removed: `/subscriptions/<guid>` resource ids; a GUID given as a tenant, subscription, client, app, object or principal id (`tenantId`, `client_id`, `AZURE_*_ID`, `--subscription` and similar); an App Insights `InstrumentationKey` or `ApplicationId`; and storage account hostnames (`<account>.blob|table|queue|file|dfs.core.windows.net`). The all-zero GUID, the built-in role ids in `bicep/`, the fake test ids, Azurite's `devstoreaccount1` and the `acct` placeholder are allowlisted, each anchored to the whole value. On pull requests the scan uses `.gitleaks.toml` and `.gitleaksignore` from the base branch, so a PR can't weaken the rules in the same change that would trip them.
+
 ## Infrastructure (`bicep/`)
 
 **The resource group:** the app goes in the existing shared group. Its Contributors, plus the Owners, Contributors and access administrators inherited from the subscription and the tenant root, could change the app or deploy code that reads tokens in flight. Any design would allow that, a proxy included. The owner reviewed the list on 2026-10-30 and accepted it: they're trusted colleagues and admins.
 
 So the infrastructure adds visibility rather than a lockout:
 
-- a `CanNotDelete` lock on this app's resources;
-- **Activity Log alerts** to the owner on:
-  - `Microsoft.Storage/storageAccounts/write`
-  - `Microsoft.Web/sites/config/write`
-  - `Microsoft.Web/sites/basicPublishingCredentialsPolicies/write`
-  - `Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write`
-  - `Microsoft.Authorization/roleAssignments/write`
+- a `CanNotDelete` lock on this app's resources: the web app, storage account, deployer identity, Log Analytics workspace, App Insights, action group and both alert rules;
+- a diagnostic setting sending the web app's `AppServiceAuditLogs` and `AppServicePlatformLogs` to the workspace, since a Kudu publish with an Entra token may leave no Activity Log event;
+- **Activity Log alerts** to the owner, any status (denied and failed attempts email too, and so does the owner's own Bicep redeploy):
+  - on the web app, App Service plan, storage account, deployer identity and the group-wide alert:
+    - `Microsoft.Storage/storageAccounts/write`
+    - `Microsoft.Web/serverfarms/write`
+    - `Microsoft.Web/sites/write`
+    - `Microsoft.Web/sites/config/write`
+    - `Microsoft.Web/sites/basicPublishingCredentialsPolicies/write`
+    - `Microsoft.Web/sites/sitecontainers/write`
+    - `Microsoft.Web/sites/extensions/write`
+    - `Microsoft.Web/sites/sourcecontrols/write`
+    - `Microsoft.Insights/diagnosticSettings/write` and `/delete`
+    - `Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write`
+    - `Microsoft.Insights/activityLogAlerts/write` and `/delete`
+  - on the whole resource group:
+    - `Microsoft.Authorization/roleAssignments/write` and `/delete`
+    - `Microsoft.Authorization/roleDefinitions/write` (a subscription-level resource: an edit made at subscription scope may not be seen)
+    - `Microsoft.Authorization/locks/delete`
+    - `Microsoft.Insights/activityLogAlerts/write` and `/delete`
+    - `Microsoft.Insights/actionGroups/write` and `/delete`
 
 If the server ever holds tokens for more than the owner and a few colleagues, the next step is a dedicated resource group or subscription where only the owner holds roles.
 
@@ -344,9 +362,9 @@ If the server ever holds tokens for more than the owner and a few colleagues, th
 - **App identity roles:** Storage Table Data Contributor and Storage Blob Data Contributor on the storage account.
 - **Deployer identity:** a user-assigned managed identity with a federated credential.
   - **Subject:** `repo:alext-avi/Project-Insight-MCP:environment:production:job_workflow_ref:alext-avi/Project-Insight-MCP/.github/workflows/deploy.yml@refs/heads/main`. The repository's OIDC subject template is customised to include `job_workflow_ref`, so only `deploy.yml` on `main` can sign in, not any workflow that uses the environment.
-  - **Role:** a custom role on the web app only: `Microsoft.Web/sites/read`, `Microsoft.Web/sites/publish/Action`, `Microsoft.Web/sites/restart/Action`, plus `Microsoft.Web/sites/config/list/Action` if `webapps-deploy` needs it. It falls back to Website Contributor, scoped to the app, only if the custom role can't deploy. The plan records which was needed.
+  - **Role:** a custom role on the web app only: `Microsoft.Web/sites/read`, `Microsoft.Web/sites/publish/Action`, `Microsoft.Web/sites/restart/Action`, `Microsoft.Web/sites/config/list/Action`, and `Microsoft.Web/sites/publishxml/Action` (`webapps-deploy` fetches the publishing profile before deploying; its basic-auth credentials are unusable while basic publishing is off). It falls back to Website Contributor, scoped to the app, only if the custom role can't deploy. The plan records which was needed.
 
-Parameters: `namePrefix`, `location`, `piBaseUrl`, `allowedPiUserIds`, `ownerObjectId`, `alertEmail`. `bicep/main.bicepparam.example` shows them with placeholders. The real file (`*.bicepparam`, not `.example`) is gitignored. `main.json` (stale compiled ARM) and `parameters/*.json` are deleted.
+Parameters: `namePrefix`, `location` (defaults to the group's), `piBaseUrl`, `allowedPiUserIds`, `alertEmail`, `githubRepository`, `deployerRole` (`custom` by default, or `websiteContributor`), `timeZone` (defaults to `America/New_York`) and `tags` (optional). `bicep/main.bicepparam.example` shows them with placeholders. The real file (`*.bicepparam`, not `.example`) is gitignored. `main.json` (stale compiled ARM) and `parameters/*.json` are deleted.
 
 **One-time setup, run by the owner** (documented in `bicep/README.md`):
 
@@ -369,7 +387,7 @@ concurrency: { group: deploy-production, cancel-in-progress: false }
 ```
 
 1. **build** (no `id-token`, no environment):
-   - restore with `--locked-mode` (NuGet lock files for `src-web` and the projects it references);
+   - restore with `--locked-mode` through the tests project, so core, server, the web host and the tests are checked against their NuGet lock files and nothing later restores again. The stdio host has no lock file: single-file publish makes it machine- and SDK-specific. Its packages are pinned and also in the tests lock;
    - build, with warnings as errors as CI does;
    - run all tests;
    - publish `src-web` in Release, with the commit SHA as the informational version;
@@ -395,6 +413,7 @@ Every action in `deploy.yml` is pinned to a full commit SHA, with the tag as a c
 - **PI device-activation phishing:** PI's create-request needs no authentication, so an attacker who knows the tenant can phish a user into approving an activation directly at PI, without our server. Our server adds nothing to that beyond what the consent page, the attempt cap and `Auth:AllowedPiUserIds` already limit. The PI admin should restrict or monitor device activations if PI allows it.
 - **Model-chosen ids in PI paths:** some PI path segments built from model-supplied ids (e.g. `projectId`) aren't escaped, so a crafted id reaches other PI paths with the same user's token. It gains no privilege, and every URL stays relative to the configured PI host. Fixed opportunistically with `Uri.EscapeDataString`.
 - **Restarts on deploy:** every push to `main` restarts the app; the shutdown timeout covers in-flight commits.
+- **Activation by users who aren't allowed:** a user not on `Auth:AllowedPiUserIds` who completes activation leaves a 90-day PI token that PI minted and the server discarded (PI returns the user id only together with the token). They can revoke it in PI. Best-effort server-side revocation is revisited after the go-live gate shows PI's revocation API.
 
 ## Testing
 

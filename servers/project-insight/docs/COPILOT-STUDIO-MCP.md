@@ -1,5 +1,7 @@
 # Connecting Project Insight MCP Server to Microsoft Copilot Studio
 
+> **Not supported by the current web host (stretch goal).** This guide was written for the removed Azure Functions host, which accepted a per-request API token header and served `/api/mcp`. The current web host at `https://<app>/mcp` uses OAuth sign-in only (see [docs/REMOTE.md](../../../docs/REMOTE.md)). Treat what follows as design notes for a future Copilot Studio connection.
+
 This guide explains how to connect your Project Insight MCP server to Microsoft Copilot Studio, enabling AI agents to interact with your project management data using the Model Context Protocol (MCP).
 
 ## Overview
@@ -12,10 +14,8 @@ Microsoft Copilot Studio has native MCP support, allowing you to:
 
 ## Prerequisites
 
-1. **Project Insight MCP Server** deployed to Azure Functions
-   - Endpoint: `https://your-function-app.azurewebsites.net/api/mcp`
-   - Health check: `https://your-function-app.azurewebsites.net/api/health`
-   - Server info: `https://your-function-app.azurewebsites.net/api/info`
+1. **Project Insight MCP Server** deployed to the removed Azure Functions host. Its endpoint and the API-key steps below no longer work, and the current `https://<app>/mcp` doesn't accept them: it needs OAuth sign-in.
+   - Functions-era endpoint: `https://your-function-app.azurewebsites.net/api/mcp`
    
 2. **Microsoft Copilot Studio access**
    - [Free trial available](https://go.microsoft.com/fwlink/?LinkId=2107702)
@@ -40,7 +40,7 @@ Microsoft Copilot Studio has native MCP support, allowing you to:
 3. **Configure Server Details**
    - **Server name**: `Project Insight`
    - **Server description**: `Project management server for accessing projects, tasks, time entries, timesheets, and resources from Project Insight`
-   - **Server URL**: `https://your-function-app.azurewebsites.net/api/mcp`
+   - **Server URL**: the Functions-era `https://your-function-app.azurewebsites.net/api/mcp` (removed)
 
 4. **Configure Authentication**
    - Select **API key** as authentication type

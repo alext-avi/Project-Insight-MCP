@@ -1,4 +1,5 @@
 using Azure.Storage.Blobs;
+using Microsoft.Extensions.Logging;
 using ProjectInsightMCP.Tests.TimeChanges;
 using ProjectInsightMCP.TimeChanges;
 using ProjectInsightMCP.Web.Storage;
@@ -161,5 +162,164 @@ public sealed class BlobDraftStoreContractTests : DraftStoreContract
         var container = new BlobContainerClient(AzuriteStorage.ConnectionString, AzuriteStorage.UniqueName("drafts"));
         await container.CreateIfNotExistsAsync();
         return new BlobDraftStore(container, Time);
+    }
+
+    [SkippableFact]
+    public async Task A_storage_failure_reaches_the_caller_as_a_short_fixed_message()
+    {
+        Skip.IfNot(Available);
+        // A container that doesn't exist: every write fails with the service's full error text.
+        var store = new BlobDraftStore(new BlobContainerClient(AzuriteStorage.ConnectionString, AzuriteStorage.UniqueName("missing")), Time);
+
+        var create = await Assert.ThrowsAsync<TimeChangeException>(() => store.CreateAsync(Drafts.New()));
+        var prune = await Assert.ThrowsAsync<TimeChangeException>(() => store.PruneAllAsync());
+
+        Assert.Equal(BlobDraftStore.Unavailable, create.Message);
+        Assert.Equal(BlobDraftStore.Unavailable, prune.Message);
+    }
+
+    [SkippableFact]
+    public async Task A_plans_prune_reads_an_owners_drafts_at_most_hourly()
+    {
+        Skip.IfNot(Available);
+        var container = new CountingContainer(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("drafts"));
+        await container.CreateIfNotExistsAsync();
+        var store = new BlobDraftStore(container, Time);
+        await store.CreateAsync(Drafts.New(id: "d_one1"));
+        await store.CreateAsync(Drafts.New(id: "d_two2"));
+
+        await store.PruneAsync("u-1");
+        var afterFirst = container.Downloads;
+        await store.PruneAsync("u-1");
+        var afterSecond = container.Downloads;
+        Time.Now += TimeSpan.FromMinutes(61);
+        await store.PruneAsync("u-1");
+
+        Assert.Equal(2, afterFirst);
+        Assert.Equal(afterFirst, afterSecond);
+        Assert.Equal(4, container.Downloads);
+    }
+
+    [SkippableFact]
+    public async Task A_failed_plan_prune_does_not_hold_off_the_next_one()
+    {
+        Skip.IfNot(Available);
+        var container = new CountingContainer(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("drafts"));
+        await container.CreateIfNotExistsAsync();
+        var store = new BlobDraftStore(container, Time);
+        await store.CreateAsync(Drafts.New(id: "d_old1"));
+        Time.Now += TimeSpan.FromDays(8);
+
+        container.FailDownloads = true;
+        await Assert.ThrowsAsync<TimeChangeException>(() => store.PruneAsync("u-1"));
+        container.FailDownloads = false;
+        await store.PruneAsync("u-1");
+
+        Assert.Null(await store.GetAsync("u-1", "d_old1"));
+    }
+
+    [SkippableFact]
+    public async Task A_failed_full_prune_does_not_hold_off_a_plans_prune()
+    {
+        Skip.IfNot(Available);
+        var container = new CountingContainer(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("drafts"));
+        await container.CreateIfNotExistsAsync();
+        var store = new BlobDraftStore(container, Time);
+        await store.CreateAsync(Drafts.New(id: "d_old1"));
+        Time.Now += TimeSpan.FromDays(8);
+
+        container.FailDownloads = true;
+        await Assert.ThrowsAsync<TimeChangeException>(() => store.PruneAllAsync());
+        container.FailDownloads = false;
+        await store.PruneAsync("u-1");
+
+        Assert.Null(await store.GetAsync("u-1", "d_old1"));
+    }
+
+    [SkippableFact]
+    public async Task A_storage_failure_keeps_its_cause_for_the_log_but_not_for_the_caller()
+    {
+        Skip.IfNot(Available);
+        var container = new CountingContainer(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("drafts"));
+        await container.CreateIfNotExistsAsync();
+        var logs = new CapturingLoggerProvider();
+        using var factory = LoggerFactory.Create(b => b.AddProvider(logs));
+        var store = new BlobDraftStore(container, Time, factory.CreateLogger<BlobDraftStore>());
+        await store.CreateAsync(Drafts.New(id: "d_one1"));
+
+        container.FailDownloads = true;
+        var failure = await Assert.ThrowsAsync<TimeChangeException>(() => store.GetAsync("u-1", "d_one1"));
+
+        Assert.Equal(BlobDraftStore.Unavailable, failure.Message);
+        Assert.Equal("storage_unavailable", failure.Code);
+        var cause = Assert.IsType<Azure.RequestFailedException>(failure.InnerException);
+        Assert.Equal(503, cause.Status);
+        Assert.Contains(logs.Lines, l => l.Contains(CountingContainer.FailureDetail, StringComparison.Ordinal));
+    }
+
+    [SkippableFact]
+    public async Task A_cut_response_stream_reaches_the_caller_as_the_fixed_message()
+    {
+        Skip.IfNot(Available);
+        var container = new CountingContainer(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("drafts"));
+        await container.CreateIfNotExistsAsync();
+        var store = new BlobDraftStore(container, Time);
+        await store.CreateAsync(Drafts.New(id: "d_one1"));
+
+        container.FailWithCutStream = true;
+        var failure = await Assert.ThrowsAsync<TimeChangeException>(() => store.GetAsync("u-1", "d_one1"));
+
+        Assert.Equal(BlobDraftStore.Unavailable, failure.Message);
+        Assert.IsType<IOException>(failure.InnerException);
+    }
+
+    [SkippableFact]
+    public async Task One_owners_failure_does_not_stop_the_full_prune_for_the_others()
+    {
+        Skip.IfNot(Available);
+        var container = new CountingContainer(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("drafts"));
+        await container.CreateIfNotExistsAsync();
+        var store = new BlobDraftStore(container, Time);
+        // Owners are listed in name order, so the failing one comes first.
+        await store.CreateAsync(Drafts.New(owner: "u-1", id: "d_old1"));
+        await store.CreateAsync(Drafts.New(owner: "u-2", id: "d_old2"));
+        Time.Now += TimeSpan.FromDays(8);
+
+        container.FailOwner = "u-1";
+        var failure = await Assert.ThrowsAsync<TimeChangeException>(() => store.PruneAllAsync());
+        container.FailOwner = null;
+
+        Assert.Equal(BlobDraftStore.Unavailable, failure.Message);
+        Assert.Null(await store.GetAsync("u-2", "d_old2"));
+        Assert.NotNull(await store.GetAsync("u-1", "d_old1"));
+    }
+
+    private sealed class CountingContainer : BlobContainerClient
+    {
+        private readonly string _connectionString;
+        private int _downloads;
+
+        public CountingContainer(string connectionString, string name) : base(connectionString, name) => _connectionString = connectionString;
+
+        public int Downloads => _downloads;
+        public const string FailureDetail = "storage-detail-for-the-log";
+        public volatile bool FailDownloads;
+        public volatile bool FailWithCutStream;
+        public volatile string? FailOwner;
+        public override BlobClient GetBlobClient(string blobName) => new CountingBlob(this, _connectionString, Name, blobName);
+
+        private sealed class CountingBlob(CountingContainer owner, string connectionString, string container, string name)
+            : BlobClient(connectionString, container, name)
+        {
+            public override Task<Azure.Response<Azure.Storage.Blobs.Models.BlobDownloadResult>> DownloadContentAsync(CancellationToken cancellationToken = default)
+            {
+                Interlocked.Increment(ref owner._downloads);
+                if (owner.FailWithCutStream)
+                    throw new IOException("Unable to read data from the transport connection: " + FailureDetail);
+                return owner.FailDownloads || (owner.FailOwner is { } failing && Name.StartsWith(failing + "/", StringComparison.Ordinal))
+                    ? throw new Azure.RequestFailedException(503, "Service unavailable: " + FailureDetail)
+                    : base.DownloadContentAsync(cancellationToken);
+            }
+        }
     }
 }

@@ -1,0 +1,138 @@
+name: Deploy remote server
+
+# Pushes to main that touch the web host deploy it. The build job has no Azure access; the deploy
+# job signs in with GitHub OIDC and runs no restore or build, so no third-party build code runs
+# while the Azure token exists. Identifiers are environment secrets, because this repo's logs are public.
+on:
+    push:
+        branches: [main]
+        paths:
+            - "servers/project-insight/core/**"
+            - "servers/project-insight/server/**"
+            - "servers/project-insight/src-web/**"
+            - ".github/workflows/deploy.yml"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: deploy-production
+    cancel-in-progress: false
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        env:
+            AZURITE_CONNECTION_STRING: UseDevelopmentStorage=true
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+
+            - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+              with:
+                  dotnet-version: "10.0.x"
+
+            # A step, not a service container: Azurite needs --skipApiVersionCheck for current Azure SDKs.
+            - name: Start Azurite
+              run: |
+                  docker run -d --name azurite -p 10000-10002:10000-10002 mcr.microsoft.com/azure-storage/azurite:3.37.0 azurite --skipApiVersionCheck --loose --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
+                  for port in 10000 10001 10002; do
+                      for _ in $(seq 1 30); do
+                          (echo > /dev/tcp/127.0.0.1/$port) 2>/dev/null && continue 2
+                          sleep 1
+                      done
+                      echo "Azurite port $port not ready after 30s" >&2
+                      docker logs azurite
+                      exit 1
+                  done
+
+            # The tests project references core, server and both hosts, so this restores every project. Each is
+            # checked against its packages.lock.json except the stdio host (see ci.yml), whose pinned packages are
+            # also in the tests lock. The web host is locked, and nothing below restores again.
+            - name: Restore (locked)
+              run: dotnet restore servers/project-insight/tests --locked-mode
+
+            # -warnaserror also fails on high and critical package advisories; low and moderate stay warnings
+            # (servers/project-insight/Directory.Build.props).
+            - name: Build
+              run: dotnet build servers/project-insight/tests --configuration Release --no-restore -warnaserror
+
+            - name: Test
+              run: dotnet test servers/project-insight/tests --configuration Release --no-build
+              env:
+                  # Same as ci.yml: UTC+14 catches a PI expiry read in local time instead of UTC.
+                  TZ: Pacific/Kiritimati
+
+            - name: Publish
+              env:
+                  SHA: ${{ github.sha }}
+              run: >-
+                  dotnet publish servers/project-insight/src-web --configuration Release --no-restore -warnaserror --output publish
+                  -p:InformationalVersion=$SHA -p:IncludeSourceRevisionInInformationalVersion=false
+
+            - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              with:
+                  name: web
+                  path: publish
+                  retention-days: 1
+                  if-no-files-found: error
+
+    deploy:
+        needs: build
+        runs-on: ubuntu-latest
+        # The deploy step takes a few minutes and the smoke test polls for 3 (up to 6 if every probe hangs to its
+        # --max-time). This bounds a hung step so it can't hold the deploy-production concurrency group for hours.
+        timeout-minutes: 20
+        environment: production
+        permissions:
+            id-token: write
+            contents: read
+        steps:
+            - name: Mask derived values
+              env:
+                  BASE_URL: ${{ secrets.APP_BASE_URL }}
+              run: echo "::add-mask::${BASE_URL#https://}"
+
+            - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+              with:
+                  name: web
+                  path: publish
+
+            - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+              with:
+                  client-id: ${{ secrets.AZURE_CLIENT_ID }}
+                  tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+                  subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+            - uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383 # v3.0.8
+              with:
+                  app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+                  package: publish
+
+            - name: Smoke test
+              env:
+                  BASE_URL: ${{ secrets.APP_BASE_URL }}
+                  SHA: ${{ github.sha }}
+              run: |
+                  set -uo pipefail
+                  version=""
+                  for _ in $(seq 1 18); do
+                    version=$(curl -s --max-time 10 "$BASE_URL/healthz" | jq -r '.version // empty' 2>/dev/null || true)
+                    [ "$version" = "$SHA" ] && break
+                    sleep 10
+                  done
+                  if [ "$version" != "$SHA" ]; then echo "The new version was not live within 3 minutes."; exit 1; fi
+
+                  headers=$(mktemp)
+                  status=$(curl -s --max-time 15 -o /dev/null -D "$headers" -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' "$BASE_URL/mcp")
+                  echo "Unauthenticated POST /mcp: $status"
+                  if [ "$status" != "401" ] || ! grep -qi '^www-authenticate: Bearer resource_metadata=' "$headers"; then
+                    echo "Expected a 401 with resource_metadata."; exit 1
+                  fi
+
+                  resource=$(curl -s --max-time 15 "$BASE_URL/.well-known/oauth-protected-resource/mcp" | jq -r '.resource // empty')
+                  if [ "$resource" != "$BASE_URL/mcp" ]; then echo "Protected-resource metadata names the wrong resource."; exit 1; fi
+                  echo "Smoke test passed."

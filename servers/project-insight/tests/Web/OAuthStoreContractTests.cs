@@ -149,7 +149,7 @@ public abstract class ClientStoreContract
         await store.TryAddAsync(Client("stale", Now.AddDays(-100)), 10, default);
         await store.TryAddAsync(Client("touched", Now.AddDays(-100)), 10, default);
 
-        await store.TouchAsync("touched", Now, default);
+        await store.TouchAsync("touched", Now, signedIn: true, default);
         Assert.Equal(Now, (await store.GetAsync("touched", default))!.LastUsed);
         Assert.True((await store.GetAsync("touched", default))!.Used);
 
@@ -185,11 +185,45 @@ public abstract class ClientStoreContract
         Skip.IfNot(Available);
         var store = await CreateAsync();
         await store.TryAddAsync(Client("signed-in-once", Now.AddHours(-48)), 10, default);
-        await store.TouchAsync("signed-in-once", Now.AddHours(-47), default);
+        await store.TouchAsync("signed-in-once", Now.AddHours(-47), signedIn: true, default);
 
         await store.PruneAsync(Now.AddDays(-120), Now.AddHours(-24), default);
 
         Assert.NotNull(await store.GetAsync("signed-in-once", default));
+    }
+
+    [SkippableFact]
+    public async Task A_started_sign_in_refreshes_last_used_without_marking_the_client_used()
+    {
+        Skip.IfNot(Available);
+        var store = await CreateAsync();
+        await store.TryAddAsync(Client("starting", Now.AddHours(-30)), 2, default);
+        await store.TryAddAsync(Client("idle", Now.AddHours(-1)), 2, default);
+
+        await store.TouchAsync("starting", Now, signedIn: false, default);
+
+        var read = (await store.GetAsync("starting", default))!;
+        Assert.Equal(Now, read.LastUsed);
+        Assert.False(read.Used);
+        // Now the newest never-used client: the cap evicts the other one, and the never-used prune spares it.
+        Assert.True(await store.TryAddAsync(Client("new", Now), 2, default));
+        Assert.Null(await store.GetAsync("idle", default));
+        await store.PruneAsync(Now.AddDays(-120), Now.AddHours(-24), default);
+        Assert.NotNull(await store.GetAsync("starting", default));
+    }
+
+    [SkippableFact]
+    public async Task A_finished_sign_in_after_a_start_marks_the_client_used()
+    {
+        Skip.IfNot(Available);
+        var store = await CreateAsync();
+        await store.TryAddAsync(Client("c1", Now.AddHours(-2)), 10, default);
+
+        await store.TouchAsync("c1", Now.AddHours(-1), signedIn: false, default);
+        await store.TouchAsync("c1", Now, signedIn: true, default);
+        await store.TouchAsync("c1", Now, signedIn: false, default);
+
+        Assert.True((await store.GetAsync("c1", default))!.Used);
     }
 }
 
@@ -208,15 +242,84 @@ public sealed class TableClientStoreTests : ClientStoreContract
         await table.CreateIfNotExistsAsync();
         return new TableClientStore(table);
     }
+
+    private static readonly DateTimeOffset Now = new(2026, 11, 2, 9, 0, 0, TimeSpan.Zero);
+
+    [SkippableFact]
+    public async Task Prune_keeps_a_client_touched_after_the_prune_read_it()
+    {
+        Skip.IfNot(Available);
+        var table = new TouchBeforeDeleteTable(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("clients"));
+        await table.CreateIfNotExistsAsync();
+        var store = new TableClientStore(table);
+        await store.TryAddAsync(new RegisteredClient("stale", "Claude", [AuthorizeFlow.ClaudeCallback], Now.AddDays(-2)), 10, default);
+        // A sign-in starts between the prune's query and its delete.
+        table.BeforeFirstDelete = () => store.TouchAsync("stale", Now, signedIn: false, default);
+
+        await store.PruneAsync(Now.AddDays(-120), Now.AddHours(-24), default);
+
+        Assert.NotNull(await store.GetAsync("stale", default));
+    }
+
+    [SkippableFact]
+    public async Task A_start_touch_that_read_before_a_sign_in_finished_does_not_unmark_the_client()
+    {
+        Skip.IfNot(Available);
+        var table = new SignInAfterFirstReadTable(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("clients"));
+        await table.CreateIfNotExistsAsync();
+        var store = new TableClientStore(table);
+        await store.TryAddAsync(new RegisteredClient("c1", "Claude", [AuthorizeFlow.ClaudeCallback], Now.AddHours(-2)), 10, default);
+        // The start touch reads Used=false, then a /token touch marks the client used before the start touch writes.
+        table.AfterFirstRead = () => store.TouchAsync("c1", Now, signedIn: true, default);
+
+        await store.TouchAsync("c1", Now.AddMinutes(-1), signedIn: false, default);
+
+        Assert.Null(table.AfterFirstRead);
+        Assert.True((await store.GetAsync("c1", default))!.Used);
+    }
+
+    private sealed class SignInAfterFirstReadTable(string connectionString, string name) : TableClient(connectionString, name)
+    {
+        public Func<Task>? AfterFirstRead { get; set; }
+
+        public override async Task<Azure.NullableResponse<T>> GetEntityIfExistsAsync<T>(string partitionKey, string rowKey,
+            IEnumerable<string>? select = null, CancellationToken cancellationToken = default)
+        {
+            var read = await base.GetEntityIfExistsAsync<T>(partitionKey, rowKey, select, cancellationToken);
+            if (AfterFirstRead is { } after)
+            {
+                AfterFirstRead = null;
+                await after();
+            }
+            return read;
+        }
+    }
+
+    private sealed class TouchBeforeDeleteTable(string connectionString, string name) : TableClient(connectionString, name)
+    {
+        public Func<Task>? BeforeFirstDelete { get; set; }
+
+        public override async Task<Azure.Response> DeleteEntityAsync(string partitionKey, string rowKey, Azure.ETag ifMatch = default, CancellationToken cancellationToken = default)
+        {
+            if (BeforeFirstDelete is { } before)
+            {
+                BeforeFirstDelete = null;
+                await before();
+            }
+            return await base.DeleteEntityAsync(partitionKey, rowKey, ifMatch, cancellationToken);
+        }
+    }
 }
 
 public abstract class SessionStoreContract
 {
     protected abstract bool Available { get; }
     protected abstract Task<ISessionStore> CreateAsync();
-    private static readonly DateTimeOffset Now = new(2026, 11, 2, 9, 0, 0, TimeSpan.Zero);
+    /// <summary>A store whose row writes all wait at <paramref name="meet"/>; one that can't race ignores it.</summary>
+    private protected virtual Task<ISessionStore> CreateRacingAsync(Rendezvous meet) => CreateAsync();
+    private protected static readonly DateTimeOffset Now = new(2026, 11, 2, 9, 0, 0, TimeSpan.Zero);
 
-    private static SignInSession Session(string id, DateTimeOffset? expires = null) => new()
+    private protected static SignInSession Session(string id, DateTimeOffset? expires = null) => new()
     {
         Id = id,
         ClientId = "c1",
@@ -237,7 +340,7 @@ public abstract class SessionStoreContract
         var store = await CreateAsync();
         var s = Session("s1");
 
-        Assert.True(await store.TryCreateAsync(s, 10, Now, default));
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(s, 10, 10, Now, default));
 
         var read = (await store.GetAsync("s1", default))!;
         Assert.NotNull(read.Version);
@@ -250,11 +353,90 @@ public abstract class SessionStoreContract
     {
         Skip.IfNot(Available);
         var store = await CreateAsync();
-        Assert.True(await store.TryCreateAsync(Session("old", Now.AddMinutes(-1)), 2, Now, default));
-        Assert.True(await store.TryCreateAsync(Session("a"), 2, Now, default));
-        Assert.True(await store.TryCreateAsync(Session("b"), 2, Now, default));
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(Session("old", Now.AddMinutes(-1)), 2, 10, Now, default));
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(Session("a"), 2, 10, Now, default));
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(Session("b"), 2, 10, Now, default));
 
-        Assert.False(await store.TryCreateAsync(Session("c"), 2, Now, default));
+        Assert.Equal(SessionCreate.Full, await store.TryCreateAsync(Session("c"), 2, 10, Now, default));
+    }
+
+    [SkippableFact]
+    public async Task Each_client_key_has_its_own_cap_below_the_global_one()
+    {
+        Skip.IfNot(Available);
+        var store = await CreateAsync();
+        SignInSession From(string id, string key, DateTimeOffset? expires = null) => Session(id, expires) with { ClientKeyHash = key };
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(From("old", "k1", Now.AddMinutes(-1)), 10, 2, Now, default));
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(From("a", "k1"), 10, 2, Now, default));
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(From("b", "k1"), 10, 2, Now, default));
+
+        Assert.Equal(SessionCreate.ClientFull, await store.TryCreateAsync(From("c", "k1"), 10, 2, Now, default));
+        Assert.Null(await store.GetAsync("c", default));
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(From("d", "k2"), 10, 2, Now, default));
+        Assert.Equal("k2", (await store.GetAsync("d", default))!.ClientKeyHash);
+    }
+
+    private const int Racers = 8, RaceCap = 3;
+
+    /// <summary>Creates until refused (bounded); the number created.</summary>
+    private static async Task<int> FillAsync(ISessionStore store, Func<int, SignInSession> session, int maxOutstanding, int maxPerClient)
+    {
+        var n = 0;
+        while (n < 20 && await store.TryCreateAsync(session(n), maxOutstanding, maxPerClient, Now, default) == SessionCreate.Created)
+            n++;
+        return n;
+    }
+
+    [SkippableFact]
+    public async Task Racing_creates_from_one_network_never_exceed_its_cap()
+    {
+        Skip.IfNot(Available);
+        var meet = new Rendezvous(Racers);
+        var store = await CreateRacingAsync(meet);
+        meet.Arm();
+
+        var results = await Task.WhenAll(Enumerable.Range(0, Racers).Select(i => Task.Run(() =>
+            store.TryCreateAsync(Session("race" + i) with { ClientKeyHash = "k1" }, 100, RaceCap, Now, default))));
+
+        var created = results.Count(r => r == SessionCreate.Created);
+        Assert.True(created <= RaceCap, $"{created} racing creates from one network were accepted; the cap is {RaceCap}");
+        Assert.All(results, r => Assert.NotEqual(SessionCreate.Full, r));
+        // The refused racers took their rows back: the network fills to exactly its cap.
+        Assert.Equal(RaceCap, created + await FillAsync(store, n => Session("after" + n) with { ClientKeyHash = "k1" }, 100, RaceCap));
+    }
+
+    [SkippableFact]
+    public async Task Racing_creates_from_many_networks_never_exceed_the_global_cap()
+    {
+        Skip.IfNot(Available);
+        var meet = new Rendezvous(Racers);
+        var store = await CreateRacingAsync(meet);
+        meet.Arm();
+
+        var results = await Task.WhenAll(Enumerable.Range(0, Racers).Select(i => Task.Run(() =>
+            store.TryCreateAsync(Session("race" + i) with { ClientKeyHash = "net" + i }, RaceCap, 100, Now, default))));
+
+        var created = results.Count(r => r == SessionCreate.Created);
+        Assert.True(created <= RaceCap, $"{created} racing creates were accepted; the global cap is {RaceCap}");
+        Assert.Equal(RaceCap, created + await FillAsync(store, n => Session("after" + n) with { ClientKeyHash = "late" + n }, RaceCap, 100));
+    }
+
+    [SkippableFact]
+    public async Task Deleting_by_cookie_removes_only_that_browsers_sessions_and_frees_their_slots()
+    {
+        Skip.IfNot(Available);
+        var store = await CreateAsync();
+        await store.TryCreateAsync(Session("mine-1") with { CookieHash = "browser-a", ClientKeyHash = "k1" }, 10, 2, Now, default);
+        await store.TryCreateAsync(Session("mine-2") with { CookieHash = "browser-a", ClientKeyHash = "k1" }, 10, 2, Now, default);
+        await store.TryCreateAsync(Session("theirs") with { CookieHash = "browser-b", ClientKeyHash = "k2" }, 10, 2, Now, default);
+
+        await store.DeleteByCookieAsync("browser-a", default);
+        await store.DeleteByCookieAsync("no-such-browser", default);
+
+        Assert.Null(await store.GetAsync("mine-1", default));
+        Assert.Null(await store.GetAsync("mine-2", default));
+        Assert.NotNull(await store.GetAsync("theirs", default));
+        Assert.Equal(2, await FillAsync(store, n => Session("again" + n) with { ClientKeyHash = "k1" }, 10, 2));
     }
 
     [SkippableFact]
@@ -262,7 +444,7 @@ public abstract class SessionStoreContract
     {
         Skip.IfNot(Available);
         var store = await CreateAsync();
-        await store.TryCreateAsync(Session("s1"), 10, Now, default);
+        await store.TryCreateAsync(Session("s1"), 10, 10, Now, default);
         var first = (await store.GetAsync("s1", default))!;
 
         Assert.True(await store.TryReplaceAsync(first with { Attempts = 1 }, default));
@@ -279,7 +461,7 @@ public abstract class SessionStoreContract
     {
         Skip.IfNot(Available);
         var store = await CreateAsync();
-        await store.TryCreateAsync(Session("s1"), 10, Now, default);
+        await store.TryCreateAsync(Session("s1"), 10, 10, Now, default);
         var read = (await store.GetAsync("s1", default))!;
 
         var results = await Task.WhenAll(Enumerable.Range(0, 8)
@@ -293,7 +475,7 @@ public abstract class SessionStoreContract
     {
         Skip.IfNot(Available);
         var store = await CreateAsync();
-        await store.TryCreateAsync(Session("old", Now.AddMinutes(-1)), 10, Now, default);
+        await store.TryCreateAsync(Session("old", Now.AddMinutes(-1)), 10, 10, Now, default);
 
         await store.DeleteAsync("never-existed", default);
         await store.PruneAsync(Now, default);
@@ -305,9 +487,9 @@ public abstract class SessionStoreContract
     {
         Skip.IfNot(Available);
         var store = await CreateAsync();
-        await store.TryCreateAsync(Session("gone"), 10, Now, default);
-        await store.TryCreateAsync(Session("old", Now.AddMinutes(-1)), 10, Now, default);
-        await store.TryCreateAsync(Session("live"), 10, Now, default);
+        await store.TryCreateAsync(Session("gone"), 10, 10, Now, default);
+        await store.TryCreateAsync(Session("old", Now.AddMinutes(-1)), 10, 10, Now, default);
+        await store.TryCreateAsync(Session("live"), 10, 10, Now, default);
 
         await store.DeleteAsync("gone", default);
         await store.PruneAsync(Now, default);
@@ -332,5 +514,47 @@ public sealed class TableSessionStoreTests : SessionStoreContract
         var table = new TableClient(AzuriteStorage.ConnectionString, AzuriteStorage.UniqueName("sessions"));
         await table.CreateIfNotExistsAsync();
         return new TableSessionStore(table);
+    }
+
+    private protected override async Task<ISessionStore> CreateRacingAsync(Rendezvous meet)
+    {
+        var table = new MeetBeforeAddTable(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("sessions"), meet);
+        await table.CreateIfNotExistsAsync();
+        return new TableSessionStore(table);
+    }
+
+    [SkippableFact]
+    public async Task A_refusal_stays_a_refusal_when_removing_its_row_fails()
+    {
+        Skip.IfNot(Available);
+        var table = new FailingDeleteTable(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("sessions"));
+        await table.CreateIfNotExistsAsync();
+        var store = new TableSessionStore(table);
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(Session("a") with { ClientKeyHash = "k1" }, 10, 1, Now, default));
+
+        table.FailDeletes = true;
+        var outcome = await store.TryCreateAsync(Session("b") with { ClientKeyHash = "k1" }, 10, 1, Now, default);
+
+        Assert.Equal(SessionCreate.ClientFull, outcome);
+    }
+
+    private sealed class FailingDeleteTable(string connectionString, string name) : TableClient(connectionString, name)
+    {
+        public volatile bool FailDeletes;
+
+        public override Task<Azure.Response> DeleteEntityAsync(string partitionKey, string rowKey, Azure.ETag ifMatch = default, CancellationToken cancellationToken = default)
+            => FailDeletes
+                ? throw new Azure.RequestFailedException(503, "Service unavailable")
+                : base.DeleteEntityAsync(partitionKey, rowKey, ifMatch, cancellationToken);
+    }
+
+    /// <summary>Every racer has done whatever it does before adding its row (a count, say) before any row is added.</summary>
+    private sealed class MeetBeforeAddTable(string connectionString, string name, Rendezvous meet) : TableClient(connectionString, name)
+    {
+        public override async Task<Azure.Response> AddEntityAsync<T>(T entity, CancellationToken cancellationToken = default)
+        {
+            await meet.ArriveAsync();
+            return await base.AddEntityAsync(entity, cancellationToken);
+        }
     }
 }

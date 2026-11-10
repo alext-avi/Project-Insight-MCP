@@ -21,10 +21,22 @@ internal static class TableUtil
     public static string NotBefore(string property, DateTimeOffset at)
         => $"PartitionKey eq '{Partition}' and {property} ge {DateTime(at)}";
 
+    /// <summary>A value for a single-quoted OData string literal.</summary>
+    public static string Quote(string value) => value.Replace("'", "''", StringComparison.Ordinal);
+
     public static async Task DeleteMatchingAsync(TableClient table, string filter, CancellationToken ct)
     {
         await foreach (var e in table.QueryAsync<TableEntity>(filter, select: ["PartitionKey", "RowKey"], cancellationToken: ct))
-            await table.DeleteEntityAsync(Partition, e.RowKey, ETag.All, ct);
+        {
+            try
+            {
+                // Only the row as read: one changed since (a client touched by a sign-in) may no longer match.
+                await table.DeleteEntityAsync(Partition, e.RowKey, e.ETag, ct);
+            }
+            catch (RequestFailedException ex) when (ex.Status is 404 or 412)
+            {
+            }
+        }
     }
 
     public static async Task<int> CountAtMostAsync(TableClient table, string filter, int limit, CancellationToken ct)
@@ -77,12 +89,54 @@ public sealed class TableSessionStore(TableClient table) : ISessionStore
 {
     private const string Partition = TableUtil.Partition;
 
-    public async Task<bool> TryCreateAsync(SignInSession session, int maxOutstanding, DateTimeOffset now, CancellationToken ct)
+    public async Task<SessionCreate> TryCreateAsync(SignInSession session, int maxOutstanding, int maxPerClient, DateTimeOffset now, CancellationToken ct)
     {
-        if (await TableUtil.CountAtMostAsync(table, TableUtil.NotBefore("ExpiresAt", now), maxOutstanding, ct) >= maxOutstanding)
-            return false;
+        // Add, then count, and take the row back if it went over a cap. Table storage can't count and add in one
+        // step, and count-then-add let a parallel burst all count before any added. This way the racer that added
+        // last counts every row added before it, so no set of accepted sessions exceeds a cap; racers near a cap may
+        // refuse each other instead, and can start again.
         await table.AddEntityAsync(ToEntity(session), ct);
-        return true;
+        SessionCreate outcome;
+        try
+        {
+            outcome = await CheckCapsAsync(session, maxOutstanding, maxPerClient, now, ct);
+        }
+        catch
+        {
+            await ForgetQuietlyAsync(session.Id);
+            throw;
+        }
+        // A refusal must stay a refusal: a failed delete here would turn it into an error and leave the row counting.
+        if (outcome != SessionCreate.Created)
+            await ForgetQuietlyAsync(session.Id);
+        return outcome;
+    }
+
+    private async Task<SessionCreate> CheckCapsAsync(SignInSession session, int maxOutstanding, int maxPerClient, DateTimeOffset now, CancellationToken ct)
+    {
+        var live = TableUtil.NotBefore("ExpiresAt", now);
+        // The new row is among those counted when it is live itself; the caps apply to the others.
+        var self = session.ExpiresAt >= now ? 1 : 0;
+        if (session.ClientKeyHash is { } key
+            && await TableUtil.CountAtMostAsync(table, $"{live} and ClientKey eq '{TableUtil.Quote(key)}'", Plus(maxPerClient, self), ct) - self >= maxPerClient)
+            return SessionCreate.ClientFull;
+        if (await TableUtil.CountAtMostAsync(table, live, Plus(maxOutstanding, self), ct) - self >= maxOutstanding)
+            return SessionCreate.Full;
+        return SessionCreate.Created;
+
+        static int Plus(int max, int self) => (int)Math.Min(int.MaxValue, (long)max + self);
+    }
+
+    private async Task ForgetQuietlyAsync(string id)
+    {
+        try
+        {
+            await table.DeleteEntityAsync(Partition, id, ETag.All, CancellationToken.None);
+        }
+        catch (RequestFailedException)
+        {
+            // It expires with the session life anyway.
+        }
     }
 
     public async Task<SignInSession?> GetAsync(string id, CancellationToken ct)
@@ -112,13 +166,19 @@ public sealed class TableSessionStore(TableClient table) : ISessionStore
     public async Task DeleteAsync(string id, CancellationToken ct)
         => await table.DeleteEntityAsync(Partition, id, ETag.All, ct);
 
+    // A scan of the one partition, which the caps keep to a few hundred rows.
+    public Task DeleteByCookieAsync(string cookieHash, CancellationToken ct)
+        => TableUtil.DeleteMatchingAsync(table, $"PartitionKey eq '{Partition}' and CookieHash eq '{TableUtil.Quote(cookieHash)}'", ct);
+
     public Task PruneAsync(DateTimeOffset now, CancellationToken ct)
         => TableUtil.DeleteMatchingAsync(table, TableUtil.Before("ExpiresAt", now), ct);
 
     private static TableEntity ToEntity(SignInSession s) => new(Partition, s.Id)
     {
         ["Json"] = JsonSerializer.Serialize(s with { Version = null }, TableUtil.Json),
-        ["ExpiresAt"] = s.ExpiresAt
+        ["ExpiresAt"] = s.ExpiresAt,
+        ["ClientKey"] = s.ClientKeyHash,
+        ["CookieHash"] = s.CookieHash
     };
 }
 
@@ -127,9 +187,14 @@ public sealed class TableClientStore(TableClient table) : IClientStore
     private const string Partition = TableUtil.Partition;
 
     public async Task<RegisteredClient?> GetAsync(string clientId, CancellationToken ct)
+        => (await ReadAsync(clientId, ct))?.Client;
+
+    private async Task<(RegisteredClient Client, ETag ETag)?> ReadAsync(string clientId, CancellationToken ct)
     {
         var found = await table.GetEntityIfExistsAsync<TableEntity>(Partition, clientId, cancellationToken: ct);
-        return found.HasValue ? JsonSerializer.Deserialize<RegisteredClient>(found.Value!.GetString("Json"), TableUtil.Json) : null;
+        return found.HasValue
+            ? (JsonSerializer.Deserialize<RegisteredClient>(found.Value!.GetString("Json"), TableUtil.Json)!, found.Value.ETag)
+            : null;
     }
 
     public async Task<bool> TryAddAsync(RegisteredClient client, int max, CancellationToken ct)
@@ -167,23 +232,34 @@ public sealed class TableClientStore(TableClient table) : IClientStore
         return false;
     }
 
-    public async Task TouchAsync(string clientId, DateTimeOffset at, CancellationToken ct)
+    public async Task TouchAsync(string clientId, DateTimeOffset at, bool signedIn, CancellationToken ct)
     {
-        var current = await GetAsync(clientId, ct);
-        if (current is null)
-            return;
-        try
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            // Merge only the changed fields; a missing row (pruned meanwhile) is fine.
-            await table.UpdateEntityAsync(new TableEntity(Partition, clientId)
+            if (await ReadAsync(clientId, ct) is not { } read)
+                return; // pruned meanwhile
+            var (current, etag) = read;
+            var used = current.Used || signedIn;
+            try
             {
-                ["Json"] = JsonSerializer.Serialize(current with { LastUsed = at, Used = true }, TableUtil.Json),
-                ["LastUsed"] = at,
-                ["Used"] = true
-            }, ETag.All, TableUpdateMode.Merge, ct);
-        }
-        catch (RequestFailedException ex) when (ex.Status == 404)
-        {
+                // Merge only the changed fields, and only over the row as read: otherwise a start touch that read
+                // Used=false could write it back over a sign-in that finished meanwhile.
+                await table.UpdateEntityAsync(new TableEntity(Partition, clientId)
+                {
+                    ["Json"] = JsonSerializer.Serialize(current with { LastUsed = at, Used = used }, TableUtil.Json),
+                    ["LastUsed"] = at,
+                    ["Used"] = used
+                }, etag, TableUpdateMode.Merge, ct);
+                return;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                return;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 412)
+            {
+                // Changed since the read; read again.
+            }
         }
     }
 

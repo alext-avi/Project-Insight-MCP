@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <!-- Check every package, direct and transitive, against the advisory database on restore. -->
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <!-- CI and deploy build with -warnaserror, so a high (NU1903) or critical (NU1904) advisory fails them until the
+         package is bumped. Low (NU1901) and moderate (NU1902) advisories stay warnings: visible in the log, not blocking. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902</WarningsNotAsErrors>
+  </PropertyGroup>
+</Project>

@@ -1,204 +1,63 @@
-# Authentication Configuration Guide
+# Authentication
 
-## Overview
+How the Project Insight MCP server signs in to Project Insight (PI). There are two hosts.
 
-The Project Insight MCP Server supports multiple authentication strategies to ensure secure access to your Project Insight workspace.
+| Host | Where it runs | Sign-in |
+|------|---------------|---------|
+| Local stdio tool (`src-stdio`, `projectinsight-mcp`) | Your machine | SSO device activation, or a static API token |
+| Remote web host (`src-web`) | Azure App Service | OAuth 2.1 in front of PI's device activation |
 
-## Configuration Options
+## Local tool
 
-### Option 1: Static API Token (Recommended for MVP)
+Configuration:
 
-**Best for**: Simple deployments, single-tenant scenarios, development/testing
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ProjectInsight__BaseUrl` | Yes | PI API URL, such as `https://your-tenant.projectinsight.net/api/` |
+| `ProjectInsight__ApiToken` | Only for static-token mode | A PI API token |
 
-**Configuration**:
-```json
-{
-  "Values": {
-    "ProjectInsight__BaseUrl": "https://yourdomain.projectinsight.net/api/",
-    "ProjectInsight__ApiToken": "your-actual-api-token-here"
-  }
-}
-```
+### SSO device activation (recommended)
 
-**Features**:
-- ✅ Simple setup
-- ✅ Works with all MCP clients
-- ✅ Authentication validation
-- ✅ Enhanced error handling
-- ✅ Token masking for security
+Set only the base URL. On first use, ask the assistant to "link my Project Insight account".
 
-### Option 2: Azure Key Vault (Production)
+1. The `link_pi_account` tool opens PI's sign-in page in your browser.
+2. You sign in through your organization's identity provider.
+3. PI shows an activation code. Paste it back into the chat.
+4. The assistant calls `complete_pi_link` with the code.
+5. The per-user token is saved to `~/.projectinsight/credentials.json` and reused on later runs.
 
-**Best for**: Production deployments, enhanced security
+If the token expires, run the link flow again.
 
-**Configuration**:
-```json
-{
-  "Values": {
-    "ProjectInsight__BaseUrl": "https://yourdomain.projectinsight.net/api/",
-    "ProjectInsight__UseKeyVault": "true",
-    "ProjectInsight__KeyVaultUrl": "https://your-keyvault.vault.azure.net/",
-    "ProjectInsight__TokenSecretName": "project-insight-token"
-  }
-}
-```
+### Static API token
 
-### Option 3: User-Specific Authentication
+Set `ProjectInsight__ApiToken` next to the base URL. Use it for service accounts and CI. To create a
+token, sign in to PI and open User Settings, then API Access.
 
-**Best for**: Multi-tenant scenarios, user-specific data access
+## Remote web host
 
-**Implementation**: Would require MCP protocol extensions for user authentication
+The host never holds a shared PI token. Each user signs in through the host's OAuth 2.1 flow, which
+drives PI's device activation. PI issues a token to that user, and the access token the client holds
+is that PI token. Every tool call then runs with the user's own PI permissions.
 
-## Security Best Practices
+- Only PI users listed in `Auth:AllowedPiUserIds` can connect.
+- The token lasts `Auth:PiTokenLifetimeDays` days (default 90, allowed 1 to 90).
+- The host refuses to start if `ProjectInsight:ApiToken` is set, because it would override every
+  user's token.
+- Bearer tokens, authorization codes and activation codes are never written to logs or telemetry.
 
-### 1. Environment Variables
-```bash
-export ProjectInsight__ApiToken="your-token-here"
-export ProjectInsight__BaseUrl="https://yourdomain.projectinsight.net/api/"
-```
+User steps, limits and revocation timing are in [docs/REMOTE.md](../../../docs/REMOTE.md). Settings are
+in [CONFIGURATION.md](../../../CONFIGURATION.md).
 
-### 2. Azure Application Settings
-```bash
-az functionapp config appsettings set \
-  --name your-function-app \
-  --resource-group your-resource-group \
-  --settings \
-    "ProjectInsight__BaseUrl=https://yourdomain.projectinsight.net/api/" \
-    "ProjectInsight__ApiToken=@Microsoft.KeyVault(SecretUri=https://your-vault.vault.azure.net/secrets/pi-token/)"
-```
+## Token security
 
-### 3. Key Vault Integration
-```csharp
-// Add to Program.cs for Key Vault support
-builder.Services.AddHttpClient<ProjectInsightAuthService>();
-
-// Configure Key Vault
-builder.Services.AddAzureKeyVault();
-```
-
-## Authentication Validation
-
-### Health Check with Auth Validation
-```bash
-# Basic health check
-curl http://localhost:7071/api/health
-
-# Health check with authentication validation
-curl "http://localhost:7071/api/health?validate-auth=true"
-```
-
-### Response Example
-```json
-{
-  "status": "healthy",
-  "timestamp": "2025-11-24T17:30:00.000Z",
-  "version": "1.0.0",
-  "service": "ProjectInsight MCP Server",
-  "authentication": {
-    "configured": true,
-    "tokenMasked": "abc1...xyz9",
-    "validated": true,
-    "error": null
-  }
-}
-```
-
-## Error Handling
-
-The authentication service provides detailed error information:
-
-### Authentication Errors
-- **UNAUTHORIZED**: Invalid or expired token
-- **FORBIDDEN**: Insufficient permissions
-- **VALIDATION_FAILED**: Unable to validate with any endpoint
-- **VALIDATION_ERROR**: Technical error during validation
-
-### Error Response Example
-```json
-{
-  "success": false,
-  "message": "Authentication failed: Invalid or expired API token",
-  "errors": ["Check your ProjectInsight API token configuration"]
-}
-```
-
-## Token Management
-
-### Token Requirements
-- Must be a valid Project Insight API token
-- Should have read/write permissions for projects and tasks
-- Token should not expire during operation
-
-### Token Validation
-The server validates tokens by attempting API calls to:
-1. `/api/user/current` - User info endpoint
-2. `/api/projects?$top=1` - Projects list
-3. `/api/project/search?$top=1` - Project search
-
-### Token Security
-- Tokens are masked in logs: `abc1...xyz9`
-- Never logged in plain text
-- Validated on startup and optionally in health checks
+- A token carries your full PI permissions. Treat it like a password.
+- To revoke a token, use PI. See "If a token leaks" in [docs/REMOTE.md](../../../docs/REMOTE.md).
 
 ## Troubleshooting
 
-### Common Issues
-
-1. **Invalid Token Format**
-   - Error: `Valid ProjectInsight API token is required`
-   - Solution: Ensure token is not placeholder value
-
-2. **Authentication Failed**
-   - Error: `Authentication failed: Invalid or expired API token`
-   - Solution: Verify token is correct and not expired
-
-3. **Insufficient Permissions**
-   - Error: `Access forbidden: Insufficient permissions`
-   - Solution: Ensure token has project management permissions
-
-4. **Invalid Base URL**
-   - Error: `Valid ProjectInsight BaseUrl is required`
-   - Solution: Ensure URL format is correct and ends with `/api/`
-
-### Debug Steps
-
-1. **Check Configuration**:
-   ```bash
-   curl "http://localhost:7071/api/health?validate-auth=true"
-   ```
-
-2. **Verify Token Manually**:
-   ```bash
-   curl -H "Authorization: Bearer your-token" \
-        "https://yourdomain.projectinsight.net/api/user/current"
-   ```
-
-3. **Check Function Logs**:
-   ```bash
-   func start --verbose
-   ```
-
-## Migration Guide
-
-### From Basic to Enhanced Auth
-
-1. Add the new `ProjectInsightAuthService` dependency
-2. Update Function constructor to include auth service
-3. Configure environment variables properly
-4. Test with health check validation
-
-### To Key Vault
-
-1. Create Azure Key Vault
-2. Store API token in Key Vault
-3. Configure managed identity for Function App
-4. Update application settings to reference Key Vault
-
-## Future Enhancements
-
-### Planned Features
-- ✅ Token refresh support
-- ✅ Multiple authentication providers
-- ✅ User-specific authentication
-- ✅ OAuth integration
-- ✅ Certificate-based authentication
+- **Authentication failed or token expired:** sign in again (local: run the link flow; remote:
+  reconnect the connector).
+- **Access forbidden:** your PI account lacks permission for that action.
+- **"This server isn't open to your Project Insight account":** the owner has not allowed your PI
+  user. Ask them to add it.
+- **Invalid base URL:** use an absolute https URL ending in `/api/`.

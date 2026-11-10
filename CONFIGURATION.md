@@ -1,158 +1,64 @@
-# Azure Function App Configuration Guide
+# Remote Server Configuration
 
-This document outlines the application settings and configuration for the Project Insight MCP Server Azure Function App.
+Settings for the remote web host (`servers/project-insight/src-web`) on Azure App Service. The
+Bicep template in [`bicep/`](./bicep/README.md) sets the required ones. Connecting a client is
+covered in [docs/REMOTE.md](./docs/REMOTE.md).
 
-## Required Application Settings
+Settings use the double-underscore form in App Service and environment variables
+(`Auth__AllowedPiUserIds`), and the colon form in `appsettings` files and error messages
+(`Auth:AllowedPiUserIds`).
 
-The following settings are automatically configured by the Bicep template:
+## Required settings
 
-### Core Function App Settings
-- `AzureWebJobsStorage`: Connection string to Azure Storage Account
-- `WEBSITE_CONTENTAZUREFILECONNECTIONSTRING`: File share connection for content
-- `WEBSITE_CONTENTSHARE`: File share name for function content
-- `FUNCTIONS_EXTENSION_VERSION`: Azure Functions runtime version (~4)
-- `FUNCTIONS_WORKER_RUNTIME`: Runtime stack (dotnet-isolated)
+| Setting | Description |
+|---------|-------------|
+| `ProjectInsight__BaseUrl` | Your Project Insight API URL, an absolute https URL such as `https://your-tenant.projectinsight.net/api/` |
+| `Web__PublicBaseUrl` | The server's public https origin with no path, such as `https://<app>` |
+| `Auth__AllowedPiUserIds` | Comma-separated Project Insight user ids allowed to connect. At least one. Matching ignores case. |
+| `Storage__TableEndpoint`, `Storage__BlobEndpoint` | Storage account endpoints (https). The app's managed identity reads and writes them. |
 
-### Application-Specific Settings
-- `ASPNETCORE_ENVIRONMENT`: Environment name (Development/Production)
-- `APPLICATIONINSIGHTS_CONNECTION_STRING`: Application Insights connection string
-- `PROJECT_INSIGHT_BASE_URL`: Base URL for Project Insight API (configure this!)
+The app refuses to start when `ProjectInsight__BaseUrl`, `Web__PublicBaseUrl` or
+`Auth__AllowedPiUserIds` is missing or invalid, when storage has neither both endpoints nor
+`Storage__ConnectionString` (outside Development), or when a setting is unsafe (see below). It does
+not check that storage is reachable or that its credentials work: those fail on the first request.
 
-## Manual Configuration Required
+## Optional settings
 
-### Project Insight API Base URL
-You **must** update the `PROJECT_INSIGHT_BASE_URL` setting to point to your actual Project Insight instance:
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | none | Application Insights connection string. Recommended: without it the app runs without telemetry, and says nothing about it. The Bicep template sets it. |
+| `Storage__Mode` | `Azure` | `Azure` uses the storage settings above. `Local` (in-memory OAuth state, drafts on disk) is refused outside Development. |
+| `Storage__ConnectionString` | none | Replaces both storage endpoints, for Azurite or local development only. The Bicep storage account has shared-key access turned off, so an account-key connection string fails in Azure. |
+| `Auth__PiTokenLifetimeDays` | `90` | Lifetime of the Project Insight token, 1 to 90 days |
+| `Auth__AllowedRedirectUris__0`, `__1`, … | Claude and ChatGPT callbacks | Replaces the default OAuth redirect list |
+| `Auth__AllowedCimdHosts__0`, `__1`, … | `claude.ai`, `chatgpt.com` | Replaces the default list of hosts that may publish client metadata |
+| `Auth__AllowedOrigins__0`, `__1`, … | none | Browser origins allowed to call the server |
+| `TZ` | `America/New_York` from the Bicep template; UTC without it | Time zone (an IANA name) for dates such as "today" in time-change drafts and their warnings. Set it to the team's zone. |
 
-```bash
-# Update via Azure CLI
-az functionapp config appsettings set \
-  --name your-function-app \
-  --resource-group rg-projectinsight-dev \
-  --settings "PROJECT_INSIGHT_BASE_URL=https://yourdomain.projectinsight.net/api"
-```
+The three `Allowed…` settings are lists: give each entry its own numbered setting, such as
+`Auth__AllowedRedirectUris__0=https://claude.ai/api/mcp/auth_callback`. The app refuses to start if
+one of them is set as a single value (`Auth__AllowedRedirectUris=…`), which would otherwise be
+ignored and leave the defaults in place.
 
-Or via Azure Portal:
-1. Navigate to your Function App
-2. Go to Configuration → Application settings
-3. Edit `PROJECT_INSIGHT_BASE_URL`
-4. Set value to: `https://yourdomain.projectinsight.net/api`
-5. Save changes
+## Settings that must not be set
 
-## Optional Settings
+- `ProjectInsight__ApiToken`: the host refuses to start with it. It would override every user's own
+  token.
+- `ASPNETCORE_FORWARDEDHEADERS_ENABLED`: leave it false or unset. The app handles forwarded headers
+  itself.
 
-### Performance Tuning
-- `WEBSITE_RUN_FROM_PACKAGE`: Set to `1` for better cold start performance
-- `WEBSITE_ENABLE_SYNC_UPDATE_SITE`: Set to `true` for synchronous updates
+## Local development
 
-### Security Settings
-- `WEBSITE_HTTPLOGGING_RETENTION_DAYS`: Log retention (default: 3)
-- `WEBSITE_DISABLE_SCM_ENDPOINT`: Set to `true` to disable Kudu endpoint
+Run the web host with in-memory storage, as shown in
+[docs/agents.md](./docs/agents.md#getting-started). `Storage__Mode=Local` works only when
+`ASPNETCORE_ENVIRONMENT=Development`.
 
-### Monitoring
-- `APPINSIGHTS_SAMPLING_PERCENTAGE`: Telemetry sampling (default: 100)
-- `APPLICATIONINSIGHTS_ENABLE_AGENT`: Set to `true` for enhanced monitoring
+## Security notes
 
-## Environment Variables for Local Development
-
-Create a `local.settings.json` file for local development:
-
-```json
-{
-  "IsEncrypted": false,
-  "Values": {
-    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "PROJECT_INSIGHT_BASE_URL": "https://yourdomain.projectinsight.net/api",
-    "ASPNETCORE_ENVIRONMENT": "Development"
-  },
-  "Host": {
-    "CORS": "*",
-    "CORSCredentials": false
-  }
-}
-```
-
-## Security Notes
-
-### API Token Handling
-- ✅ **No API tokens stored in application settings**
-- ✅ **Client-provided authentication** via MCP tool parameters
-- ✅ **Dynamic token validation** per request
-- ✅ **Multi-tenant support** with different tokens per client
-
-### Managed Identity
-The Function App uses system-assigned managed identity for:
-- Azure Storage access
-- Application Insights telemetry
-- Other Azure service integrations
-
-## CORS Configuration
-
-CORS is configured in the Bicep template to allow all origins (`*`) for MCP client access. For production environments, consider restricting to specific domains:
-
-```json
-{
-  "allowedOrigins": [
-    "https://yourdomain.com",
-    "https://app.yourdomain.com"
-  ],
-  "supportCredentials": false
-}
-```
-
-## Health Check Configuration
-
-The health endpoint supports optional authentication testing:
-- `GET /api/health` - Basic health check
-- `GET /api/health?api-token=your-token` - Health check with Project Insight API validation
-
-## Troubleshooting Configuration
-
-### Common Issues
-
-1. **Function won't start**
-   - Check `AzureWebJobsStorage` connection string
-   - Verify storage account exists and is accessible
-
-2. **Project Insight API calls fail**
-   - Verify `PROJECT_INSIGHT_BASE_URL` is correct
-   - Test API connectivity from Azure
-   - Check client is providing valid API tokens
-
-3. **Cold start performance**
-   - Consider upgrading to Elastic Premium plan
-   - Enable `WEBSITE_RUN_FROM_PACKAGE`
-   - Configure pre-warmed instances
-
-### Configuration Validation
-
-Use this PowerShell script to validate configuration:
-
-```powershell
-# Validate Function App configuration
-$functionAppName = "your-function-app"
-$resourceGroup = "rg-projectinsight-dev"
-
-# Get app settings
-$settings = az functionapp config appsettings list `
-  --name $functionAppName `
-  --resource-group $resourceGroup `
-  --output json | ConvertFrom-Json
-
-# Check required settings
-$requiredSettings = @(
-  "AzureWebJobsStorage",
-  "FUNCTIONS_EXTENSION_VERSION", 
-  "FUNCTIONS_WORKER_RUNTIME",
-  "PROJECT_INSIGHT_BASE_URL"
-)
-
-foreach ($setting in $requiredSettings) {
-  $found = $settings | Where-Object { $_.name -eq $setting }
-  if ($found) {
-    Write-Host "✅ $setting is configured" -ForegroundColor Green
-  } else {
-    Write-Host "❌ $setting is missing" -ForegroundColor Red
-  }
-}
-```
+- The server holds no shared Project Insight API token. Each user signs in, and the token Project Insight
+  issues to them is the one used for their requests. During sign-in that per-user token is held in the
+  OAuth code store until the client redeems the authorization code, which expires after five minutes. It is
+  encrypted under a key derived from the code, which the server doesn't keep. Redeeming the code deletes the
+  entry; an expired one is unusable and is deleted by the hourly prune.
+- The web app's system-assigned managed identity accesses storage. No storage keys are used.
+- Bearer tokens, authorization codes and activation codes never appear in logs or telemetry.

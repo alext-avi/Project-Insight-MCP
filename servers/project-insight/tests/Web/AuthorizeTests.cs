@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
+using ProjectInsightMCP.Tests.TimeChanges;
 using ProjectInsightMCP.Web.Storage;
 using Xunit;
 
@@ -24,6 +25,23 @@ public class AuthorizeTests
         Assert.Empty(factory.Pi.ToPath("/api/device-activation/create-request"));
         Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
         Assert.Contains("frame-ancestors 'none'", response.Headers.GetValues("Content-Security-Policy").Single());
+    }
+
+    [Fact]
+    public async Task Loopback_client_is_named_as_an_app_on_this_computer_not_an_address()
+    {
+        using var factory = new WebFactory();
+        var flow = new AuthorizeFlow(factory);
+        var clientId = await flow.RegisterAsync("http://127.0.0.1/callback");
+        var query = AuthorizeFlow.Query(clientId, redirect: "http://127.0.0.1:33418/callback");
+
+        var consent = await (await flow.GetAuthorizeAsync(query)).Content.ReadAsStringAsync();
+        // An empty code re-renders the activation page without calling PI.
+        var activation = await (await flow.CompleteAsync(await flow.StartAsync(query), "")).Content.ReadAsStringAsync();
+
+        Assert.Contains("<strong>An app on this computer</strong> is asking", consent);
+        Assert.Contains("Connecting <strong>An app on this computer</strong>", activation);
+        Assert.DoesNotContain("<strong>127.0.0.1</strong>", consent + activation);
     }
 
     [Fact]
@@ -88,6 +106,22 @@ public class AuthorizeTests
         Assert.Contains("httponly", cookie, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("samesite=lax", cookie, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("https://pi.test/device/activate/act-1", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Start_refreshes_the_registrations_last_use_so_eviction_and_pruning_pass_it_over()
+    {
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        using var factory = new WebFactory { ExtraServices = s => s.AddSingleton<TimeProvider>(time) };
+        var flow = new AuthorizeFlow(factory);
+        var clientId = await flow.RegisterAsync();
+        time.Now = time.Now.AddHours(20);
+
+        await flow.StartAsync(AuthorizeFlow.Query(clientId));
+
+        var stored = await factory.Services.GetRequiredService<IClientStore>().GetAsync(clientId, default);
+        Assert.Equal(time.Now, stored!.LastUsed);
+        Assert.False(stored.Used); // only a finished sign-in earns a used client's longer life
     }
 
     [Fact]

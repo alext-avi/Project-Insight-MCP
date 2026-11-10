@@ -11,7 +11,13 @@
             "stopAtEntry": false,
             "console": "integratedTerminal",
             "env": {
-                "ASPNETCORE_ENVIRONMENT": "Development"
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "https://localhost:5001",
+                "Web__PublicBaseUrl": "https://localhost:5001",
+                "Storage__Mode": "Local",
+                "ProjectInsight__DraftsPath": "${workspaceFolder}/servers/project-insight/src-web/bin/dev-drafts",
+                "ProjectInsight__BaseUrl": "${env:ProjectInsight__BaseUrl}",
+                "Auth__AllowedPiUserIds": "${env:Auth__AllowedPiUserIds}"
             },
             "preLaunchTask": "build"
         }

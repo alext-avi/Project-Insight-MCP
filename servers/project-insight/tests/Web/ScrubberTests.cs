@@ -61,6 +61,99 @@ public class ScrubberTests
         Assert.DoesNotContain("sec-9999", result.StructuredContent!.Value.GetRawText());
     }
 
+    // Base64 tokens carry '+' and '/', which JSON encoders escape.
+    private const string Base64Sample = "tok+en/abc+def=";
+
+    public static readonly TheoryData<string> EscapedForms = new()
+    {
+        Base64Sample,
+        "tok\\u002Ben/abc\\u002Bdef=", // System.Text.Json's default encoder
+        "tok\\u002ben/abc\\u002bdef=", // lower-case hex
+        "tok+en\\/abc+def=",           // '/' escaped
+        "tok\\u002Ben\\/abc\\u002Bdef="
+    };
+
+    [Theory]
+    [MemberData(nameof(EscapedForms))]
+    public void Tool_result_text_loses_every_json_spelling_of_the_secret(string form)
+    {
+        var result = new CallToolResult { Content = [new TextContentBlock { Text = $"{{\"error\":\"bad {form} here\"}}" }] };
+
+        ToolResultScrubber.Scrub(result, Base64Sample);
+
+        Assert.Equal("{\"error\":\"bad [redacted] here\"}", ((TextContentBlock)result.Content[0]).Text);
+    }
+
+    [Theory]
+    [MemberData(nameof(EscapedForms))]
+    public void Forms_computed_once_match_and_redact_every_spelling(string form)
+    {
+        // The scrubbers compute the forms once per call and reuse them for every string they check.
+        var forms = SecretForms.Of(Base64Sample);
+        var text = $"bad {form} here";
+
+        Assert.True(SecretForms.AppearsIn(text, forms));
+        Assert.Equal("bad [redacted] here", SecretForms.Redact(text, forms));
+        Assert.Equal(SecretForms.Redact(text, Base64Sample), SecretForms.Redact(text, forms));
+        Assert.False(SecretForms.AppearsIn("nothing here", forms));
+    }
+
+    [Fact]
+    public void Structured_content_is_scrubbed_after_json_decoding()
+    {
+        // What TimeChangeTools does: the default encoder writes the '+' as +.
+        var result = new CallToolResult
+        {
+            Content = [],
+            StructuredContent = JsonSerializer.SerializeToElement(new { message = $"failed for {Base64Sample}", list = new[] { Base64Sample } }, JsonSerializerOptions.Web)
+        };
+        Assert.DoesNotContain(Base64Sample, result.StructuredContent!.Value.GetRawText()); // the escaped form a raw match would miss
+
+        ToolResultScrubber.Scrub(result, Base64Sample);
+
+        var structured = result.StructuredContent!.Value;
+        Assert.Equal("failed for [redacted]", structured.GetProperty("message").GetString());
+        Assert.Equal("[redacted]", structured.GetProperty("list")[0].GetString());
+    }
+
+    [Theory]
+    [MemberData(nameof(EscapedForms))]
+    public void Structured_content_loses_every_json_spelling_held_inside_a_decoded_value_or_name(string form)
+    {
+        // A string field that carries a PI error body: decoding the structured content leaves the escape in place.
+        var result = new CallToolResult
+        {
+            Content = [],
+            StructuredContent = JsonSerializer.SerializeToElement(new Dictionary<string, string>
+            {
+                ["error"] = $"{{\"message\":\"bad {form} here\"}}",
+                [$"key {form}"] = "v"
+            })
+        };
+
+        ToolResultScrubber.Scrub(result, Base64Sample);
+
+        var structured = result.StructuredContent!.Value;
+        Assert.Equal("{\"message\":\"bad [redacted] here\"}", structured.GetProperty("error").GetString());
+        Assert.Equal("v", structured.GetProperty("key [redacted]").GetString());
+    }
+
+    [Theory]
+    [MemberData(nameof(EscapedForms))]
+    public async Task Handler_redacts_every_json_spelling_of_the_bearer(string form)
+    {
+        var inner = new StubHandler(r => new HttpResponseMessage(System.Net.HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent($"{{\"message\":\"token {form} is invalid\"}}")
+        });
+        using var client = new HttpClient(new PiErrorScrubbingHandler { InnerHandler = inner });
+        client.DefaultRequestHeaders.Authorization = new("Bearer", Base64Sample);
+
+        var body = await (await client.GetAsync("https://pi.test/api/x")).Content.ReadAsStringAsync();
+
+        Assert.Equal("{\"message\":\"token [redacted] is invalid\"}", body);
+    }
+
     private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)

@@ -18,12 +18,12 @@ jobs:
             AZURITE_CONNECTION_STRING: UseDevelopmentStorage=true
         steps:
             - name: Checkout code
-              uses: actions/checkout@v7
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
                   persist-credentials: false
 
             - name: Setup .NET
-              uses: actions/setup-dotnet@v6
+              uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
               with:
                   dotnet-version: "10.0.x"
 
@@ -32,7 +32,7 @@ jobs:
               run: |
                   docker run -d --name azurite -p 10000-10002:10000-10002 mcr.microsoft.com/azure-storage/azurite:3.37.0 azurite --skipApiVersionCheck --loose --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
                   for port in 10000 10001 10002; do
-                      for i in $(seq 1 30); do
+                      for _ in $(seq 1 30); do
                           (echo > /dev/tcp/127.0.0.1/$port) 2>/dev/null && continue 2
                           sleep 1
                       done
@@ -41,17 +41,20 @@ jobs:
                       exit 1
                   done
 
-            - name: Restore web host (locked)
-              run: dotnet restore servers/project-insight/src-web --locked-mode
+            # The tests project references core, server and both hosts, so this restores every project. Each is
+            # checked against its packages.lock.json except the stdio host, which has none: single-file publish
+            # makes its lock file machine- and SDK-specific. Its packages are pinned and also in the tests lock.
+            # Later steps don't restore again.
+            - name: Restore (locked)
+              run: dotnet restore servers/project-insight/tests --locked-mode
 
-            - name: Build stdio host
-              run: dotnet build servers/project-insight/src-stdio --configuration Release
-
-            - name: Build web host
-              run: dotnet build servers/project-insight/src-web --configuration Release --no-restore
+            # -warnaserror also fails on high and critical package advisories; low and moderate stay warnings
+            # (servers/project-insight/Directory.Build.props).
+            - name: Build
+              run: dotnet build servers/project-insight/tests --configuration Release --no-restore -warnaserror
 
             - name: Test
-              run: dotnet test servers/project-insight/tests --configuration Release
+              run: dotnet test servers/project-insight/tests --configuration Release --no-build
               env:
                   # UTC+14: a PI expiry read in local time instead of UTC would be off by 14 hours, which UTC CI can't catch.
                   TZ: Pacific/Kiritimati

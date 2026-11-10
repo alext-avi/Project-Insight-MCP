@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.AspNetCore;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Trace;
 using ProjectInsightMCP.Server;
 using ProjectInsightMCP.Services;
@@ -42,7 +43,8 @@ public static class WebHost
         services.AddTransient<PiErrorScrubbingHandler>();
         services.AddHttpClient(PiIdentityClient.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(10))
             // A redirect would carry the bearer token to wherever PI points; treat any 3xx as an outage instead.
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+            // No cookie jar: the pooled handler serves every user, so a cookie PI set for one would ride along on the next.
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false })
             .AddHttpMessageHandler<PiErrorScrubbingHandler>();
         services.AddSingleton<PiIdentityClient>();
         services.AddSingleton<RedirectPolicy>();
@@ -59,8 +61,8 @@ public static class WebHost
                 ConnectCallback = PublicAddressOnly.ConnectAsync
             });
         services.AddHttpClient(PiActivationClient.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(8))
-            // A redirect's Location could repeat the activation code to wherever PI points.
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+            // A redirect's Location could repeat the activation code to wherever PI points. No cookie jar, as above.
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false })
             .AddHttpMessageHandler<PiErrorScrubbingHandler>()
             // Its URLs carry the activation code in the query string.
             .RemoveAllLoggers();
@@ -73,8 +75,9 @@ public static class WebHost
 
         // Per-request PI services. Nothing here may be a singleton: each request carries its own user's token.
         services.AddHttpClient<ProjectInsightApiService>()
-            // Same as the identity client: PI never redirects its API, so a 3xx is an outage, not a new destination.
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+            // Same as the identity client: PI never redirects its API, so a 3xx is an outage, not a new destination,
+            // and no cookie jar shared across users.
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false })
             .AddHttpMessageHandler<PiErrorScrubbingHandler>();
         services.AddScoped(sp => new McpServerService(
             sp.GetRequiredService<ProjectInsightApiService>(),
@@ -104,10 +107,18 @@ public static class WebHost
         // Unlike the rest of the setup this reads configuration before Build(): it is an environment
         // variable on App Service, and tests never set it.
         if (!string.IsNullOrEmpty(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
-            services.AddOpenTelemetry()
-                // Added before UseAzureMonitor, so it runs before the exporter sees the activity.
-                .WithTracing(t => t.AddProcessor(new QueryRedactionProcessor()))
-                .UseAzureMonitor();
+            services.AddTelemetry();
+    }
+
+    /// <summary>The Azure Monitor export, with the redaction processors ahead of its exporters.</summary>
+    public static void AddTelemetry(this IServiceCollection services)
+    {
+        services.AddHttpContextAccessor();
+        services.AddOpenTelemetry()
+            // Added before UseAzureMonitor, so they run before the exporter sees the activity or log record.
+            .WithTracing(t => t.AddProcessor(new QueryRedactionProcessor()))
+            .WithLogging(l => l.AddProcessor(sp => new LogRedactionProcessor(sp.GetRequiredService<IHttpContextAccessor>())))
+            .UseAzureMonitor();
     }
 
     /// <summary>Device-activation sign-in tools: the connector's OAuth sign-in replaces them.</summary>
@@ -143,6 +154,8 @@ public static class WebHost
         app.MapMcp("/mcp").RequireAuthorization().RequireRateLimiting(RateLimits.Mcp);
 
         app.MapGet("/healthz", () => Results.Json(new { status = "ok", version = Version }));
+        // App Service's Always On pings "/" every few minutes; answer it rather than log a stream of 404s.
+        app.MapGet("/", () => Results.Text("Project Insight MCP server. Connect an MCP client to /mcp.", "text/plain"));
     }
 
     // The deploy sets InformationalVersion to the commit SHA; reported as-is so the smoke test can match it.

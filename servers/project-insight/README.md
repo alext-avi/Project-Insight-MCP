@@ -16,7 +16,7 @@ A **Model Context Protocol (MCP)** server for integrating with the **Project Ins
 - **Resource Management**: Manage project resources and allocations
 - **Authentication**: Secure token-based authentication with Project Insight API
 - **Type Safety**: Full C# implementation with comprehensive data models
-- **Azure Functions**: Serverless deployment for scalability and reliability
+- **Two hosts**: a local stdio tool (`projectinsight-mcp`) and a remote web host on Azure App Service that signs each user in with OAuth 2.1
 
 ## 🔧 API Integration
 
@@ -71,67 +71,52 @@ A **Model Context Protocol (MCP)** server for integrating with the **Project Ins
 
 ## 🔧 Prerequisites
 
-- **.NET 10** SDK (builds both the stdio host and the .NET 8 Azure Functions host)
-- **Azure Functions Core Tools v4** (for local development)
-- **Project Insight** API access with valid API token
-- **Azure subscription** (for cloud deployment)
+- **.NET 10** SDK (builds every project here)
+- **Project Insight** access: SSO sign-in or an API token
+- **Azure subscription** (only to self-host the remote web host)
 
 ## ⚡ Quick Start
 
-### 1. Setup
+### Local stdio tool
+
 ```bash
-cd servers/project-insight/src
+dotnet tool install -g ProjectInsight.MCP
 ```
 
-### 2. Configure API Settings
-Create `local.settings.json` with your Project Insight API details:
-```json
-{
-  "IsEncrypted": false,
-  "Values": {
-    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "FUNCTIONS_WORKER_RUNTIME": "dotnet",
-    "ProjectInsight__BaseUrl": "https://yourdomain.projectinsight.net/api/",
-    "ProjectInsight__ApiToken": "your-api-token-here"
-  }
-}
-```
+Point your MCP client at `projectinsight-mcp` with `ProjectInsight__BaseUrl` set, then ask the
+assistant to "link my Project Insight account". See [src-stdio/README.md](./src-stdio/README.md) and
+[MCP Client Setup](./docs/MCP-CLIENT-SETUP.md).
 
-### 3. Build and Run
+### Remote server
+
+Connect a client to `https://<app>/mcp` and sign in with your Project Insight account. See
+[docs/REMOTE.md](../../docs/REMOTE.md).
+
+### Run from source
+
 ```bash
-dotnet build
-func start --port 7071
+dotnet build servers/project-insight/src-stdio
+dotnet test servers/project-insight/tests -c Release
 ```
 
-### 4. Test the Server
-```bash
-# Health check
-curl http://localhost:7071/api/health
-
-# Test MCP tools
-curl -X POST http://localhost:7071/api/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}'
-```
+To run the web host locally, see [docs/agents.md](../../docs/agents.md#getting-started).
 
 ## 🔧 Configuration
 
-### Environment Variables
+### Local tool
 
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `ProjectInsight__BaseUrl` | Project Insight API base URL | ✅ |
-| `ProjectInsight__ApiToken` | API authentication token | ✅ |
-| `ProjectInsight__Timeout` | API timeout in seconds (default: 30) | ❌ |
+| `ProjectInsight__ApiToken` | Static API token (leave out to use SSO) | ❌ |
 
-### MCP Endpoint
+### Remote web host
 
-- **Local Development**: `http://localhost:7071/api/mcp`
-- **Production**: `https://your-function-app.azurewebsites.net/api/mcp`
+See [CONFIGURATION.md](../../CONFIGURATION.md). Endpoint: `https://<app>/mcp`.
 
 ## 💬 Usage Examples
 
-Once configured with GitHub Copilot, you can use natural language commands:
+Once connected, you can use natural language commands:
 
 ### Basic Project Search
 ```
@@ -213,82 +198,67 @@ Most "get" and "search" tools support a `fields` parameter to control response s
 
 ```
 project-insight/
-├── src/
-│   ├── Functions/           # Azure Functions endpoints
-│   ├── Services/           # Core business logic and API integration
-│   ├── Models/             # Data models and DTOs
-│   ├── MCP/               # MCP protocol implementation
-│   └── Program.cs         # Dependency injection and startup
-├── docs/                  # Documentation
-│   ├── AUTHENTICATION.md  # API authentication guide
-│   ├── DEPLOYMENT.md      # Azure deployment guide
-│   └── *.md              # Other guides
-└── deploy/               # Deployment scripts
-    ├── deploy.sh         # Automated deployment script
-    └── *.json           # Configuration files
+├── core/          # PI API client, auth helpers, models, time-change logic
+├── server/        # shared MCP wiring and tool handlers
+├── src-stdio/     # local stdio host: .mcpb bundle and ProjectInsight.MCP tool
+├── src-web/       # remote web host (ASP.NET Core, OAuth 2.1) for App Service
+├── tests/         # xUnit tests, incl. end-to-end through the MCP SDK client
+├── mcpb/          # bundle manifest and build staging
+└── docs/          # setup and auth guides
 ```
 
 ## 🚀 Deployment
 
-### Option 1: Automated Script
-```bash
-cd servers/project-insight/deploy
-./deploy.sh
-```
-
-### Option 2: Manual Azure Deployment
-See [DEPLOYMENT.md](./docs/DEPLOYMENT.md) for detailed instructions.
+The remote web host deploys to Azure App Service. One-time setup is in
+[bicep/README.md](../../bicep/README.md); later deploys run from `main` through
+`.github/workflows/deploy.yml`. See [DEPLOYMENT.md](./docs/DEPLOYMENT.md).
 
 ## 🧪 Testing
 
-### Manual Testing
-Use the provided HTTP file:
 ```bash
-# From src directory
-code ProjectInsightMCP.http
-# Use VS Code REST Client extension
+dotnet test servers/project-insight/tests -c Release
 ```
 
-### Integration Testing
+To inspect the local tool's tools interactively:
+
 ```bash
-# Test with real Project Insight API
-curl -X POST http://localhost:7071/api/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "search_projects", "arguments": {}}}'
+npx @modelcontextprotocol/inspector projectinsight-mcp
 ```
 
 ## 📖 Documentation
 
-- **[Authentication Setup](./docs/AUTHENTICATION.md)** - API token configuration
-- **[Deployment Guide](./docs/DEPLOYMENT.md)** - Azure Functions deployment
+- **[Authentication](./docs/AUTHENTICATION.md)** - SSO, API token and the remote sign-in
+- **[Connecting to the remote server](../../docs/REMOTE.md)** - Claude, ChatGPT, Codex
+- **[Deployment Guide](./docs/DEPLOYMENT.md)** - Azure App Service
 - **[VS Code Setup](./docs/VS-CODE-SETUP.md)** - Development environment
-- **[MCP Client Setup](./docs/MCP-CLIENT-SETUP.md)** - GitHub Copilot integration
+- **[MCP Client Setup](./docs/MCP-CLIENT-SETUP.md)** - Local client configuration
 
 ## 🔧 Development
 
-### Local Development
-1. Install prerequisites
-2. Configure `local.settings.json`
-3. Run `func start --port 7071`
-4. Test with HTTP requests or MCP client
+1. Install the .NET 10 SDK.
+2. Run `dotnet test servers/project-insight/tests -c Release`.
+3. For the web host, follow [docs/agents.md](../../docs/agents.md#getting-started).
 
 ### Debugging
-Use VS Code with the included debug configuration:
-1. Open VS Code in the `src` directory
-2. Set breakpoints in your code
-3. Press F5 to start debugging
+The "Debug web host" configuration in VS Code runs the web host on `https://localhost:5001` with
+in-memory storage. It takes your Project Insight API URL and your PI user id from the environment
+VS Code starts in, so they stay out of the repository:
+
+1. Trust the development certificate: `dotnet dev-certs https --trust`.
+2. Set `ProjectInsight__BaseUrl` (such as `https://your-tenant.projectinsight.net/api/`) and
+   `Auth__AllowedPiUserIds` in your shell, then start VS Code from it (`code .`).
+3. Press F5. Without those two variables the host stops at startup and names the missing setting.
 
 ## 🆘 Troubleshooting
 
 ### Common Issues
 
-**Connection Refused**
-- Ensure Azure Functions Core Tools is installed
-- Check if port 7071 is available
-- Verify local.settings.json configuration
+**Client Can't Connect**
+- Local tool: check `projectinsight-mcp` is on your PATH and `ProjectInsight__BaseUrl` is set
+- Remote server: see [docs/REMOTE.md](../../docs/REMOTE.md)
 
 **Authentication Errors**
-- Validate API token is correct
+- Run the sign-in again, or check your static token is correct
 - Check Project Insight API permissions
 - Verify base URL format
 
