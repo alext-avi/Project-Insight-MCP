@@ -5,5 +5,8 @@
     <!-- CI and deploy build with -warnaserror, so a high (NU1903) or critical (NU1904) advisory fails them until the
          package is bumped. Low (NU1901) and moderate (NU1902) advisories stay warnings: visible in the log, not blocking. -->
     <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902</WarningsNotAsErrors>
+    <!-- The MCP SDK's packages must share one version: ModelContextProtocol.AspNetCore requires exactly its own version
+         of ModelContextProtocol. Every reference uses this property, so an update moves them together. -->
+    <ModelContextProtocolVersion>2.3.0</ModelContextProtocolVersion>
   </PropertyGroup>
 </Project>

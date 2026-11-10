@@ -1,12 +1,14 @@
 name: CI
 
 # Builds both hosts and runs the tests, including the Table/Blob store tests against Azurite.
-# Deployment is separate: deploy.yml arrives with the infrastructure (Part C).
+# Deployment is separate (deploy.yml). workflow_dispatch lets dependabot-lock-refresh.yml re-run these checks on
+# the commit it pushes, since a push made with GITHUB_TOKEN starts no workflows.
 on:
     pull_request:
     push:
         branches:
             - main
+    workflow_dispatch:
 
 permissions:
     contents: read

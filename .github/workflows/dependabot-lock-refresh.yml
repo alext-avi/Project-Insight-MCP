@@ -1,0 +1,124 @@
+name: Refresh lock files on Dependabot PRs
+
+# Dependabot updates the lock file of the project whose package it bumps, but not the lock files of the projects
+# that reference it (src-web and tests reference server and core), so CI's locked restore then fails with NU1004.
+# This regenerates every lock file on a Dependabot branch and commits any that changed. A push made with
+# GITHUB_TOKEN starts no workflows, so it then starts CI and the secret scan itself; their checks land on the new
+# commit, which is where branch protection looks for them.
+#
+# Two jobs, so the write token never shares a runner with the restore: "regenerate" evaluates the PR's project
+# files with a read-only token and hands over the lock files as an artifact; "commit" takes only those files.
+#
+# Once this commit is on a Dependabot PR, Dependabot stops rebasing or updating that PR itself (it leaves PRs with
+# other authors' commits alone). Comment `@dependabot recreate` to rebuild it: that drops the commit, and this
+# workflow then runs again and adds it back.
+on:
+    pull_request:
+        paths:
+            - "servers/project-insight/**/*.csproj"
+            - "servers/project-insight/**/packages.lock.json"
+            - "servers/project-insight/Directory.Build.props"
+
+permissions:
+    contents: read
+
+concurrency:
+    group: lock-refresh-${{ github.event.pull_request.number }}
+    cancel-in-progress: true
+
+jobs:
+    regenerate:
+        # Only Dependabot's own branches in this repository: never a fork, never a person's PR.
+        if: >-
+            github.event.pull_request.user.login == 'dependabot[bot]'
+            && github.event.pull_request.head.repo.full_name == github.repository
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  persist-credentials: false
+
+            - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+              with:
+                  dotnet-version: "10.0.x"
+
+            # The tests project references every other project, so this regenerates every lock file.
+            - name: Regenerate lock files
+              run: dotnet restore servers/project-insight/tests --force-evaluate
+
+            - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              with:
+                  name: lock-files
+                  path: servers/project-insight/*/packages.lock.json
+                  if-no-files-found: error
+                  retention-days: 1
+
+    commit:
+        needs: regenerate
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        permissions:
+            contents: write # push the refreshed lock files to the Dependabot branch
+            actions: write # start ci.yml and secret-scan.yml with workflow_dispatch
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  persist-credentials: false
+
+            - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+              with:
+                  name: lock-files
+                  path: ${{ runner.temp }}/lock-files
+
+            # Only lock files the repository already has are taken; anything else in the artifact is ignored.
+            - name: Take the regenerated lock files
+              env:
+                  FROM: ${{ runner.temp }}/lock-files
+              run: |
+                  set -euo pipefail
+                  for f in $(git ls-files 'servers/project-insight/*/packages.lock.json'); do
+                      src="$FROM/${f#servers/project-insight/}"
+                      if [ -f "$src" ]; then cp "$src" "$f"; fi
+                  done
+
+            # Safe to re-run: if the branch already carries these lock files (an earlier attempt pushed them but a
+            # dispatch failed), it only starts the checks again.
+            - name: Commit and start the checks
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  BRANCH: ${{ github.head_ref }}
+                  REPO: ${{ github.repository }}
+                  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+              run: |
+                  set -euo pipefail
+                  locks='servers/project-insight/*/packages.lock.json'
+                  remote="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+
+                  if git diff --quiet -- "$locks"; then
+                      echo "Lock files are already consistent."
+                      exit 0
+                  fi
+
+                  git fetch --quiet "$remote" "refs/heads/${BRANCH}"
+                  tip=$(git rev-parse FETCH_HEAD)
+                  if [ "$tip" != "$HEAD_SHA" ]; then
+                      if git diff --quiet FETCH_HEAD -- "$locks" && [ "$(git rev-parse "$tip^")" = "$HEAD_SHA" ]; then
+                          echo "The branch already has these lock files; starting the checks again."
+                      else
+                          echo "The branch moved on since this run started; its own run will refresh it."
+                          exit 0
+                      fi
+                  else
+                      git diff --stat -- "$locks"
+                      git config user.name "github-actions[bot]"
+                      git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                      git add -- "$locks"
+                      git commit -m "chore(deps): refresh dependent lock files"
+                      git push "$remote" "HEAD:refs/heads/${BRANCH}"
+                  fi
+
+                  gh workflow run ci.yml --repo "$REPO" --ref "$BRANCH"
+                  gh workflow run secret-scan.yml --repo "$REPO" --ref "$BRANCH"
