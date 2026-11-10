@@ -14,8 +14,8 @@ Microsoft Copilot Studio has native MCP support, allowing you to:
 
 ## Prerequisites
 
-1. **Project Insight MCP Server** deployed (the Functions-era endpoints below no longer exist)
-   - Endpoint: `https://<app>/mcp`
+1. **Project Insight MCP Server** deployed to the removed Azure Functions host. Its endpoint and the API-key steps below no longer work, and the current `https://<app>/mcp` doesn't accept them: it needs OAuth sign-in.
+   - Functions-era endpoint: `https://your-function-app.azurewebsites.net/api/mcp`
    
 2. **Microsoft Copilot Studio access**
    - [Free trial available](https://go.microsoft.com/fwlink/?LinkId=2107702)
@@ -40,7 +40,7 @@ Microsoft Copilot Studio has native MCP support, allowing you to:
 3. **Configure Server Details**
    - **Server name**: `Project Insight`
    - **Server description**: `Project management server for accessing projects, tasks, time entries, timesheets, and resources from Project Insight`
-   - **Server URL**: `https://<app>/mcp`
+   - **Server URL**: the Functions-era `https://your-function-app.azurewebsites.net/api/mcp` (removed)
 
 4. **Configure Authentication**
    - Select **API key** as authentication type
@@ -79,8 +79,8 @@ info:
   title: Project Insight MCP
   description: MCP server for Project Insight project management
   version: 1.4.0
-host: <app>
-basePath: /
+host: your-function-app.azurewebsites.net
+basePath: /api
 schemes:
   - https
 securityDefinitions:

@@ -360,7 +360,7 @@ If the server ever holds tokens for more than the owner and a few colleagues, th
   - **Subject:** `repo:alext-avi/Project-Insight-MCP:environment:production:job_workflow_ref:alext-avi/Project-Insight-MCP/.github/workflows/deploy.yml@refs/heads/main`. The repository's OIDC subject template is customised to include `job_workflow_ref`, so only `deploy.yml` on `main` can sign in, not any workflow that uses the environment.
   - **Role:** a custom role on the web app only: `Microsoft.Web/sites/read`, `Microsoft.Web/sites/publish/Action`, `Microsoft.Web/sites/restart/Action`, `Microsoft.Web/sites/config/list/Action`, and `Microsoft.Web/sites/publishxml/Action` (`webapps-deploy` fetches the publishing profile before deploying; its basic-auth credentials are unusable while basic publishing is off). It falls back to Website Contributor, scoped to the app, only if the custom role can't deploy. The plan records which was needed.
 
-Parameters: `namePrefix`, `location`, `piBaseUrl`, `allowedPiUserIds`, `ownerObjectId`, `alertEmail`. `bicep/main.bicepparam.example` shows them with placeholders. The real file (`*.bicepparam`, not `.example`) is gitignored. `main.json` (stale compiled ARM) and `parameters/*.json` are deleted.
+Parameters: `namePrefix`, `location` (defaults to the group's), `piBaseUrl`, `allowedPiUserIds`, `alertEmail`, `githubRepository`, `deployerRole` (`custom` by default, or `websiteContributor`), `timeZone` (defaults to `America/New_York`) and `tags` (optional). `bicep/main.bicepparam.example` shows them with placeholders. The real file (`*.bicepparam`, not `.example`) is gitignored. `main.json` (stale compiled ARM) and `parameters/*.json` are deleted.
 
 **One-time setup, run by the owner** (documented in `bicep/README.md`):
 
@@ -383,7 +383,7 @@ concurrency: { group: deploy-production, cancel-in-progress: false }
 ```
 
 1. **build** (no `id-token`, no environment):
-   - restore with `--locked-mode` through the tests project, so every project (core, server, both hosts, tests) is checked against its NuGet lock file and nothing later restores unlocked;
+   - restore with `--locked-mode` through the tests project, so core, server, the web host and the tests are checked against their NuGet lock files and nothing later restores again. The stdio host has no lock file: single-file publish makes it machine- and SDK-specific. Its packages are pinned and also in the tests lock;
    - build, with warnings as errors as CI does;
    - run all tests;
    - publish `src-web` in Release, with the commit SHA as the informational version;

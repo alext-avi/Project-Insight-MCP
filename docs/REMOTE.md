@@ -2,7 +2,9 @@
 
 The remote server serves the same tools as the local `projectinsight-mcp` tool at `https://<app>/mcp`.
 You sign in with your Project Insight account; the connector keeps the resulting token, which lasts
-90 days. Only Project Insight users the server's owner has allowed can connect.
+90 days by default. The server's owner can set a shorter lifetime (`Auth__PiTokenLifetimeDays`), and
+then you are asked to sign in again sooner. Only Project Insight users the server's owner has allowed
+can connect.
 
 ## Claude (claude.ai, Desktop, Cowork, mobile)
 
@@ -52,7 +54,8 @@ from your client.
 
 ## Where your token lives
 
-The connector holds a Project Insight token with your full Project Insight permissions for 90 days.
+The connector holds a Project Insight token with your full Project Insight permissions for the token's
+lifetime (90 days by default; see the top of this page).
 For Claude and ChatGPT it stays in the vendor's connector service, out of the model's reach. For
 Claude Code and Codex it is in your OS keychain (or a credentials file on Linux and Windows), which
 an agent with shell access could read, the same as the local tool's stored credentials.
@@ -97,8 +100,8 @@ check. After that the client is asked to sign in again.
 
 If your Project Insight account is not allowed, the sign-in ends with "This server isn't open to your
 Project Insight account." Project Insight has already created a token during activation. The server
-discards it, but it stays valid in Project Insight until it expires on its own (90 days) or you
-revoke it there.
+discards it, but it stays valid in Project Insight until it expires on its own (after the server's token
+lifetime, 90 days by default) or you revoke it there.
 
 ## If a token leaks
 

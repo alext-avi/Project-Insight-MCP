@@ -55,7 +55,10 @@ Run the web host with in-memory storage, as shown in
 
 ## Security notes
 
-- The server stores no Project Insight API token. Each user signs in, and the token Project Insight
-  issues to them is the one used for their requests.
+- The server holds no shared Project Insight API token. Each user signs in, and the token Project Insight
+  issues to them is the one used for their requests. During sign-in that per-user token is held in the
+  OAuth code store until the client redeems the authorization code, which expires after five minutes. It is
+  encrypted under a key derived from the code, which the server doesn't keep. Redeeming the code deletes the
+  entry; an expired one is unusable and is deleted by the hourly prune.
 - The web app's system-assigned managed identity accesses storage. No storage keys are used.
 - Bearer tokens, authorization codes and activation codes never appear in logs or telemetry.
