@@ -1,3 +1,5 @@
 # Placeholder tokens in doc examples (`Bearer your-token`, `Bearer YOUR_TOKEN`), not secrets.
 07cd2dda0790cdd50f3b509be17368b5ab63f98a:servers/project-insight/docs/AUTHENTICATION.md:curl-auth-header:167
 07cd2dda0790cdd50f3b509be17368b5ab63f98a:servers/project-insight/docs/DEPLOYMENT.md:curl-auth-header:148
+# deploy.sh builds the URL from a shell variable ($FUNCTION_...), not a hostname.
+07cd2dda0790cdd50f3b509be17368b5ab63f98a:servers/project-insight/deploy/deploy.sh:app-service-host:86

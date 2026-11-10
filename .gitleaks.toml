@@ -1,17 +1,18 @@
 # Default rules, plus hostnames this public repo must never contain.
+# The allowlists are anchored to the whole match: a bare \b would also pass "acme-example.azurewebsites.net".
 [extend]
 useDefault = true
 
 [[rules]]
 id = "pi-tenant-host"
 description = "A Project Insight tenant hostname"
-regex = '''[a-z0-9-]+\.projectinsight\.net'''
+regex = '''(?i)[a-z0-9-]+\.projectinsight\.net'''
   [rules.allowlist]
-  regexes = ['''\b(yourdomain|your-domain|your-tenant|your-company|example|api)\.projectinsight\.net''']
+  regexes = ['''(?i)^(yourdomain|your-domain|your-tenant|your-company|example|api)\.projectinsight\.net$''']
 
 [[rules]]
 id = "app-service-host"
 description = "An Azure App Service or Functions hostname"
-regex = '''[a-z0-9-]+\.azurewebsites\.net'''
+regex = '''(?i)[a-z0-9-]+\.azurewebsites\.net'''
   [rules.allowlist]
-  regexes = ['''\b(your-function-app|your-function-app-name|your-app|example)\.azurewebsites\.net''']
+  regexes = ['''(?i)^(your-function-app|your-function-app-name|func-your-function-app|your-app|example)\.azurewebsites\.net$''']
