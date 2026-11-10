@@ -102,11 +102,6 @@
         "resolved": "10.0.10",
         "contentHash": "TFI6OKYE1XZz4SGuTSH70c6SBdPpFktXsoa1gCxTr3mKrhmXirnvaS0tKz+J3ZWICEAmMpEGn59nO4ICtUpQXA=="
       },
-      "Microsoft.Extensions.AI.Abstractions": {
-        "type": "Transitive",
-        "resolved": "10.11.0",
-        "contentHash": "h4DX/TdJU4fk1GGaf19n6Kujkj6VXbGeL4UEOsQ8+ZJC5fVApPauokCtvBP684BYbczUYZQNfo1mbmyHG4WVSg=="
-      },
       "Microsoft.Identity.Client": {
         "type": "Transitive",
         "resolved": "4.90.0",
@@ -128,22 +123,6 @@
         "type": "Transitive",
         "resolved": "8.14.0",
         "contentHash": "iwbCpSjD3ehfTwBhtSNEtKPK0ICun6ov7Ibx6ISNA9bfwIyzI2Siwyi9eJFCJBwxowK9xcA1mj+jBWiigeqgcQ=="
-      },
-      "ModelContextProtocol": {
-        "type": "Transitive",
-        "resolved": "2.3.0",
-        "contentHash": "PHZ0q8xTAoysqUKpA5gC0RGJSfwpZhfsNz+9Sw0X0RzFFVHjIE52sx6C+ogMn+LSE+FfiYiNscPJhM6q6DMT6Q==",
-        "dependencies": {
-          "ModelContextProtocol.Core": "[2.3.0]"
-        }
-      },
-      "ModelContextProtocol.Core": {
-        "type": "Transitive",
-        "resolved": "2.3.0",
-        "contentHash": "EDpbQholhVWoNumb0Ab3oGv9LmXOLgaD5ixEIUkrnzpnqD0TJCSHTJ5G71/J1KlrQ98aWDclWTPMffKTnCJoMw==",
-        "dependencies": {
-          "Microsoft.Extensions.AI.Abstractions": "10.11.0"
-        }
       },
       "ModelContextProtocol.Extensions.Apps": {
         "type": "Transitive",
@@ -244,7 +223,7 @@
       "projectinsightmcp.server": {
         "type": "Project",
         "dependencies": {
-          "ModelContextProtocol": "[2.3.0, )",
+          "ModelContextProtocol": "[2.4.0, )",
           "ModelContextProtocol.Extensions.Apps": "[2.3.0, )",
           "ProjectInsightMCP.Core": "[1.0.0, )"
         }
