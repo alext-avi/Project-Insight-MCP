@@ -65,7 +65,7 @@ public static class AuthorizeEndpoints
             {
                 Secure = true, HttpOnly = true, SameSite = SameSiteMode.Lax, Path = "/", MaxAge = SessionLife
             });
-            return AuthorizePages.Activation(session.Id, activation.ActivationUrl, redirectHost, error: null);
+            return AuthorizePages.Activation(session.Id, activation.ActivationUrl, new Uri(request.RedirectUri), error: null);
         }).WithOAuthHeaders().RequireRateLimiting(RateLimits.Authorize);
 
         app.MapPost("/authorize/complete", async (HttpContext http, ISessionStore sessions, ICodeStore codes, IPiActivationClient pi,
@@ -91,7 +91,7 @@ public static class AuthorizeEndpoints
                 return AuthorizePages.Error(409, "This sign-in is already finished or in progress. Start again from Claude or ChatGPT.");
             var activationUrl = new Uri(session.PiActivationUrl);
             if (code.Length is 0 or > 64)
-                return AuthorizePages.Activation(session.Id, activationUrl, new Uri(session.RedirectUri).Host, "Paste the activation code Project Insight shows.");
+                return AuthorizePages.Activation(session.Id, activationUrl, new Uri(session.RedirectUri), "Paste the activation code Project Insight shows.");
 
             // Claim the session before calling PI, so a double submit completes it exactly once. Not tied to the
             // request: an aborted POST must not leave the claim undecided while the work below carries on.
@@ -119,7 +119,7 @@ public static class AuthorizeEndpoints
                     await sessions.TryReplaceAsync(claimed with { Status = SessionStatus.Pending, Attempts = attempts }, CancellationToken.None);
                     if (result.Outcome == PiActivationOutcome.WrongCode)
                         logger.LogWarning("Wrong activation code for sign-in {Session} (attempt {Attempt})", TokenHash.Of(session.Id)[..12], attempts);
-                    return AuthorizePages.Activation(session.Id, activationUrl, new Uri(session.RedirectUri).Host, result.Outcome == PiActivationOutcome.WrongCode
+                    return AuthorizePages.Activation(session.Id, activationUrl, new Uri(session.RedirectUri), result.Outcome == PiActivationOutcome.WrongCode
                         ? "That code didn't work. Check it and try again."
                         : "Project Insight didn't respond. Try again in a moment.");
                 }

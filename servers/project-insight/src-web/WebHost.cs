@@ -143,6 +143,8 @@ public static class WebHost
         app.MapMcp("/mcp").RequireAuthorization().RequireRateLimiting(RateLimits.Mcp);
 
         app.MapGet("/healthz", () => Results.Json(new { status = "ok", version = Version }));
+        // App Service's Always On pings "/" every few minutes; answer it rather than log a stream of 404s.
+        app.MapGet("/", () => Results.Text("Project Insight MCP server. Connect an MCP client to /mcp.", "text/plain"));
     }
 
     // The deploy sets InformationalVersion to the commit SHA; reported as-is so the smoke test can match it.

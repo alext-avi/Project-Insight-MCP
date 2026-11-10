@@ -23,6 +23,16 @@ public class HostTests
         Assert.Equal(2, json.EnumerateObject().Count());
     }
 
+    [Fact]
+    public async Task Root_answers_the_platform_ping_with_a_plain_page()
+    {
+        using var factory = new WebFactory();
+        var response = await factory.Client().GetAsync("/");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("text/plain", response.Content.Headers.ContentType?.MediaType);
+    }
+
     [Theory]
     [InlineData("ProjectInsight:ApiToken", "static-token", "ProjectInsight:ApiToken")]
     [InlineData("Web:PublicBaseUrl", "http://mcp.test", "Web:PublicBaseUrl")]
