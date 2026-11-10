@@ -16,3 +16,48 @@ description = "An Azure App Service or Functions hostname"
 regex = '''(?i)[a-z0-9-]+\.azurewebsites\.net'''
   [rules.allowlist]
   regexes = ['''(?i)^(your-function-app|your-function-app-name|func-your-function-app|your-app|example)\.azurewebsites\.net$''']
+
+# Azure identifiers this repo was scrubbed of. Each rule captures only the identifier (secretGroup), so the
+# allowlists below test the GUID or account name alone, anchored with ^...$.
+[[rules]]
+id = "azure-resource-id"
+description = "An Azure resource id with a real subscription GUID"
+regex = '''(?i)/subscriptions/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'''
+secretGroup = 1
+keywords = ["/subscriptions/"]
+
+[[rules]]
+id = "azure-id-assignment"
+description = "A GUID given as a tenant, subscription, client, app, object or principal id"
+regex = '''(?i)\b(?:tenant|tenant[-_]?id|subscription|subscription[-_]?id|client[-_]?id|app[-_]?id|object[-_]?id|principal[-_]?id|(?:azure|arm)_[a-z0-9_]*?_id)\b["']?\s{0,3}(?:[:=]|=>)?\s{0,3}["']?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b'''
+secretGroup = 1
+keywords = ["tenant", "subscription", "client", "appid", "app_id", "app-id", "object", "principal", "azure_", "arm_"]
+
+[[rules]]
+id = "app-insights-key"
+description = "An Application Insights instrumentation key or application id (as in a connection string)"
+regex = '''(?i)\b(?:InstrumentationKey|ApplicationId)["']?\s{0,3}[:=]\s{0,3}["']?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b'''
+secretGroup = 1
+keywords = ["instrumentationkey", "applicationid"]
+
+[[rules]]
+id = "azure-storage-host"
+description = "An Azure Storage account hostname"
+regex = '''(?i)\b([a-z0-9]{3,24})\.(?:blob|table|queue|file|dfs)\.core\.windows\.net'''
+secretGroup = 1
+keywords = [".core.windows.net"]
+  [rules.allowlist]
+  # Placeholders, the Azurite account, and the private-endpoint DNS zone.
+  regexes = ['''(?i)^(acct|account|myaccount|youraccount|mystorageaccount|yourstorageaccount|storageaccount|example|devstoreaccount1|privatelink)$''']
+
+# GUIDs that identify nobody: the all-zero placeholder, built-in Azure role definitions used in bicep/
+# (Storage Table Data Contributor, Storage Blob Data Contributor, Website Contributor), and the fake PI user
+# ids in the tests.
+[[allowlists]]
+description = "Placeholder, built-in role and test GUIDs"
+targetRules = ["azure-resource-id", "azure-id-assignment", "app-insights-key"]
+regexes = [
+  '''^0{8}-0{4}-0{4}-0{4}-0{12}$''',
+  '''(?i)^(0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3|ba92f5b4-2d11-453d-a403-e96b0029c9fe|de139f84-1756-47ae-9be6-808fbbe84772)$''',
+  '''(?i)^0f0e2a4c-[0-9a-f]{4}-4a4a-9b9b-[0-9a-f]{12}$''',
+]
