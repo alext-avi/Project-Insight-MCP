@@ -41,6 +41,7 @@ internal sealed class RendezvousSessionStore(ISessionStore inner, Rendezvous mee
 
     public Task<bool> TryReplaceAsync(SignInSession updated, CancellationToken ct) => inner.TryReplaceAsync(updated, ct);
     public Task DeleteAsync(string id, CancellationToken ct) => inner.DeleteAsync(id, ct);
+    public Task DeleteByCookieAsync(string cookieHash, CancellationToken ct) => inner.DeleteByCookieAsync(cookieHash, ct);
     public Task PruneAsync(DateTimeOffset now, CancellationToken ct) => inner.PruneAsync(now, ct);
 }
 

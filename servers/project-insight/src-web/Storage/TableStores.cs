@@ -21,6 +21,9 @@ internal static class TableUtil
     public static string NotBefore(string property, DateTimeOffset at)
         => $"PartitionKey eq '{Partition}' and {property} ge {DateTime(at)}";
 
+    /// <summary>A value for a single-quoted OData string literal.</summary>
+    public static string Quote(string value) => value.Replace("'", "''", StringComparison.Ordinal);
+
     public static async Task DeleteMatchingAsync(TableClient table, string filter, CancellationToken ct)
     {
         await foreach (var e in table.QueryAsync<TableEntity>(filter, select: ["PartitionKey", "RowKey"], cancellationToken: ct))
@@ -88,15 +91,51 @@ public sealed class TableSessionStore(TableClient table) : ISessionStore
 
     public async Task<SessionCreate> TryCreateAsync(SignInSession session, int maxOutstanding, int maxPerClient, DateTimeOffset now, CancellationToken ct)
     {
-        // Count, then add: not atomic, but the rate limit bounds how far concurrent starts can overshoot.
-        var live = TableUtil.NotBefore("ExpiresAt", now);
-        if (session.ClientKeyHash is { } key
-            && await TableUtil.CountAtMostAsync(table, $"{live} and ClientKey eq '{key.Replace("'", "''")}'", maxPerClient, ct) >= maxPerClient)
-            return SessionCreate.ClientFull;
-        if (await TableUtil.CountAtMostAsync(table, live, maxOutstanding, ct) >= maxOutstanding)
-            return SessionCreate.Full;
+        // Add, then count, and take the row back if it went over a cap. Table storage can't count and add in one
+        // step, and count-then-add let a parallel burst all count before any added. This way the racer that added
+        // last counts every row added before it, so no set of accepted sessions exceeds a cap; racers near a cap may
+        // refuse each other instead, and can start again.
         await table.AddEntityAsync(ToEntity(session), ct);
+        SessionCreate outcome;
+        try
+        {
+            outcome = await CheckCapsAsync(session, maxOutstanding, maxPerClient, now, ct);
+        }
+        catch
+        {
+            await ForgetQuietlyAsync(session.Id);
+            throw;
+        }
+        if (outcome != SessionCreate.Created)
+            await table.DeleteEntityAsync(Partition, session.Id, ETag.All, CancellationToken.None);
+        return outcome;
+    }
+
+    private async Task<SessionCreate> CheckCapsAsync(SignInSession session, int maxOutstanding, int maxPerClient, DateTimeOffset now, CancellationToken ct)
+    {
+        var live = TableUtil.NotBefore("ExpiresAt", now);
+        // The new row is among those counted when it is live itself; the caps apply to the others.
+        var self = session.ExpiresAt >= now ? 1 : 0;
+        if (session.ClientKeyHash is { } key
+            && await TableUtil.CountAtMostAsync(table, $"{live} and ClientKey eq '{TableUtil.Quote(key)}'", Plus(maxPerClient, self), ct) - self >= maxPerClient)
+            return SessionCreate.ClientFull;
+        if (await TableUtil.CountAtMostAsync(table, live, Plus(maxOutstanding, self), ct) - self >= maxOutstanding)
+            return SessionCreate.Full;
         return SessionCreate.Created;
+
+        static int Plus(int max, int self) => (int)Math.Min(int.MaxValue, (long)max + self);
+    }
+
+    private async Task ForgetQuietlyAsync(string id)
+    {
+        try
+        {
+            await table.DeleteEntityAsync(Partition, id, ETag.All, CancellationToken.None);
+        }
+        catch (RequestFailedException)
+        {
+            // It expires with the session life anyway.
+        }
     }
 
     public async Task<SignInSession?> GetAsync(string id, CancellationToken ct)
@@ -126,6 +165,10 @@ public sealed class TableSessionStore(TableClient table) : ISessionStore
     public async Task DeleteAsync(string id, CancellationToken ct)
         => await table.DeleteEntityAsync(Partition, id, ETag.All, ct);
 
+    // A scan of the one partition, which the caps keep to a few hundred rows.
+    public Task DeleteByCookieAsync(string cookieHash, CancellationToken ct)
+        => TableUtil.DeleteMatchingAsync(table, $"PartitionKey eq '{Partition}' and CookieHash eq '{TableUtil.Quote(cookieHash)}'", ct);
+
     public Task PruneAsync(DateTimeOffset now, CancellationToken ct)
         => TableUtil.DeleteMatchingAsync(table, TableUtil.Before("ExpiresAt", now), ct);
 
@@ -133,7 +176,8 @@ public sealed class TableSessionStore(TableClient table) : ISessionStore
     {
         ["Json"] = JsonSerializer.Serialize(s with { Version = null }, TableUtil.Json),
         ["ExpiresAt"] = s.ExpiresAt,
-        ["ClientKey"] = s.ClientKeyHash
+        ["ClientKey"] = s.ClientKeyHash,
+        ["CookieHash"] = s.CookieHash
     };
 }
 

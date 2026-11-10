@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -17,6 +18,7 @@ public static class AuthorizeEndpoints
     public const string CookieName = "__Host-pi_auth";
     private static readonly TimeSpan SessionLife = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan CodeLife = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan FullRetryAfter = TimeSpan.FromMinutes(5);
 
     public static void MapAuthorize(this WebApplication app)
     {
@@ -41,6 +43,12 @@ public static class AuthorizeEndpoints
             if (failure is not null)
                 return failure;
 
+            // A browser starting again gives up the sign-in it started before: the new cookie replaces the one that
+            // sign-in is bound to, so it could never be finished, yet would hold one of its network's slots. A client
+            // that drops cookies supersedes nothing, and the per-network cap still counts each of its starts.
+            if (http.Request.Cookies[CookieName] is { } previous && CodeProtector.IsWellFormed(previous))
+                await DeleteByCookieQuietlyAsync(sessions, TokenHash.Of(previous), logger);
+
             // The slot is reserved before PI is asked, so a start the caps refuse never opens a PI activation.
             var cookie = CodeProtector.NewCode();
             var now = time.GetUtcNow();
@@ -58,13 +66,18 @@ public static class AuthorizeEndpoints
                 ExpiresAt = now + SessionLife,
                 Status = SessionStatus.Starting,
                 // The rate limiter's partition, so one network can't hold more than its share of the global cap.
-                ClientKeyHash = TokenHash.Of(RateLimits.ClientKey(http))
+                ClientKeyHash = NetworkKey.Of(RateLimits.ClientKey(http))
             };
-            switch (await sessions.TryCreateAsync(session, MaxOutstandingSessions, MaxSessionsPerClient, now, ct))
+            // Not tied to the request: a client that aborts after the store accepted the reservation would otherwise
+            // leave it held, unreleased, for the session's whole life. From here the finally below releases it.
+            switch (await sessions.TryCreateAsync(session, MaxOutstandingSessions, MaxSessionsPerClient, now, CancellationToken.None))
             {
                 case SessionCreate.ClientFull:
-                    return AuthorizePages.Error(429, "Too many sign-ins are in progress from your network. Finish one, or try again in 15 minutes.");
+                    // Another sign-in from this network ends within the session life at most.
+                    http.Response.Headers.RetryAfter = ((int)SessionLife.TotalSeconds).ToString(CultureInfo.InvariantCulture);
+                    return AuthorizePages.Error(429, "Too many sign-ins are in progress from your network. Finish one in the browser that started it, or try again in 15 minutes.");
                 case SessionCreate.Full:
+                    http.Response.Headers.RetryAfter = ((int)FullRetryAfter.TotalSeconds).ToString(CultureInfo.InvariantCulture);
                     return AuthorizePages.Error(503, "Too many sign-ins in progress. Try again in a few minutes.");
             }
 
@@ -100,6 +113,8 @@ public static class AuthorizeEndpoints
                         Status = SessionStatus.Pending
                     }, ct))
                     return AuthorizePages.Error(503, "Something went wrong starting the sign-in. Try again in a moment.");
+                // A client already gone never gets the cookie, so this sign-in could never be finished: release it.
+                ct.ThrowIfCancellationRequested();
                 started = true;
 
                 http.Response.Cookies.Append(CookieName, cookie, new CookieOptions
@@ -210,6 +225,19 @@ public static class AuthorizeEndpoints
         catch (Exception ex)
         {
             logger.LogWarning("Could not restore sign-in {Session}: {Error}", TokenHash.Of(id)[..12], ex.GetType().Name);
+        }
+    }
+
+    private static async Task DeleteByCookieQuietlyAsync(ISessionStore sessions, string cookieHash, ILogger logger)
+    {
+        try
+        {
+            await sessions.DeleteByCookieAsync(cookieHash, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // It expires with the session life anyway; the new start goes ahead.
+            logger.LogWarning("Could not release a browser's earlier sign-in: {Error}", ex.GetType().Name);
         }
     }
 

@@ -44,7 +44,7 @@ public sealed record SignInSession
     public int Attempts { get; init; }
     public string Status { get; init; } = SessionStatus.Pending;
     public required DateTimeOffset ExpiresAt { get; init; }
-    /// <summary>Hash of the creating client's rate-limit partition (its IPv4 address or IPv6 /64), for the per-client cap.</summary>
+    /// <summary>Keyed hash of the creating client's rate-limit partition (its IPv4 address or IPv6 /64), for the per-client cap.</summary>
     public string? ClientKeyHash { get; init; }
     /// <summary>Concurrency token set by the store on read; ignored on create.</summary>
     public string? Version { get; init; }
@@ -54,13 +54,16 @@ public interface ISessionStore
 {
     /// <summary>
     /// Refused when <paramref name="maxOutstanding"/> unexpired sessions exist, or <paramref name="maxPerClient"/>
-    /// with the session's <see cref="SignInSession.ClientKeyHash"/>.
+    /// with the session's <see cref="SignInSession.ClientKeyHash"/>. The caps hold under concurrent creates: racing
+    /// creates may refuse each other near a cap, but never add more than it allows.
     /// </summary>
     Task<SessionCreate> TryCreateAsync(SignInSession session, int maxOutstanding, int maxPerClient, DateTimeOffset now, CancellationToken ct);
     Task<SignInSession?> GetAsync(string id, CancellationToken ct);
     /// <summary>Saves <paramref name="updated"/> only if the stored session still has updated.Version.</summary>
     Task<bool> TryReplaceAsync(SignInSession updated, CancellationToken ct);
     Task DeleteAsync(string id, CancellationToken ct);
+    /// <summary>Deletes the sessions bound to the browser cookie whose hash is <paramref name="cookieHash"/>.</summary>
+    Task DeleteByCookieAsync(string cookieHash, CancellationToken ct);
     Task PruneAsync(DateTimeOffset now, CancellationToken ct);
 }
 

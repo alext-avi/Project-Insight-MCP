@@ -315,6 +315,8 @@ public abstract class SessionStoreContract
 {
     protected abstract bool Available { get; }
     protected abstract Task<ISessionStore> CreateAsync();
+    /// <summary>A store whose row writes all wait at <paramref name="meet"/>; one that can't race ignores it.</summary>
+    private protected virtual Task<ISessionStore> CreateRacingAsync(Rendezvous meet) => CreateAsync();
     private static readonly DateTimeOffset Now = new(2026, 11, 2, 9, 0, 0, TimeSpan.Zero);
 
     private static SignInSession Session(string id, DateTimeOffset? expires = null) => new()
@@ -372,6 +374,69 @@ public abstract class SessionStoreContract
         Assert.Null(await store.GetAsync("c", default));
         Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(From("d", "k2"), 10, 2, Now, default));
         Assert.Equal("k2", (await store.GetAsync("d", default))!.ClientKeyHash);
+    }
+
+    private const int Racers = 8, RaceCap = 3;
+
+    /// <summary>Creates until refused (bounded); the number created.</summary>
+    private static async Task<int> FillAsync(ISessionStore store, Func<int, SignInSession> session, int maxOutstanding, int maxPerClient)
+    {
+        var n = 0;
+        while (n < 20 && await store.TryCreateAsync(session(n), maxOutstanding, maxPerClient, Now, default) == SessionCreate.Created)
+            n++;
+        return n;
+    }
+
+    [SkippableFact]
+    public async Task Racing_creates_from_one_network_never_exceed_its_cap()
+    {
+        Skip.IfNot(Available);
+        var meet = new Rendezvous(Racers);
+        var store = await CreateRacingAsync(meet);
+        meet.Arm();
+
+        var results = await Task.WhenAll(Enumerable.Range(0, Racers).Select(i => Task.Run(() =>
+            store.TryCreateAsync(Session("race" + i) with { ClientKeyHash = "k1" }, 100, RaceCap, Now, default))));
+
+        var created = results.Count(r => r == SessionCreate.Created);
+        Assert.True(created <= RaceCap, $"{created} racing creates from one network were accepted; the cap is {RaceCap}");
+        Assert.All(results, r => Assert.NotEqual(SessionCreate.Full, r));
+        // The refused racers took their rows back: the network fills to exactly its cap.
+        Assert.Equal(RaceCap, created + await FillAsync(store, n => Session("after" + n) with { ClientKeyHash = "k1" }, 100, RaceCap));
+    }
+
+    [SkippableFact]
+    public async Task Racing_creates_from_many_networks_never_exceed_the_global_cap()
+    {
+        Skip.IfNot(Available);
+        var meet = new Rendezvous(Racers);
+        var store = await CreateRacingAsync(meet);
+        meet.Arm();
+
+        var results = await Task.WhenAll(Enumerable.Range(0, Racers).Select(i => Task.Run(() =>
+            store.TryCreateAsync(Session("race" + i) with { ClientKeyHash = "net" + i }, RaceCap, 100, Now, default))));
+
+        var created = results.Count(r => r == SessionCreate.Created);
+        Assert.True(created <= RaceCap, $"{created} racing creates were accepted; the global cap is {RaceCap}");
+        Assert.Equal(RaceCap, created + await FillAsync(store, n => Session("after" + n) with { ClientKeyHash = "late" + n }, RaceCap, 100));
+    }
+
+    [SkippableFact]
+    public async Task Deleting_by_cookie_removes_only_that_browsers_sessions_and_frees_their_slots()
+    {
+        Skip.IfNot(Available);
+        var store = await CreateAsync();
+        await store.TryCreateAsync(Session("mine-1") with { CookieHash = "browser-a", ClientKeyHash = "k1" }, 10, 2, Now, default);
+        await store.TryCreateAsync(Session("mine-2") with { CookieHash = "browser-a", ClientKeyHash = "k1" }, 10, 2, Now, default);
+        await store.TryCreateAsync(Session("theirs") with { CookieHash = "browser-b", ClientKeyHash = "k2" }, 10, 2, Now, default);
+
+        await store.DeleteByCookieAsync("browser-a", default);
+        await store.DeleteByCookieAsync("no-such-browser", default);
+
+        Assert.Null(await store.GetAsync("mine-1", default));
+        Assert.Null(await store.GetAsync("mine-2", default));
+        Assert.NotNull(await store.GetAsync("theirs", default));
+        Assert.Equal(2, await FillAsync(store, n => Session("again" + n) with { ClientKeyHash = "k1" }, 10, 2));
     }
 
     [SkippableFact]
@@ -449,5 +514,22 @@ public sealed class TableSessionStoreTests : SessionStoreContract
         var table = new TableClient(AzuriteStorage.ConnectionString, AzuriteStorage.UniqueName("sessions"));
         await table.CreateIfNotExistsAsync();
         return new TableSessionStore(table);
+    }
+
+    private protected override async Task<ISessionStore> CreateRacingAsync(Rendezvous meet)
+    {
+        var table = new MeetBeforeAddTable(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("sessions"), meet);
+        await table.CreateIfNotExistsAsync();
+        return new TableSessionStore(table);
+    }
+
+    /// <summary>Every racer has done whatever it does before adding its row (a count, say) before any row is added.</summary>
+    private sealed class MeetBeforeAddTable(string connectionString, string name, Rendezvous meet) : TableClient(connectionString, name)
+    {
+        public override async Task<Azure.Response> AddEntityAsync<T>(T entity, CancellationToken cancellationToken = default)
+        {
+            await meet.ArriveAsync();
+            return await base.AddEntityAsync(entity, cancellationToken);
+        }
     }
 }

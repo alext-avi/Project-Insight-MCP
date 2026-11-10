@@ -83,8 +83,17 @@ server checked in the last 10 minutes doesn't count.
 
 At most 3 sign-ins can be in progress from one network (an IPv4 address, or an IPv6 /64) at a time,
 and 200 across the server. A sign-in is in progress from **Sign in to Project Insight** until you
-finish it, it ends after too many wrong codes, or 15 minutes pass. A fourth start shows "Too many
-sign-ins are in progress from your network": finish one, or wait and start again.
+finish it, it ends after too many wrong codes, or 15 minutes pass. Clicking **Sign in to Project
+Insight** again in the same browser replaces that browser's earlier sign-in, so retrying never uses
+up the limit; only sign-ins started in other browsers or apps on your network count against it. Past
+the limit, a start shows "Too many sign-ins are in progress from your network" (HTTP 429, with a
+`Retry-After` of 15 minutes, by which time the others have ended): finish one of
+those sign-ins in the browser that started it, or wait and start again. Past the server-wide limit,
+a start shows "Too many sign-ins in progress" (HTTP 503, with `Retry-After` of 5 minutes).
+
+To count sign-ins per network, the server stores a keyed hash of the network address with each
+sign-in. The key is random, made when the server starts and never stored, so the stored value can't
+be turned back into an address.
 
 Hosted connectors (Claude, ChatGPT) call from their vendors' shared backend addresses, so many users
 of the same vendor share one limit for `/mcp`, `/token` and `/register`. If users see 429 errors,

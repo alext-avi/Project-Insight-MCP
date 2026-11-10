@@ -69,6 +69,7 @@ public class AuthorizeHardeningTests
             return replaced;
         }
         public Task DeleteAsync(string id, CancellationToken ct) => inner.DeleteAsync(id, ct);
+        public Task DeleteByCookieAsync(string cookieHash, CancellationToken ct) => inner.DeleteByCookieAsync(cookieHash, ct);
         public Task PruneAsync(DateTimeOffset now, CancellationToken ct) => inner.PruneAsync(now, ct);
     }
 

@@ -184,6 +184,8 @@ It then renders the consent page. Link unfurlers, Safe Links and crawlers that f
 
 1. Re-validates the request.
 2. Creates the sign-in session (15 minutes) and binds it to the browser with a `__Host-pi_auth` cookie: Secure, HttpOnly, SameSite=Lax, a random value whose hash is stored in the session.
+   - A browser that already holds the cookie gives up the sessions bound to it first: the new cookie replaces it, so they could never be finished.
+   - The session is refused, before PI is asked, when its network (IPv4 address or IPv6 /64) already holds 3 or the server 200: 429 or 503, each with `Retry-After`. The store adds the session, then counts, and takes it back if over a cap, so parallel starts can't overshoot. The network is stored as an HMAC under a random per-process key.
 3. Starts a PI device activation.
    - It uses `clientDevice` = "MCP connector (<redirect host>)", so the user can recognise the token in PI later.
    - It uses `timeoutMinutes` from `Auth:PiTokenLifetimeDays`.

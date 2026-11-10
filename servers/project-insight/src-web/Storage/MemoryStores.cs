@@ -85,6 +85,14 @@ public sealed class MemorySessionStore : ISessionStore
         return Task.CompletedTask;
     }
 
+    public Task DeleteByCookieAsync(string cookieHash, CancellationToken ct)
+    {
+        foreach (var (id, s) in _sessions)
+            if (s.CookieHash == cookieHash)
+                _sessions.TryRemove(id, out _);
+        return Task.CompletedTask;
+    }
+
     public Task PruneAsync(DateTimeOffset now, CancellationToken ct)
     {
         foreach (var (id, s) in _sessions)

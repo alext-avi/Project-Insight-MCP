@@ -7,8 +7,8 @@ using Microsoft.AspNetCore.WebUtilities;
 
 namespace ProjectInsightMCP.Tests.Web;
 
-/// <summary>Plays the browser: consent page, start, activation page, complete.</summary>
-public sealed partial class AuthorizeFlow(WebFactory factory)
+/// <summary>Plays the browser: consent page, start, activation page, complete. Without <paramref name="cookies"/>, a client that drops them.</summary>
+public sealed partial class AuthorizeFlow(WebFactory factory, bool cookies = true)
 {
     public const string Verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
     public const string Challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
@@ -18,7 +18,7 @@ public sealed partial class AuthorizeFlow(WebFactory factory)
     {
         BaseAddress = WebFactory.BaseAddress,
         AllowAutoRedirect = false,
-        HandleCookies = true
+        HandleCookies = cookies
     });
 
     /// <summary>The __Host-pi_auth cookie value the last consent POST set, for tests that scan for it.</summary>
