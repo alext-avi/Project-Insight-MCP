@@ -9,7 +9,7 @@ One-time setup for the remote MCP server on Azure App Service. Design: `docs/sup
 - Linux App Service plan (B1, one instance) and the web app `<prefix>-web` with a system-assigned identity, HTTPS only, FTP and SCM basic credentials off.
 - A diagnostic setting sending the web app's `AppServiceAuditLogs` (Kudu/SCM sign-ins and publishes) and `AppServicePlatformLogs` to the workspace.
 - Role assignments giving the web app's identity table and blob data access to the storage account.
-- A user-assigned `deployer` identity, federated to `deploy.yml` on `main` in the `production` environment, with a custom role that can only publish code and restart the app.
+- A user-assigned `deployer` identity, federated to `deploy.yml` on `main` in the `production` environment, with a custom role on the web app. The role can read the app, publish code, restart it, fetch the publishing profile (`publishxml`; its basic-auth credentials stay unusable while basic publishing is off, which the role can't change) and list the app settings with their values (`config/list`). It can't change settings, the credentials policy or anything outside the app.
 - `CanNotDelete` locks on the web app, the storage account, the deployer identity, the workspace, App Insights, the action group and both alert rules.
 - An email action group and two Activity Log alerts (section 9).
 
@@ -76,7 +76,10 @@ Actions, "Deploy remote server", Run workflow on `main`.
 - The custom role is too narrow for `azure/webapps-deploy`. Re-run step 3 with `param deployerRole = 'websiteContributor'` in your parameters file, and note it here.
 - If `azure/login` can't find the subscription, add `allow-no-subscriptions: true` to the login step.
 - If step 3 fails with `RoleDefinitionDoesNotExist`, the new custom role hasn't replicated yet; run step 3 again.
-- If you do switch roles, remove the old custom-role assignment from the web app (deployments are incremental and leave it in place).
+- Whichever way you switch (`custom` to `websiteContributor`, or back), then remove the previous assignment from
+  the web app. The assignment's name includes the role, so each switch adds a new assignment, and incremental
+  deployments leave the old one in place. Switching back to `custom` without removing Website Contributor leaves
+  the deploy identity able to change app settings and the credentials policy.
 
 ## 9. Alerts and audit logs
 

@@ -21,7 +21,7 @@ param alertEmail string
 @description('GitHub repository (owner/name) whose deploy.yml on main may publish code.')
 param githubRepository string
 
-@description('custom: publish and restart only. websiteContributor: fallback if the custom role cannot deploy.')
+@description('custom: read, publish, restart, fetch the publishing profile and list settings on the app; no writes to settings. websiteContributor: fallback if the custom role cannot deploy.')
 @allowed([ 'custom', 'websiteContributor' ])
 param deployerRole string = 'custom'
 
