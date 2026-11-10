@@ -7,6 +7,6 @@
     <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902</WarningsNotAsErrors>
     <!-- The MCP SDK's packages must share one version: ModelContextProtocol.AspNetCore requires exactly its own version
          of ModelContextProtocol. Every reference uses this property, so an update moves them together. -->
-    <ModelContextProtocolVersion>2.3.0</ModelContextProtocolVersion>
+    <ModelContextProtocolVersion>2.4.0</ModelContextProtocolVersion>
   </PropertyGroup>
 </Project>
