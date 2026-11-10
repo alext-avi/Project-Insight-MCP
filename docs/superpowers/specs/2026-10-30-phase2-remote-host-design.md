@@ -329,13 +329,15 @@ So the infrastructure adds visibility rather than a lockout:
 - a `CanNotDelete` lock on this app's resources: the web app, storage account, deployer identity, Log Analytics workspace, App Insights, action group and both alert rules;
 - a diagnostic setting sending the web app's `AppServiceAuditLogs` and `AppServicePlatformLogs` to the workspace, since a Kudu publish with an Entra token may leave no Activity Log event;
 - **Activity Log alerts** to the owner, any status (denied and failed attempts email too, and so does the owner's own Bicep redeploy):
-  - on the web app, storage account, deployer identity and the group-wide alert:
+  - on the web app, App Service plan, storage account, deployer identity and the group-wide alert:
     - `Microsoft.Storage/storageAccounts/write`
+    - `Microsoft.Web/serverfarms/write`
     - `Microsoft.Web/sites/write`
     - `Microsoft.Web/sites/config/write`
     - `Microsoft.Web/sites/basicPublishingCredentialsPolicies/write`
     - `Microsoft.Web/sites/sitecontainers/write`
     - `Microsoft.Web/sites/extensions/write`
+    - `Microsoft.Web/sites/sourcecontrols/write`
     - `Microsoft.Insights/diagnosticSettings/write` and `/delete`
     - `Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write`
     - `Microsoft.Insights/activityLogAlerts/write` and `/delete`

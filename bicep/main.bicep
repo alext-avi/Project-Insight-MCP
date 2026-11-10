@@ -276,14 +276,18 @@ resource ownerAlerts 'Microsoft.Insights/actionGroups@2023-01-01' = {
 
 // Changes that could expose tokens in flight or weaken the deploy trust, made outside this template. Role
 // assignments are watched group-wide by accessChanges below. The alert operations only occur on accessChanges,
-// which this rule also watches, so neither alert can be edited without the other emailing.
+// which this rule also watches, so neither alert can be edited without the other emailing. Source control
+// attaches an external git deployment, a route to new code; a plan write can scale out past the one instance the
+// in-memory caches and per-user queues assume.
 var watchedOperations = [
   'Microsoft.Storage/storageAccounts/write'
+  'Microsoft.Web/serverfarms/write'
   'Microsoft.Web/sites/write'
   'Microsoft.Web/sites/config/write'
   'Microsoft.Web/sites/basicPublishingCredentialsPolicies/write'
   'Microsoft.Web/sites/sitecontainers/write'
   'Microsoft.Web/sites/extensions/write'
+  'Microsoft.Web/sites/sourcecontrols/write'
   'Microsoft.Insights/diagnosticSettings/write'
   'Microsoft.Insights/diagnosticSettings/delete'
   'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write'
@@ -297,7 +301,7 @@ resource riskyChanges 'Microsoft.Insights/activityLogAlerts@2020-10-01' = {
   tags: tags
   properties: {
     enabled: true
-    scopes: [ site.id, storage.id, deployer.id, accessChanges.id ]
+    scopes: [ site.id, plan.id, storage.id, deployer.id, accessChanges.id ]
     condition: {
       allOf: [
         { field: 'category', equals: 'Administrative' }
