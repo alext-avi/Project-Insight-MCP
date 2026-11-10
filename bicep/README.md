@@ -33,6 +33,12 @@ az deployment group create --resource-group <resource-group> --parameters bicep/
 
 Note the outputs `webAppName`, `baseUrl` and `deployerClientId`.
 
+- **App settings live in `main.bicep` only.** The template writes the app's whole settings set, so a setting added
+  in the portal or with `az webapp config appsettings set` is removed by the next run of this step. Add any
+  setting you need (for example the optional `Auth__*` lists) to the `appSettings` resource, or as a parameter.
+- **Time zone.** `timeZone` (an IANA id, default `America/New_York`) sets `TZ` on the app, so the time-change
+  tools' "today" is the team's day rather than UTC's.
+
 ## 4. Restrict the deploy identity to `deploy.yml` on `main`
 
 ```bash

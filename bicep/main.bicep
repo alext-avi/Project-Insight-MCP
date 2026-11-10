@@ -25,6 +25,9 @@ param githubRepository string
 @allowed([ 'custom', 'websiteContributor' ])
 param deployerRole string = 'custom'
 
+@description('IANA time zone id for the server, e.g. America/New_York. Sets TZ, so "today" in the time-change tools is the team\'s day, not UTC\'s.')
+param timeZone string = 'America/New_York'
+
 param tags object = {}
 
 var storageName = take('st${uniqueString(resourceGroup().id, namePrefix)}', 24)
@@ -137,6 +140,8 @@ resource scmCredentials 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@
 
 var host = site.properties.defaultHostName
 
+// This replaces the app's whole settings set on every deploy of this template: a setting added in the portal is
+// removed by the next infrastructure deploy. Put every setting here.
 resource appSettings 'Microsoft.Web/sites/config@2024-04-01' = {
   parent: site
   name: 'appsettings'
@@ -155,6 +160,8 @@ resource appSettings 'Microsoft.Web/sites/config@2024-04-01' = {
     ASPNETCORE_FORWARDEDHEADERS_ENABLED: 'false'
     // Seconds the platform waits for graceful shutdown (default 5, max 120). The host's ShutdownTimeout is 60 s.
     WEBSITES_CONTAINER_STOP_TIME_LIMIT: '90'
+    // The time-change tools compute "today" (far-date warnings, the year in dates) in the server's local zone.
+    TZ: timeZone
   }
 }
 
