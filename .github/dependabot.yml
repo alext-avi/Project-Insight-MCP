@@ -1,26 +1,19 @@
 version: 2
 
-# Weekly version updates, grouped so each ecosystem opens at most a couple of PRs.
+# Weekly version updates, grouped so each ecosystem opens one PR across all its directories.
 # Security updates are enabled in the repo settings and are not limited by the groups below.
 updates:
-    # Local stdio server (.NET 10), the shared MCP wiring, and the tests. Lock files (all but the stdio host's,
-    # which has none) are updated with them.
-    - package-ecosystem: nuget
-      directories:
-          - "/servers/project-insight/src-stdio"
-          - "/servers/project-insight/server"
-          - "/servers/project-insight/tests"
-      schedule:
-          interval: weekly
-      groups:
-          minor-and-patch:
-              update-types: [minor, patch]
-
-    # Core, the shared MCP wiring's dependencies and the web host. Lock files are updated with them.
+    # Every .NET project in one entry, so a package used by several projects is bumped in one PR. Dependabot
+    # updates only the bumped project's own lock file; dependabot-lock-refresh.yml then refreshes the lock files
+    # of the projects that reference it. The stdio host has no lock file (single-file publish makes it
+    # machine-specific).
     - package-ecosystem: nuget
       directories:
           - "/servers/project-insight/core"
+          - "/servers/project-insight/server"
+          - "/servers/project-insight/src-stdio"
           - "/servers/project-insight/src-web"
+          - "/servers/project-insight/tests"
       schedule:
           interval: weekly
       groups:
