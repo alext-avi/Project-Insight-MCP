@@ -370,7 +370,7 @@ concurrency: { group: deploy-production, cancel-in-progress: false }
 ```
 
 1. **build** (no `id-token`, no environment):
-   - restore with `--locked-mode` (NuGet lock files for `src-web` and the projects it references);
+   - restore with `--locked-mode` through the tests project, so every project (core, server, both hosts, tests) is checked against its NuGet lock file and nothing later restores unlocked;
    - build, with warnings as errors as CI does;
    - run all tests;
    - publish `src-web` in Release, with the commit SHA as the informational version;

@@ -41,17 +41,16 @@ jobs:
                       exit 1
                   done
 
-            - name: Restore web host (locked)
-              run: dotnet restore servers/project-insight/src-web --locked-mode
+            # The tests project references core, server and both hosts, so this restores every project, each
+            # against its packages.lock.json. Later steps don't restore again.
+            - name: Restore (locked)
+              run: dotnet restore servers/project-insight/tests --locked-mode
 
-            - name: Build stdio host
-              run: dotnet build servers/project-insight/src-stdio --configuration Release
-
-            - name: Build web host
-              run: dotnet build servers/project-insight/src-web --configuration Release --no-restore
+            - name: Build
+              run: dotnet build servers/project-insight/tests --configuration Release --no-restore -warnaserror
 
             - name: Test
-              run: dotnet test servers/project-insight/tests --configuration Release
+              run: dotnet test servers/project-insight/tests --configuration Release --no-build
               env:
                   # UTC+14: a PI expiry read in local time instead of UTC would be off by 14 hours, which UTC CI can't catch.
                   TZ: Pacific/Kiritimati

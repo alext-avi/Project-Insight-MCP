@@ -48,18 +48,23 @@ jobs:
                       exit 1
                   done
 
+            # The tests project references core, server and both hosts, so this restores every project, each
+            # against its packages.lock.json. Nothing below restores again, so no unlocked package runs here.
             - name: Restore (locked)
-              run: dotnet restore servers/project-insight/src-web --locked-mode
+              run: dotnet restore servers/project-insight/tests --locked-mode
+
+            - name: Build
+              run: dotnet build servers/project-insight/tests --configuration Release --no-restore -warnaserror
 
             - name: Test
-              run: dotnet test servers/project-insight/tests --configuration Release
+              run: dotnet test servers/project-insight/tests --configuration Release --no-build
               env:
                   # Same as ci.yml: UTC+14 catches a PI expiry read in local time instead of UTC.
                   TZ: Pacific/Kiritimati
 
             - name: Publish
               run: >-
-                  dotnet publish servers/project-insight/src-web --configuration Release --output publish
+                  dotnet publish servers/project-insight/src-web --configuration Release --no-restore -warnaserror --output publish
                   -p:InformationalVersion=${{ github.sha }} -p:IncludeSourceRevisionInInformationalVersion=false
 
             - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
