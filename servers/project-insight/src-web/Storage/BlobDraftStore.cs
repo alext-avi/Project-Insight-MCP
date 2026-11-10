@@ -82,8 +82,9 @@ public sealed partial class BlobDraftStore(BlobContainerClient container, TimePr
         var now = time.GetUtcNow();
         if (_lastPruned.TryGetValue(owner, out var last) && now - last < OwnerPruneEvery)
             return true;
-        _lastPruned[owner] = now;
         await PruneOwnerAsync(owner, now, ct);
+        // Only once it worked: a failed prune shouldn't hold off the next one for an hour.
+        _lastPruned[owner] = now;
         return true;
     });
 
@@ -94,8 +95,8 @@ public sealed partial class BlobDraftStore(BlobContainerClient container, TimePr
             {
                 var owner = item.Prefix.TrimEnd('/').ToLowerInvariant();
                 var now = time.GetUtcNow();
-                _lastPruned[owner] = now;
                 await PruneOwnerAsync(owner, now, ct);
+                _lastPruned[owner] = now;
             }
         return true;
     });
@@ -119,8 +120,9 @@ public sealed partial class BlobDraftStore(BlobContainerClient container, TimePr
         }
     }
 
-    // A storage error carries its status, error code, response body and headers. The type and status go to the log;
-    // the tool result gets a short fixed message, as PI errors get a clipped one.
+    // A storage error carries its status, error code, response body and headers. The exception goes to the log (the
+    // log processor redacts the caller's token, though storage never sees it) and stays as the inner exception; the
+    // tool result gets only the short fixed message, as PI errors get a clipped one.
     private async Task<T> Guard<T>(Func<Task<T>> call)
     {
         try
@@ -129,9 +131,9 @@ public sealed partial class BlobDraftStore(BlobContainerClient container, TimePr
         }
         catch (Exception ex) when (ex is RequestFailedException or AggregateException)
         {
-            (logger ?? NullLogger<BlobDraftStore>.Instance).LogWarning("Draft storage failed: {Error} (HTTP {Status})",
+            (logger ?? NullLogger<BlobDraftStore>.Instance).LogWarning(ex, "Draft storage failed: {Error} (HTTP {Status})",
                 ex.GetType().Name, (ex as RequestFailedException)?.Status);
-            throw new TimeChangeException("storage_unavailable", Unavailable);
+            throw new TimeChangeException("storage_unavailable", Unavailable, ex);
         }
     }
 

@@ -1,4 +1,5 @@
 using Azure.Storage.Blobs;
+using Microsoft.Extensions.Logging;
 using ProjectInsightMCP.Tests.TimeChanges;
 using ProjectInsightMCP.TimeChanges;
 using ProjectInsightMCP.Web.Storage;
@@ -199,6 +200,63 @@ public sealed class BlobDraftStoreContractTests : DraftStoreContract
         Assert.Equal(4, container.Downloads);
     }
 
+    [SkippableFact]
+    public async Task A_failed_plan_prune_does_not_hold_off_the_next_one()
+    {
+        Skip.IfNot(Available);
+        var container = new CountingContainer(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("drafts"));
+        await container.CreateIfNotExistsAsync();
+        var store = new BlobDraftStore(container, Time);
+        await store.CreateAsync(Drafts.New(id: "d_old1"));
+        Time.Now += TimeSpan.FromDays(8);
+
+        container.FailDownloads = true;
+        await Assert.ThrowsAsync<TimeChangeException>(() => store.PruneAsync("u-1"));
+        container.FailDownloads = false;
+        await store.PruneAsync("u-1");
+
+        Assert.Null(await store.GetAsync("u-1", "d_old1"));
+    }
+
+    [SkippableFact]
+    public async Task A_failed_full_prune_does_not_hold_off_a_plans_prune()
+    {
+        Skip.IfNot(Available);
+        var container = new CountingContainer(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("drafts"));
+        await container.CreateIfNotExistsAsync();
+        var store = new BlobDraftStore(container, Time);
+        await store.CreateAsync(Drafts.New(id: "d_old1"));
+        Time.Now += TimeSpan.FromDays(8);
+
+        container.FailDownloads = true;
+        await Assert.ThrowsAsync<TimeChangeException>(() => store.PruneAllAsync());
+        container.FailDownloads = false;
+        await store.PruneAsync("u-1");
+
+        Assert.Null(await store.GetAsync("u-1", "d_old1"));
+    }
+
+    [SkippableFact]
+    public async Task A_storage_failure_keeps_its_cause_for_the_log_but_not_for_the_caller()
+    {
+        Skip.IfNot(Available);
+        var container = new CountingContainer(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("drafts"));
+        await container.CreateIfNotExistsAsync();
+        var logs = new CapturingLoggerProvider();
+        using var factory = LoggerFactory.Create(b => b.AddProvider(logs));
+        var store = new BlobDraftStore(container, Time, factory.CreateLogger<BlobDraftStore>());
+        await store.CreateAsync(Drafts.New(id: "d_one1"));
+
+        container.FailDownloads = true;
+        var failure = await Assert.ThrowsAsync<TimeChangeException>(() => store.GetAsync("u-1", "d_one1"));
+
+        Assert.Equal(BlobDraftStore.Unavailable, failure.Message);
+        Assert.Equal("storage_unavailable", failure.Code);
+        var cause = Assert.IsType<Azure.RequestFailedException>(failure.InnerException);
+        Assert.Equal(503, cause.Status);
+        Assert.Contains(logs.Lines, l => l.Contains(CountingContainer.FailureDetail, StringComparison.Ordinal));
+    }
+
     private sealed class CountingContainer : BlobContainerClient
     {
         private readonly string _connectionString;
@@ -207,6 +265,8 @@ public sealed class BlobDraftStoreContractTests : DraftStoreContract
         public CountingContainer(string connectionString, string name) : base(connectionString, name) => _connectionString = connectionString;
 
         public int Downloads => _downloads;
+        public const string FailureDetail = "storage-detail-for-the-log";
+        public volatile bool FailDownloads;
         public override BlobClient GetBlobClient(string blobName) => new CountingBlob(this, _connectionString, Name, blobName);
 
         private sealed class CountingBlob(CountingContainer owner, string connectionString, string container, string name)
@@ -215,7 +275,9 @@ public sealed class BlobDraftStoreContractTests : DraftStoreContract
             public override Task<Azure.Response<Azure.Storage.Blobs.Models.BlobDownloadResult>> DownloadContentAsync(CancellationToken cancellationToken = default)
             {
                 Interlocked.Increment(ref owner._downloads);
-                return base.DownloadContentAsync(cancellationToken);
+                return owner.FailDownloads
+                    ? throw new Azure.RequestFailedException(503, "Service unavailable: " + FailureDetail)
+                    : base.DownloadContentAsync(cancellationToken);
             }
         }
     }
