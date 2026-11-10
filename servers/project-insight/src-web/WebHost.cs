@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.AspNetCore;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Trace;
 using ProjectInsightMCP.Server;
 using ProjectInsightMCP.Services;
@@ -106,10 +107,18 @@ public static class WebHost
         // Unlike the rest of the setup this reads configuration before Build(): it is an environment
         // variable on App Service, and tests never set it.
         if (!string.IsNullOrEmpty(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
-            services.AddOpenTelemetry()
-                // Added before UseAzureMonitor, so it runs before the exporter sees the activity.
-                .WithTracing(t => t.AddProcessor(new QueryRedactionProcessor()))
-                .UseAzureMonitor();
+            services.AddTelemetry();
+    }
+
+    /// <summary>The Azure Monitor export, with the redaction processors ahead of its exporters.</summary>
+    public static void AddTelemetry(this IServiceCollection services)
+    {
+        services.AddHttpContextAccessor();
+        services.AddOpenTelemetry()
+            // Added before UseAzureMonitor, so they run before the exporter sees the activity or log record.
+            .WithTracing(t => t.AddProcessor(new QueryRedactionProcessor()))
+            .WithLogging(l => l.AddProcessor(sp => new LogRedactionProcessor(sp.GetRequiredService<IHttpContextAccessor>())))
+            .UseAzureMonitor();
     }
 
     /// <summary>Device-activation sign-in tools: the connector's OAuth sign-in replaces them.</summary>
