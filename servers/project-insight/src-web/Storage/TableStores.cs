@@ -142,9 +142,14 @@ public sealed class TableClientStore(TableClient table) : IClientStore
     private const string Partition = TableUtil.Partition;
 
     public async Task<RegisteredClient?> GetAsync(string clientId, CancellationToken ct)
+        => (await ReadAsync(clientId, ct))?.Client;
+
+    private async Task<(RegisteredClient Client, ETag ETag)?> ReadAsync(string clientId, CancellationToken ct)
     {
         var found = await table.GetEntityIfExistsAsync<TableEntity>(Partition, clientId, cancellationToken: ct);
-        return found.HasValue ? JsonSerializer.Deserialize<RegisteredClient>(found.Value!.GetString("Json"), TableUtil.Json) : null;
+        return found.HasValue
+            ? (JsonSerializer.Deserialize<RegisteredClient>(found.Value!.GetString("Json"), TableUtil.Json)!, found.Value.ETag)
+            : null;
     }
 
     public async Task<bool> TryAddAsync(RegisteredClient client, int max, CancellationToken ct)
@@ -184,22 +189,32 @@ public sealed class TableClientStore(TableClient table) : IClientStore
 
     public async Task TouchAsync(string clientId, DateTimeOffset at, bool signedIn, CancellationToken ct)
     {
-        var current = await GetAsync(clientId, ct);
-        if (current is null)
-            return;
-        var used = current.Used || signedIn;
-        try
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            // Merge only the changed fields; a missing row (pruned meanwhile) is fine.
-            await table.UpdateEntityAsync(new TableEntity(Partition, clientId)
+            if (await ReadAsync(clientId, ct) is not { } read)
+                return; // pruned meanwhile
+            var (current, etag) = read;
+            var used = current.Used || signedIn;
+            try
             {
-                ["Json"] = JsonSerializer.Serialize(current with { LastUsed = at, Used = used }, TableUtil.Json),
-                ["LastUsed"] = at,
-                ["Used"] = used
-            }, ETag.All, TableUpdateMode.Merge, ct);
-        }
-        catch (RequestFailedException ex) when (ex.Status == 404)
-        {
+                // Merge only the changed fields, and only over the row as read: otherwise a start touch that read
+                // Used=false could write it back over a sign-in that finished meanwhile.
+                await table.UpdateEntityAsync(new TableEntity(Partition, clientId)
+                {
+                    ["Json"] = JsonSerializer.Serialize(current with { LastUsed = at, Used = used }, TableUtil.Json),
+                    ["LastUsed"] = at,
+                    ["Used"] = used
+                }, etag, TableUpdateMode.Merge, ct);
+                return;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                return;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 412)
+            {
+                // Changed since the read; read again.
+            }
         }
     }
 

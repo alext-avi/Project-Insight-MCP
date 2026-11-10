@@ -261,6 +261,40 @@ public sealed class TableClientStoreTests : ClientStoreContract
         Assert.NotNull(await store.GetAsync("stale", default));
     }
 
+    [SkippableFact]
+    public async Task A_start_touch_that_read_before_a_sign_in_finished_does_not_unmark_the_client()
+    {
+        Skip.IfNot(Available);
+        var table = new SignInAfterFirstReadTable(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("clients"));
+        await table.CreateIfNotExistsAsync();
+        var store = new TableClientStore(table);
+        await store.TryAddAsync(new RegisteredClient("c1", "Claude", [AuthorizeFlow.ClaudeCallback], Now.AddHours(-2)), 10, default);
+        // The start touch reads Used=false, then a /token touch marks the client used before the start touch writes.
+        table.AfterFirstRead = () => store.TouchAsync("c1", Now, signedIn: true, default);
+
+        await store.TouchAsync("c1", Now.AddMinutes(-1), signedIn: false, default);
+
+        Assert.Null(table.AfterFirstRead);
+        Assert.True((await store.GetAsync("c1", default))!.Used);
+    }
+
+    private sealed class SignInAfterFirstReadTable(string connectionString, string name) : TableClient(connectionString, name)
+    {
+        public Func<Task>? AfterFirstRead { get; set; }
+
+        public override async Task<Azure.NullableResponse<T>> GetEntityIfExistsAsync<T>(string partitionKey, string rowKey,
+            IEnumerable<string>? select = null, CancellationToken cancellationToken = default)
+        {
+            var read = await base.GetEntityIfExistsAsync<T>(partitionKey, rowKey, select, cancellationToken);
+            if (AfterFirstRead is { } after)
+            {
+                AfterFirstRead = null;
+                await after();
+            }
+            return read;
+        }
+    }
+
     private sealed class TouchBeforeDeleteTable(string connectionString, string name) : TableClient(connectionString, name)
     {
         public Func<Task>? BeforeFirstDelete { get; set; }
