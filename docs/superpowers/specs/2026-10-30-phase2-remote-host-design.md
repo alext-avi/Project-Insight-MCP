@@ -325,6 +325,7 @@ So the infrastructure adds visibility rather than a lockout:
 - a `CanNotDelete` lock on this app's resources;
 - **Activity Log alerts** to the owner on:
   - `Microsoft.Storage/storageAccounts/write`
+  - `Microsoft.Web/sites/write`
   - `Microsoft.Web/sites/config/write`
   - `Microsoft.Web/sites/basicPublishingCredentialsPolicies/write`
   - `Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write`
@@ -344,7 +345,7 @@ If the server ever holds tokens for more than the owner and a few colleagues, th
 - **App identity roles:** Storage Table Data Contributor and Storage Blob Data Contributor on the storage account.
 - **Deployer identity:** a user-assigned managed identity with a federated credential.
   - **Subject:** `repo:alext-avi/Project-Insight-MCP:environment:production:job_workflow_ref:alext-avi/Project-Insight-MCP/.github/workflows/deploy.yml@refs/heads/main`. The repository's OIDC subject template is customised to include `job_workflow_ref`, so only `deploy.yml` on `main` can sign in, not any workflow that uses the environment.
-  - **Role:** a custom role on the web app only: `Microsoft.Web/sites/read`, `Microsoft.Web/sites/publish/Action`, `Microsoft.Web/sites/restart/Action`, plus `Microsoft.Web/sites/config/list/Action` if `webapps-deploy` needs it. It falls back to Website Contributor, scoped to the app, only if the custom role can't deploy. The plan records which was needed.
+  - **Role:** a custom role on the web app only: `Microsoft.Web/sites/read`, `Microsoft.Web/sites/publish/Action`, `Microsoft.Web/sites/restart/Action`, `Microsoft.Web/sites/config/list/Action`, and `Microsoft.Web/sites/publishxml/Action` (`webapps-deploy` fetches the publishing profile before deploying; its basic-auth credentials are unusable while basic publishing is off). It falls back to Website Contributor, scoped to the app, only if the custom role can't deploy. The plan records which was needed.
 
 Parameters: `namePrefix`, `location`, `piBaseUrl`, `allowedPiUserIds`, `ownerObjectId`, `alertEmail`. `bicep/main.bicepparam.example` shows them with placeholders. The real file (`*.bicepparam`, not `.example`) is gitignored. `main.json` (stale compiled ARM) and `parameters/*.json` are deleted.
 

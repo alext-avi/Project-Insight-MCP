@@ -2,7 +2,7 @@
 // No identifying values live here: the owner supplies them in a gitignored .bicepparam file.
 targetScope = 'resourceGroup'
 
-@description('Short prefix for resource names, e.g. pi-mcp. The web app is <prefix>-web.')
+@description('Short prefix for resource names. The web app is <prefix>-web, which must be unique across Azure, so pick something distinctive.')
 @minLength(3)
 @maxLength(20)
 param namePrefix string
@@ -200,13 +200,16 @@ resource codeDeployerRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' =
   name: customRoleName
   properties: {
     roleName: '${namePrefix} code deployer'
-    description: 'Publish code to one web app and restart it. No settings writes, no credentials policy, no Kudu console.'
+    description: 'Publish code to one web app and restart it. No settings writes, no credentials policy.'
     type: 'CustomRole'
     permissions: [
       {
         actions: [
           'Microsoft.Web/sites/read'
           'Microsoft.Web/sites/publish/Action'
+          // webapps-deploy fetches the publishing profile first; its basic-auth credentials stay unusable while both
+          // basicPublishingCredentialsPolicies are off, which this role can't change.
+          'Microsoft.Web/sites/publishxml/Action'
           'Microsoft.Web/sites/restart/Action'
           'Microsoft.Web/sites/config/list/Action'
         ]
@@ -222,7 +225,7 @@ resource deployerOnSite 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   dependsOn: [ codeDeployerRole ]
   properties: {
     roleDefinitionId: deployerRole == 'custom'
-      ? resourceId('Microsoft.Authorization/roleDefinitions', customRoleName)
+      ? subscriptionResourceId('Microsoft.Authorization/roleDefinitions', customRoleName)
       : subscriptionResourceId('Microsoft.Authorization/roleDefinitions', websiteContributor)
     principalId: deployer.properties.principalId
     principalType: 'ServicePrincipal'
@@ -267,6 +270,7 @@ resource ownerAlerts 'Microsoft.Insights/actionGroups@2023-01-01' = {
 // Changes that could expose tokens in flight or weaken the deploy trust, made outside this template.
 var watchedOperations = [
   'Microsoft.Storage/storageAccounts/write'
+  'Microsoft.Web/sites/write'
   'Microsoft.Web/sites/config/write'
   'Microsoft.Web/sites/basicPublishingCredentialsPolicies/write'
   'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write'

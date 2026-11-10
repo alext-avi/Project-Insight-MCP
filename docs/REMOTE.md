@@ -94,4 +94,5 @@ revoke it there.
 
 Not yet verified. The server must not be used until the owner has filled in this section with the
 Project Insight screen where a user, and an admin, revoke a device-activation token (each one is
-labelled "MCP connector (<app host>)"), and confirmed that a revoked token stops working.
+labelled "MCP connector (<client host>)", e.g. "MCP connector (claude.ai)", or 127.0.0.1/localhost
+for Claude Code and Codex), and confirmed that a revoked token stops working.
