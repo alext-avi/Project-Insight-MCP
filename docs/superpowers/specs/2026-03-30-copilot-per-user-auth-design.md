@@ -27,7 +27,7 @@ Add per-user authentication to the Azure Function MCP endpoint so each Copilot u
 ## Token Storage
 
 Azure Key Vault secret per user:
-- **Secret name**: `pi-token-{entra-oid}` (e.g., `pi-token-e2b6aa27-48bd-43ec-8093-49d71373c756`)
+- **Secret name**: `pi-token-{entra-oid}` (e.g., `pi-token-00000000-0000-0000-0000-000000000000`)
 - **Secret value**: PI API token (JWT)
 - **Tags**: `piUserId`, `linkedUtc`, `expiresUtc`, `userEmail`
 - **Uses the existing resource group's Key Vault** (or creates one if none exists)
