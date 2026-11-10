@@ -1,29 +1,57 @@
 name: CI
 
-# Builds the hosts (the shared server project builds with them) and runs the tests. Deployment is separate (deploy.yml, manual-only).
+# Builds both hosts and runs the tests, including the Table/Blob store tests against Azurite.
+# Deployment is separate: deploy.yml arrives with the infrastructure (Part C).
 on:
     pull_request:
     push:
         branches:
             - main
 
+permissions:
+    contents: read
+
 jobs:
     build-and-test:
         runs-on: ubuntu-latest
+        env:
+            AZURITE_CONNECTION_STRING: UseDevelopmentStorage=true
         steps:
             - name: Checkout code
               uses: actions/checkout@v7
+              with:
+                  persist-credentials: false
 
             - name: Setup .NET
               uses: actions/setup-dotnet@v6
               with:
                   dotnet-version: "10.0.x"
 
-            - name: Build Azure Functions host (net8.0)
-              run: dotnet build servers/project-insight/src --configuration Release
+            # A step, not a service container: Azurite needs --skipApiVersionCheck for current Azure SDKs.
+            - name: Start Azurite
+              run: |
+                  docker run -d --name azurite -p 10000-10002:10000-10002 mcr.microsoft.com/azure-storage/azurite:3.37.0 azurite --skipApiVersionCheck --loose --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
+                  for port in 10000 10001 10002; do
+                      for i in $(seq 1 30); do
+                          (echo > /dev/tcp/127.0.0.1/$port) 2>/dev/null && continue 2
+                          sleep 1
+                      done
+                      echo "Azurite port $port not ready after 30s" >&2
+                      docker logs azurite
+                      exit 1
+                  done
 
-            - name: Build stdio host (net10.0)
+            - name: Restore web host (locked)
+              run: dotnet restore servers/project-insight/src-web --locked-mode
+
+            - name: Build stdio host
               run: dotnet build servers/project-insight/src-stdio --configuration Release
+
+            - name: Build web host
+              run: dotnet build servers/project-insight/src-web --configuration Release --no-restore
 
             - name: Test
               run: dotnet test servers/project-insight/tests --configuration Release
+              env:
+                  # UTC+14: a PI expiry read in local time instead of UTC would be off by 14 hours, which UTC CI can't catch.
+                  TZ: Pacific/Kiritimati

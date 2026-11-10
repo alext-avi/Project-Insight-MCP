@@ -1,0 +1,15 @@
+body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f4f5f7; color: #1b1f24; margin: 0; }
+main { max-width: 28rem; margin: 3rem auto; padding: 1.5rem; background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0, 0, 0, .15); }
+h1 { font-size: 1.3rem; margin-top: 0; }
+.warn { background: #fff4d6; border-left: 4px solid #d99a00; padding: .6rem .8rem; }
+.error { background: #fde8e8; border-left: 4px solid #c62828; color: #7a1010; padding: .6rem .8rem; }
+label { display: block; margin: 1rem 0; }
+input[name=activation_code] { display: block; width: 100%; box-sizing: border-box; padding: .5rem; font-size: 1rem; margin-top: .3rem; }
+button { padding: .6rem 1.2rem; font-size: 1rem; border: 0; border-radius: 4px; background: #0b5cad; color: #fff; cursor: pointer; }
+@media (prefers-color-scheme: dark) {
+  body { background: #14171a; color: #e6e8eb; }
+  main { background: #1e2227; box-shadow: none; }
+  .warn { background: #3a2f10; }
+  .error { background: #3d1717; color: #ffb4b4; }
+  a { color: #7db7f5; }
+}

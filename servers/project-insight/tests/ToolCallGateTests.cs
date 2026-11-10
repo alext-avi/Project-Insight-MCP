@@ -46,6 +46,30 @@ public class ToolCallGateTests
     }
 
     [Fact]
+    public async Task Identities_that_differ_only_in_case_share_one_queue()
+    {
+        Assert.Equal(new ProjectInsightMCP.Web.Auth.PiCaller { UserId = "ABCD-ef01" }.Key,
+                     new ProjectInsightMCP.Web.Auth.PiCaller { UserId = "abcd-EF01" }.Key);
+
+        var gate = new ToolCallGate();
+        var running = 0;
+        var maxRunning = 0;
+        async Task<int> Call()
+        {
+            maxRunning = Math.Max(maxRunning, Interlocked.Increment(ref running));
+            await Task.Delay(50);
+            Interlocked.Decrement(ref running);
+            return 0;
+        }
+        var upper = new ProjectInsightMCP.Web.Auth.PiCaller { UserId = "ABCD-ef01" };
+        var lower = new ProjectInsightMCP.Web.Auth.PiCaller { UserId = "abcd-EF01" };
+
+        await Task.WhenAll(gate.RunAsync(upper.Key, Call, CancellationToken.None), gate.RunAsync(lower.Key, Call, CancellationToken.None));
+
+        Assert.Equal(1, maxRunning);
+    }
+
+    [Fact]
     public void Version_drops_the_source_revision()
         => Assert.Equal("2.1.0", ProjectInsightServer.VersionOf("2.1.0+abc123"));
 }
