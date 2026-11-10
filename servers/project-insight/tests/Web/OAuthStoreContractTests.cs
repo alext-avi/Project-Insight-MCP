@@ -317,9 +317,9 @@ public abstract class SessionStoreContract
     protected abstract Task<ISessionStore> CreateAsync();
     /// <summary>A store whose row writes all wait at <paramref name="meet"/>; one that can't race ignores it.</summary>
     private protected virtual Task<ISessionStore> CreateRacingAsync(Rendezvous meet) => CreateAsync();
-    private static readonly DateTimeOffset Now = new(2026, 11, 2, 9, 0, 0, TimeSpan.Zero);
+    private protected static readonly DateTimeOffset Now = new(2026, 11, 2, 9, 0, 0, TimeSpan.Zero);
 
-    private static SignInSession Session(string id, DateTimeOffset? expires = null) => new()
+    private protected static SignInSession Session(string id, DateTimeOffset? expires = null) => new()
     {
         Id = id,
         ClientId = "c1",
@@ -521,6 +521,31 @@ public sealed class TableSessionStoreTests : SessionStoreContract
         var table = new MeetBeforeAddTable(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("sessions"), meet);
         await table.CreateIfNotExistsAsync();
         return new TableSessionStore(table);
+    }
+
+    [SkippableFact]
+    public async Task A_refusal_stays_a_refusal_when_removing_its_row_fails()
+    {
+        Skip.IfNot(Available);
+        var table = new FailingDeleteTable(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("sessions"));
+        await table.CreateIfNotExistsAsync();
+        var store = new TableSessionStore(table);
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(Session("a") with { ClientKeyHash = "k1" }, 10, 1, Now, default));
+
+        table.FailDeletes = true;
+        var outcome = await store.TryCreateAsync(Session("b") with { ClientKeyHash = "k1" }, 10, 1, Now, default);
+
+        Assert.Equal(SessionCreate.ClientFull, outcome);
+    }
+
+    private sealed class FailingDeleteTable(string connectionString, string name) : TableClient(connectionString, name)
+    {
+        public volatile bool FailDeletes;
+
+        public override Task<Azure.Response> DeleteEntityAsync(string partitionKey, string rowKey, Azure.ETag ifMatch = default, CancellationToken cancellationToken = default)
+            => FailDeletes
+                ? throw new Azure.RequestFailedException(503, "Service unavailable")
+                : base.DeleteEntityAsync(partitionKey, rowKey, ifMatch, cancellationToken);
     }
 
     /// <summary>Every racer has done whatever it does before adding its row (a count, say) before any row is added.</summary>

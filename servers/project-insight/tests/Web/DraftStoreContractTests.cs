@@ -257,6 +257,43 @@ public sealed class BlobDraftStoreContractTests : DraftStoreContract
         Assert.Contains(logs.Lines, l => l.Contains(CountingContainer.FailureDetail, StringComparison.Ordinal));
     }
 
+    [SkippableFact]
+    public async Task A_cut_response_stream_reaches_the_caller_as_the_fixed_message()
+    {
+        Skip.IfNot(Available);
+        var container = new CountingContainer(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("drafts"));
+        await container.CreateIfNotExistsAsync();
+        var store = new BlobDraftStore(container, Time);
+        await store.CreateAsync(Drafts.New(id: "d_one1"));
+
+        container.FailWithCutStream = true;
+        var failure = await Assert.ThrowsAsync<TimeChangeException>(() => store.GetAsync("u-1", "d_one1"));
+
+        Assert.Equal(BlobDraftStore.Unavailable, failure.Message);
+        Assert.IsType<IOException>(failure.InnerException);
+    }
+
+    [SkippableFact]
+    public async Task One_owners_failure_does_not_stop_the_full_prune_for_the_others()
+    {
+        Skip.IfNot(Available);
+        var container = new CountingContainer(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("drafts"));
+        await container.CreateIfNotExistsAsync();
+        var store = new BlobDraftStore(container, Time);
+        // Owners are listed in name order, so the failing one comes first.
+        await store.CreateAsync(Drafts.New(owner: "u-1", id: "d_old1"));
+        await store.CreateAsync(Drafts.New(owner: "u-2", id: "d_old2"));
+        Time.Now += TimeSpan.FromDays(8);
+
+        container.FailOwner = "u-1";
+        var failure = await Assert.ThrowsAsync<TimeChangeException>(() => store.PruneAllAsync());
+        container.FailOwner = null;
+
+        Assert.Equal(BlobDraftStore.Unavailable, failure.Message);
+        Assert.Null(await store.GetAsync("u-2", "d_old2"));
+        Assert.NotNull(await store.GetAsync("u-1", "d_old1"));
+    }
+
     private sealed class CountingContainer : BlobContainerClient
     {
         private readonly string _connectionString;
@@ -267,6 +304,8 @@ public sealed class BlobDraftStoreContractTests : DraftStoreContract
         public int Downloads => _downloads;
         public const string FailureDetail = "storage-detail-for-the-log";
         public volatile bool FailDownloads;
+        public volatile bool FailWithCutStream;
+        public volatile string? FailOwner;
         public override BlobClient GetBlobClient(string blobName) => new CountingBlob(this, _connectionString, Name, blobName);
 
         private sealed class CountingBlob(CountingContainer owner, string connectionString, string container, string name)
@@ -275,7 +314,9 @@ public sealed class BlobDraftStoreContractTests : DraftStoreContract
             public override Task<Azure.Response<Azure.Storage.Blobs.Models.BlobDownloadResult>> DownloadContentAsync(CancellationToken cancellationToken = default)
             {
                 Interlocked.Increment(ref owner._downloads);
-                return owner.FailDownloads
+                if (owner.FailWithCutStream)
+                    throw new IOException("Unable to read data from the transport connection: " + FailureDetail);
+                return owner.FailDownloads || (owner.FailOwner is { } failing && Name.StartsWith(failing + "/", StringComparison.Ordinal))
                     ? throw new Azure.RequestFailedException(503, "Service unavailable: " + FailureDetail)
                     : base.DownloadContentAsync(cancellationToken);
             }

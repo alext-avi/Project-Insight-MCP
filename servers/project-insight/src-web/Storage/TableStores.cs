@@ -106,8 +106,9 @@ public sealed class TableSessionStore(TableClient table) : ISessionStore
             await ForgetQuietlyAsync(session.Id);
             throw;
         }
+        // A refusal must stay a refusal: a failed delete here would turn it into an error and leave the row counting.
         if (outcome != SessionCreate.Created)
-            await table.DeleteEntityAsync(Partition, session.Id, ETag.All, CancellationToken.None);
+            await ForgetQuietlyAsync(session.Id);
         return outcome;
     }
 

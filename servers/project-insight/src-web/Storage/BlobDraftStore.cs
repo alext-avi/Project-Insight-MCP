@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Azure;
@@ -90,14 +91,29 @@ public sealed partial class BlobDraftStore(BlobContainerClient container, TimePr
 
     public Task PruneAllAsync(CancellationToken ct = default) => Guard(async () =>
     {
+        Exception? failure = null;
         await foreach (var item in container.GetBlobsByHierarchyAsync(BlobTraits.None, BlobStates.None, "/", null, ct))
             if (item.IsPrefix && OwnerPattern().IsMatch(item.Prefix.TrimEnd('/')))
             {
                 var owner = item.Prefix.TrimEnd('/').ToLowerInvariant();
                 var now = time.GetUtcNow();
-                await PruneOwnerAsync(owner, now, ct);
-                _lastPruned[owner] = now;
+                try
+                {
+                    await PruneOwnerAsync(owner, now, ct);
+                    _lastPruned[owner] = now;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // One owner's failure mustn't starve the owners listed after it, hour after hour. The first one is
+                    // rethrown (and logged by Guard); later ones are logged here.
+                    if (failure is null)
+                        failure = ex;
+                    else
+                        (logger ?? NullLogger<BlobDraftStore>.Instance).LogWarning(ex, "Draft prune failed for an owner: {Error}", ex.GetType().Name);
+                }
             }
+        if (failure is not null)
+            ExceptionDispatchInfo.Throw(failure);
         return true;
     });
 
@@ -122,14 +138,15 @@ public sealed partial class BlobDraftStore(BlobContainerClient container, TimePr
 
     // A storage error carries its status, error code, response body and headers. The exception goes to the log (the
     // log processor redacts the caller's token, though storage never sees it) and stays as the inner exception; the
-    // tool result gets only the short fixed message, as PI errors get a clipped one.
+    // tool result gets only the short fixed message, as PI errors get a clipped one. A response stream cut mid-read
+    // surfaces as a raw IOException rather than a RequestFailedException.
     private async Task<T> Guard<T>(Func<Task<T>> call)
     {
         try
         {
             return await call();
         }
-        catch (Exception ex) when (ex is RequestFailedException or AggregateException)
+        catch (Exception ex) when (ex is RequestFailedException or AggregateException or IOException)
         {
             (logger ?? NullLogger<BlobDraftStore>.Instance).LogWarning(ex, "Draft storage failed: {Error} (HTTP {Status})",
                 ex.GetType().Name, (ex as RequestFailedException)?.Status);
