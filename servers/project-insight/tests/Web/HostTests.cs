@@ -69,6 +69,32 @@ public class HostTests
     }
 
     [Theory]
+    [InlineData("Auth:AllowedRedirectUris", "https://claude.ai/api/mcp/auth_callback")]
+    [InlineData("Auth:AllowedCimdHosts", "claude.ai")]
+    [InlineData("Auth:AllowedOrigins", "https://claude.ai")]
+    public void Startup_refuses_a_list_setting_given_as_one_value(string key, string value)
+    {
+        // The binder can't turn one value into a list: it would leave the defaults in place without a word.
+        using var factory = new WebFactory();
+        factory.Settings[key] = value;
+
+        var ex = Record.Exception(() => factory.Client());
+
+        Assert.NotNull(ex);
+        Assert.Contains(key.Replace(':', '_').Replace("_", "__") + "__0", ex!.ToString());
+    }
+
+    [Fact]
+    public void A_list_setting_given_entry_by_entry_takes_effect()
+    {
+        using var factory = new WebFactory();
+        factory.Settings["Auth:AllowedCimdHosts:0"] = "claude.ai";
+        _ = factory.Client();
+
+        Assert.Equal(["claude.ai"], factory.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthOptions>>().Value.CimdHosts);
+    }
+
+    [Theory]
     [InlineData("ASPNETCORE_FORWARDEDHEADERS_ENABLED", "true")]
     [InlineData("ASPNETCORE_FORWARDEDHEADERS_ENABLED", "True")]
     [InlineData("ASPNETCORE_FORWARDEDHEADERS_ENABLED", "1")]

@@ -5,6 +5,9 @@ namespace ProjectInsightMCP.Web;
 /// <summary>Refuses to start with configuration that would be unsafe on a shared server.</summary>
 public static class StartupChecks
 {
+    private static readonly string[] ListSettings =
+        [nameof(AuthOptions.AllowedRedirectUris), nameof(AuthOptions.AllowedCimdHosts), nameof(AuthOptions.AllowedOrigins)];
+
     public static void Validate(IConfiguration config, WebOptions web, AuthOptions auth, IHostEnvironment environment)
     {
         if (!string.IsNullOrEmpty(config["ProjectInsight:ApiToken"]))
@@ -17,6 +20,11 @@ public static class StartupChecks
             throw new InvalidOperationException("Auth:PiTokenLifetimeDays must be between 1 and 90.");
         if (auth.PiUserIds.Count == 0)
             throw new InvalidOperationException("Auth:AllowedPiUserIds must list at least one PI user id.");
+        // The binder can't turn a single value into a list, and would leave the defaults in place without a word.
+        foreach (var list in ListSettings)
+            if (config[$"Auth:{list}"] is not null)
+                throw new InvalidOperationException(
+                    $"Auth:{list} is a list: set each entry as its own setting (Auth__{list}__0, Auth__{list}__1, …), not as one value.");
         // A bad entry would otherwise be dropped without a word, leaving a client unable to sign in.
         foreach (var entry in auth.AllowedRedirectUris ?? [])
             if (RedirectPolicy.Parse(entry) is null)
