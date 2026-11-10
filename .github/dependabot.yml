@@ -16,7 +16,14 @@ updates:
           - "/servers/project-insight/tests"
       schedule:
           interval: weekly
+      # The repo's own tool, pinned in .config/dotnet-tools.json; it is released from here, not updated from NuGet.
+      ignore:
+          - dependency-name: "projectinsight.mcp"
       groups:
+          # The MCP SDK's packages share one version (ModelContextProtocolVersion in Directory.Build.props), so they
+          # update together, majors included. A dependency joins the first group it matches.
+          mcp-sdk:
+              patterns: ["ModelContextProtocol*"]
           minor-and-patch:
               update-types: [minor, patch]
 
