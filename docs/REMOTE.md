@@ -69,7 +69,9 @@ The server rate-limits each client IP address:
 | `/token` | 30 per 10 minutes |
 | `/mcp` | 300 per minute |
 
-Going over a limit returns HTTP 429 with a `Retry-After` header.
+Going over a limit returns HTTP 429 with a `Retry-After` header. Separately, `/mcp` accepts at most 30 new
+tokens per minute from one address (each costs the server a check with Project Insight); a token the
+server checked in the last 10 minutes doesn't count.
 
 Hosted connectors (Claude, ChatGPT) call from their vendors' shared backend addresses, so many users
 of the same vendor share one limit for `/mcp`, `/token` and `/register`. If users see 429 errors,
