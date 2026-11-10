@@ -30,6 +30,29 @@ public class ClientNameTests
         Assert.Null(ClientName.Clean(RightToLeftOverride + ZeroWidthSpace));
     }
 
+    // Every bidi control: embeddings and overrides, isolates, the LTR/RTL marks and the Arabic letter mark.
+    [Theory]
+    [InlineData(0x202A)] [InlineData(0x202B)] [InlineData(0x202C)] [InlineData(0x202D)] [InlineData(0x202E)]
+    [InlineData(0x2066)] [InlineData(0x2067)] [InlineData(0x2068)] [InlineData(0x2069)]
+    [InlineData(0x200E)] [InlineData(0x200F)] [InlineData(0x061C)]
+    // Other invisibles: word joiner, BOM, soft hyphen, Mongolian vowel separator, a tag character.
+    [InlineData(0x2060)] [InlineData(0xFEFF)] [InlineData(0x00AD)] [InlineData(0x180E)] [InlineData(0xE0020)]
+    public void Bidi_controls_and_other_invisibles_are_dropped(int codePoint)
+        => Assert.Equal("ab", ClientName.Clean("a" + char.ConvertFromUtf32(codePoint) + "b"));
+
+    public static readonly TheoryData<string> JoinedNames = new()
+    {
+        "Team 👨‍👩‍👧",  // family emoji: a ZWJ sequence
+        "🏳️‍🌈 Pride",          // rainbow flag: variation selector and ZWJ
+        "می‌خواهم", // Persian, with a ZWNJ
+        "क्‍ष",                         // Devanagari half form, with a ZWJ
+        "Note ✏️"                                 // emoji presentation selector
+    };
+
+    [Theory]
+    [MemberData(nameof(JoinedNames))]
+    public void Joiners_and_variation_selectors_are_kept(string name) => Assert.Equal(name, ClientName.Clean(name));
+
     [Fact]
     public async Task Registration_stores_and_returns_the_cleaned_name()
     {
