@@ -1,197 +1,295 @@
-@description('Prefix for all resource names')
-param resourcePrefix string = 'func-projectinsight'
+// Remote MCP server for Project Insight on App Service (see docs/superpowers/specs/2026-10-30-phase2-remote-host-design.md).
+// No identifying values live here: the owner supplies them in a gitignored .bicepparam file.
+targetScope = 'resourceGroup'
 
-@description('Environment name')
-@allowed(['dev', 'staging', 'prod'])
-param environment string = 'dev'
+@description('Short prefix for resource names, e.g. pi-mcp. The web app is <prefix>-web.')
+@minLength(3)
+@maxLength(20)
+param namePrefix string
 
-@description('Location for all resources')
 param location string = resourceGroup().location
 
-@description('Function App runtime stack')
-@allowed(['dotnet-isolated'])
-param runtime string = 'dotnet-isolated'
+@description('Project Insight API base URL, e.g. https://your-tenant.projectinsight.net/api/')
+param piBaseUrl string
 
-@description('SKU for the App Service Plan')
-@allowed(['Y1', 'EP1', 'EP2', 'EP3'])
-param appServicePlanSku string = 'Y1'
+@description('Comma-separated PI user ids allowed to use the server.')
+param allowedPiUserIds string
 
-@description('Enable Application Insights')
-param enableApplicationInsights bool = true
+@description('Where Activity Log alerts about risky changes are emailed.')
+param alertEmail string
 
-@description('Tags to be applied to all resources')
-param tags object = {
-  Environment: environment
-  Project: 'ProjectInsight'
-  ManagedBy: 'Bicep'
-}
+@description('GitHub repository (owner/name) whose deploy.yml on main may publish code.')
+param githubRepository string
 
-// Variables
-var functionAppName = '${resourcePrefix}-mcp-${environment}'
-var appServicePlanName = '${resourcePrefix}-plan-${environment}'
-var storageAccountName = 'pistore${environment}${uniqueString(resourceGroup().id)}'
-var applicationInsightsName = '${resourcePrefix}-insights-${environment}'
-var logAnalyticsWorkspaceName = '${resourcePrefix}-logs-${environment}'
+@description('custom: publish and restart only. websiteContributor: fallback if the custom role cannot deploy.')
+@allowed([ 'custom', 'websiteContributor' ])
+param deployerRole string = 'custom'
 
-// Storage Account for Function App
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: storageAccountName
-  location: location
-  tags: tags
-  sku: {
-    name: 'Standard_LRS'
-  }
-  kind: 'StorageV2'
-  properties: {
-    accessTier: 'Hot'
-    allowBlobPublicAccess: false
-    allowSharedKeyAccess: true
-    minimumTlsVersion: 'TLS1_2'
-    supportsHttpsTrafficOnly: true
-    networkAcls: {
-      defaultAction: 'Allow'
-    }
-  }
-}
+param tags object = {}
 
-// Log Analytics Workspace for Application Insights
-resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (enableApplicationInsights) {
-  name: logAnalyticsWorkspaceName
+var storageName = take('st${uniqueString(resourceGroup().id, namePrefix)}', 24)
+var tableDataContributor = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
+var blobDataContributor = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+var websiteContributor = 'de139f84-1756-47ae-9be6-808fbbe84772'
+var customRoleName = guid(resourceGroup().id, namePrefix, 'code-deployer')
+
+resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
+  name: '${namePrefix}-logs'
   location: location
   tags: tags
   properties: {
-    sku: {
-      name: 'PerGB2018'
-    }
+    sku: { name: 'PerGB2018' }
     retentionInDays: 30
-    features: {
-      searchVersion: 1
-    }
   }
 }
 
-// Application Insights
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = if (enableApplicationInsights) {
-  name: applicationInsightsName
+resource insights 'Microsoft.Insights/components@2020-02-02' = {
+  name: '${namePrefix}-insights'
   location: location
-  tags: tags
   kind: 'web'
+  tags: tags
   properties: {
     Application_Type: 'web'
+    WorkspaceResourceId: logs.id
   }
 }
 
-// App Service Plan
-resource appServicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
-  name: appServicePlanName
+resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+  name: storageName
   location: location
+  kind: 'StorageV2'
+  sku: { name: 'Standard_LRS' }
+  tags: tags
+  properties: {
+    allowSharedKeyAccess: false
+    defaultToOAuthAuthentication: true
+    allowBlobPublicAccess: false
+    minimumTlsVersion: 'TLS1_2'
+    supportsHttpsTrafficOnly: true
+  }
+}
+
+resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-05-01' = {
+  parent: storage
+  name: 'default'
+}
+
+resource tables 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = [for name in [ 'OAuthClients', 'OAuthSessions', 'OAuthCodes' ]: {
+  parent: tableService
+  name: name
+}]
+
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  parent: storage
+  name: 'default'
+}
+
+resource drafts 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobService
+  name: 'drafts'
+  properties: { publicAccess: 'None' }
+}
+
+resource plan 'Microsoft.Web/serverfarms@2024-04-01' = {
+  name: '${namePrefix}-plan'
+  location: location
+  kind: 'linux'
   tags: tags
   sku: {
-    name: appServicePlanSku
-    tier: appServicePlanSku == 'Y1' ? 'Dynamic' : 'ElasticPremium'
+    name: 'B1'
+    capacity: 1 // in-memory caches and per-user queues assume one instance
   }
-  properties: {
-    reserved: false
-  }
+  properties: { reserved: true }
 }
 
-// Function App
-resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
-  name: functionAppName
+resource site 'Microsoft.Web/sites@2024-04-01' = {
+  name: '${namePrefix}-web'
   location: location
+  kind: 'app,linux'
   tags: tags
-  kind: 'functionapp'
-  identity: {
-    type: 'SystemAssigned'
-  }
+  identity: { type: 'SystemAssigned' }
   properties: {
-    serverFarmId: appServicePlan.id
+    serverFarmId: plan.id
     httpsOnly: true
     clientAffinityEnabled: false
-    publicNetworkAccess: 'Enabled'
     siteConfig: {
-      ftpsState: 'Disabled'
+      linuxFxVersion: 'DOTNETCORE|10.0'
+      alwaysOn: true
+      http20Enabled: true
       minTlsVersion: '1.2'
-      netFrameworkVersion: 'v8.0'
-      use32BitWorkerProcess: false
-      cors: {
-        allowedOrigins: ['*']
-        supportCredentials: false
-      }
-      appSettings: [
-        {
-          name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${az.environment().suffixes.storage};AccountKey=${storageAccount.listKeys().keys[0].value}'
-        }
-        {
-          name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${az.environment().suffixes.storage};AccountKey=${storageAccount.listKeys().keys[0].value}'
-        }
-        {
-          name: 'WEBSITE_CONTENTSHARE'
-          value: toLower(functionAppName)
-        }
-        {
-          name: 'FUNCTIONS_EXTENSION_VERSION'
-          value: '~4'
-        }
-        {
-          name: 'FUNCTIONS_WORKER_RUNTIME'
-          value: runtime
-        }
-        {
-          name: 'ASPNETCORE_ENVIRONMENT'
-          value: environment == 'prod' ? 'Production' : 'Development'
-        }
-        {
-          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-          value: enableApplicationInsights ? '${applicationInsights.properties.ConnectionString}' : ''
-        }
-        {
-          name: 'PROJECT_INSIGHT_BASE_URL'
-          value: 'https://yourdomain.projectinsight.net/api'
-        }
-      ]
+      ftpsState: 'Disabled'
+      healthCheckPath: '/healthz'
     }
   }
 }
 
-// Storage Account blob contributor role assignment for Function App system identity
-resource storageAccountRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  scope: storageAccount
-  name: guid(storageAccount.id, functionApp.id, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+resource ftpCredentials 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-04-01' = {
+  parent: site
+  name: 'ftp'
+  properties: { allow: false }
+}
+
+resource scmCredentials 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-04-01' = {
+  parent: site
+  name: 'scm'
+  properties: { allow: false }
+}
+
+var host = site.properties.defaultHostName
+
+resource appSettings 'Microsoft.Web/sites/config@2024-04-01' = {
+  parent: site
+  name: 'appsettings'
   properties: {
-    roleDefinitionId: subscriptionResourceId(
-      'Microsoft.Authorization/roleDefinitions',
-      'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
-    ) // Storage Blob Data Contributor
-    principalId: functionApp.identity.principalId
+    ProjectInsight__BaseUrl: piBaseUrl
+    Web__PublicBaseUrl: 'https://${host}'
+    AllowedHosts: '${host};localhost'
+    Storage__Mode: 'Azure'
+    Storage__TableEndpoint: storage.properties.primaryEndpoints.table
+    Storage__BlobEndpoint: storage.properties.primaryEndpoints.blob
+    Auth__AllowedPiUserIds: allowedPiUserIds
+    Auth__PiTokenLifetimeDays: '90'
+    APPLICATIONINSIGHTS_CONNECTION_STRING: insights.properties.ConnectionString
+    // The app runs its own forwarded-headers pass (ForwardLimit 1, right-most X-Forwarded-For) and StartupChecks
+    // refuses to start if this is true: a second framework pass would let clients spoof the rate-limit partition.
+    ASPNETCORE_FORWARDEDHEADERS_ENABLED: 'false'
+    // Seconds the platform waits for graceful shutdown (default 5, max 120). The host's ShutdownTimeout is 60 s.
+    WEBSITES_CONTAINER_STOP_TIME_LIMIT: '90'
+  }
+}
+
+resource appTables 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: storage
+  name: guid(storage.id, site.id, tableDataContributor)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', tableDataContributor)
+    principalId: site.identity.principalId
     principalType: 'ServicePrincipal'
   }
 }
 
-// Outputs
-@description('Function App name')
-output functionAppName string = functionApp.name
+resource appBlobs 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: storage
+  name: guid(storage.id, site.id, blobDataContributor)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', blobDataContributor)
+    principalId: site.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
 
-@description('Function App default hostname')
-output functionAppUrl string = 'https://${functionApp.properties.defaultHostName}'
+resource deployer 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${namePrefix}-deployer'
+  location: location
+  tags: tags
+}
 
-@description('Function App resource ID')
-output functionAppResourceId string = functionApp.id
+// Only deploy.yml on main, in the production environment, can sign in as the deployer. The repository's
+// OIDC subject template must include job_workflow_ref (bicep/README.md, step 2).
+resource githubFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2023-01-31' = {
+  parent: deployer
+  name: 'github-deploy'
+  properties: {
+    issuer: 'https://token.actions.githubusercontent.com'
+    subject: 'repo:${githubRepository}:environment:production:job_workflow_ref:${githubRepository}/.github/workflows/deploy.yml@refs/heads/main'
+    audiences: [ 'api://AzureADTokenExchange' ]
+  }
+}
 
-@description('Storage Account name')
-output storageAccountName string = storageAccount.name
+resource codeDeployerRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' = if (deployerRole == 'custom') {
+  name: customRoleName
+  properties: {
+    roleName: '${namePrefix} code deployer'
+    description: 'Publish code to one web app and restart it. No settings, no credentials policy, no Kudu console.'
+    type: 'CustomRole'
+    permissions: [
+      {
+        actions: [
+          'Microsoft.Web/sites/read'
+          'Microsoft.Web/sites/publish/Action'
+          'Microsoft.Web/sites/restart/Action'
+          'Microsoft.Web/sites/config/list/Action'
+        ]
+      }
+    ]
+    assignableScopes: [ resourceGroup().id ]
+  }
+}
 
-@description('Application Insights instrumentation key')
-output applicationInsightsInstrumentationKey string = enableApplicationInsights
-  ? '${applicationInsights.properties.InstrumentationKey}'
-  : ''
+resource deployerOnSite 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: site
+  name: guid(site.id, deployer.id, deployerRole)
+  dependsOn: [ codeDeployerRole ]
+  properties: {
+    roleDefinitionId: deployerRole == 'custom'
+      ? resourceId('Microsoft.Authorization/roleDefinitions', customRoleName)
+      : subscriptionResourceId('Microsoft.Authorization/roleDefinitions', websiteContributor)
+    principalId: deployer.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
 
-@description('Application Insights connection string')
-output applicationInsightsConnectionString string = enableApplicationInsights
-  ? '${applicationInsights.properties.ConnectionString}'
-  : ''
+resource siteLock 'Microsoft.Authorization/locks@2020-05-01' = {
+  scope: site
+  name: 'do-not-delete'
+  properties: {
+    level: 'CanNotDelete'
+    notes: 'Remote MCP server for Project Insight.'
+  }
+}
 
-@description('Function App system-assigned managed identity principal ID')
-output functionAppPrincipalId string = functionApp.identity.principalId
+resource storageLock 'Microsoft.Authorization/locks@2020-05-01' = {
+  scope: storage
+  name: 'do-not-delete'
+  properties: {
+    level: 'CanNotDelete'
+    notes: 'Sign-in records and drafts for the remote MCP server.'
+  }
+}
+
+resource ownerAlerts 'Microsoft.Insights/actionGroups@2023-01-01' = {
+  name: '${namePrefix}-owner'
+  location: 'global'
+  tags: tags
+  properties: {
+    groupShortName: 'pimcp'
+    enabled: true
+    emailReceivers: [
+      {
+        name: 'owner'
+        emailAddress: alertEmail
+        useCommonAlertSchema: true
+      }
+    ]
+  }
+}
+
+// Changes that could expose tokens in flight or weaken the deploy trust, made outside this template.
+var watchedOperations = [
+  'Microsoft.Storage/storageAccounts/write'
+  'Microsoft.Web/sites/config/write'
+  'Microsoft.Web/sites/basicPublishingCredentialsPolicies/write'
+  'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write'
+  'Microsoft.Authorization/roleAssignments/write'
+]
+
+resource riskyChanges 'Microsoft.Insights/activityLogAlerts@2020-10-01' = {
+  name: '${namePrefix}-risky-changes'
+  location: 'global'
+  tags: tags
+  properties: {
+    enabled: true
+    scopes: [ site.id, storage.id, deployer.id ]
+    condition: {
+      allOf: [
+        { field: 'category', equals: 'Administrative' }
+        { anyOf: [for op in watchedOperations: { field: 'operationName', equals: op }] }
+      ]
+    }
+    actions: { actionGroups: [ { actionGroupId: ownerAlerts.id } ] }
+  }
+}
+
+output webAppName string = site.name
+output baseUrl string = 'https://${host}'
+output deployerClientId string = deployer.properties.clientId

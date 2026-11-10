@@ -1,0 +1,9 @@
+// Copy to main.bicepparam (gitignored) and fill in. Never commit the real file.
+using './main.bicep'
+
+param namePrefix = 'pi-mcp'
+param location = 'centralus'
+param piBaseUrl = 'https://your-tenant.projectinsight.net/api/'
+param allowedPiUserIds = '00000000-0000-0000-0000-000000000000'
+param alertEmail = 'you@example.com'
+param githubRepository = 'alext-avi/Project-Insight-MCP'
