@@ -316,6 +316,8 @@ The connector URL, and with it the app name, is semi-public anyway, and anyone w
 
 gitleaks gets two custom rules: `[a-z0-9-]+\.projectinsight\.net` (allowlisting the `yourdomain` and `your-tenant` placeholders) and `[a-z0-9-]+\.azurewebsites\.net` (allowlisting `<app>` and `your-function-app`).
 
+It also flags the Azure identifiers the history rewrite removed: `/subscriptions/<guid>` resource ids; a GUID given as a tenant, subscription, client, app, object or principal id (`tenantId`, `client_id`, `AZURE_*_ID`, `--subscription` and similar); an App Insights `InstrumentationKey` or `ApplicationId`; and storage account hostnames (`<account>.blob|table|queue|file|dfs.core.windows.net`). The all-zero GUID, the built-in role ids in `bicep/`, the fake test ids, Azurite's `devstoreaccount1` and the `acct` placeholder are allowlisted, each anchored to the whole value. On pull requests the scan uses `.gitleaks.toml` and `.gitleaksignore` from the base branch, so a PR can't weaken the rules in the same change that would trip them.
+
 ## Infrastructure (`bicep/`)
 
 **The resource group:** the app goes in the existing shared group. Its Contributors, plus the Owners, Contributors and access administrators inherited from the subscription and the tenant root, could change the app or deploy code that reads tokens in flight. Any design would allow that, a proxy included. The owner reviewed the list on 2026-10-30 and accepted it: they're trusted colleagues and admins.
