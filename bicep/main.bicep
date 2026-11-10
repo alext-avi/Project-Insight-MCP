@@ -185,7 +185,7 @@ resource deployer 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' 
 }
 
 // Only deploy.yml on main, in the production environment, can sign in as the deployer. The repository's
-// OIDC subject template must include job_workflow_ref (bicep/README.md, step 2).
+// OIDC subject template must include job_workflow_ref (bicep/README.md, step 4).
 resource githubFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2023-01-31' = {
   parent: deployer
   name: 'github-deploy'
@@ -200,7 +200,7 @@ resource codeDeployerRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' =
   name: customRoleName
   properties: {
     roleName: '${namePrefix} code deployer'
-    description: 'Publish code to one web app and restart it. No settings, no credentials policy, no Kudu console.'
+    description: 'Publish code to one web app and restart it. No settings writes, no credentials policy, no Kudu console.'
     type: 'CustomRole'
     permissions: [
       {
