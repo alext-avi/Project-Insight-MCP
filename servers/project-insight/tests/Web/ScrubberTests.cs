@@ -84,6 +84,20 @@ public class ScrubberTests
         Assert.Equal("{\"error\":\"bad [redacted] here\"}", ((TextContentBlock)result.Content[0]).Text);
     }
 
+    [Theory]
+    [MemberData(nameof(EscapedForms))]
+    public void Forms_computed_once_match_and_redact_every_spelling(string form)
+    {
+        // The scrubbers compute the forms once per call and reuse them for every string they check.
+        var forms = SecretForms.Of(Base64Sample);
+        var text = $"bad {form} here";
+
+        Assert.True(SecretForms.AppearsIn(text, forms));
+        Assert.Equal("bad [redacted] here", SecretForms.Redact(text, forms));
+        Assert.Equal(SecretForms.Redact(text, Base64Sample), SecretForms.Redact(text, forms));
+        Assert.False(SecretForms.AppearsIn("nothing here", forms));
+    }
+
     [Fact]
     public void Structured_content_is_scrubbed_after_json_decoding()
     {

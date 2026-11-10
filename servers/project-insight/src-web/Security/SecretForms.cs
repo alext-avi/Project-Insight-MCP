@@ -27,11 +27,20 @@ public static partial class SecretForms
         return forms.OrderByDescending(f => f.Length).ToList();
     }
 
-    public static string Redact(string text, string secret)
-        => Of(secret).Aggregate(text, (t, form) => t.Replace(form, Redacted, StringComparison.Ordinal));
+    public static string Redact(string text, string secret) => Redact(text, Of(secret));
 
-    public static bool AppearsIn(string text, string secret)
-        => Of(secret).Any(form => text.Contains(form, StringComparison.Ordinal));
+    /// <summary>
+    /// With <paramref name="forms"/> from <see cref="Of"/>. Computing them takes two encodes and two regex passes, so a
+    /// caller scrubbing many strings for one secret computes them once and passes them to each call.
+    /// </summary>
+    public static string Redact(string text, IReadOnlyList<string> forms)
+        => forms.Aggregate(text, (t, form) => t.Replace(form, Redacted, StringComparison.Ordinal));
+
+    public static bool AppearsIn(string text, string secret) => AppearsIn(text, Of(secret));
+
+    /// <summary>With <paramref name="forms"/> from <see cref="Of"/>, computed once per secret.</summary>
+    public static bool AppearsIn(string text, IReadOnlyList<string> forms)
+        => forms.Any(form => text.Contains(form, StringComparison.Ordinal));
 
     [GeneratedRegex(@"\\u[0-9A-F]{4}")]
     private static partial Regex EscapeHex();

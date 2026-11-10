@@ -14,20 +14,21 @@ public sealed class LogRedactionProcessor(IHttpContextAccessor http) : BaseProce
     {
         if (BearerOf(http.HttpContext) is not { } token)
             return;
+        var forms = SecretForms.Of(token); // once per record, for every check below
         if (record.FormattedMessage is { } message)
-            record.FormattedMessage = SecretForms.Redact(message, token);
+            record.FormattedMessage = SecretForms.Redact(message, forms);
         if (record.Body is { } body)
-            record.Body = SecretForms.Redact(body, token);
+            record.Body = SecretForms.Redact(body, forms);
         if (record.Attributes is { Count: > 0 } attributes
-            && attributes.Any(a => a.Value?.ToString() is { } s && SecretForms.AppearsIn(s, token)))
+            && attributes.Any(a => a.Value?.ToString() is { } s && SecretForms.AppearsIn(s, forms)))
             record.Attributes = attributes
-                .Select(a => a.Value?.ToString() is { } s && SecretForms.AppearsIn(s, token)
-                    ? new KeyValuePair<string, object?>(a.Key, SecretForms.Redact(s, token))
+                .Select(a => a.Value?.ToString() is { } s && SecretForms.AppearsIn(s, forms)
+                    ? new KeyValuePair<string, object?>(a.Key, SecretForms.Redact(s, forms))
                     : a)
                 .ToList();
         // An exception's text can't be edited; replace it with a redacted copy that keeps the type name.
-        if (record.Exception is { } ex && SecretForms.AppearsIn(ex.ToString(), token))
-            record.Exception = new RedactedException(ex.GetType().FullName + ": " + SecretForms.Redact(ex.Message, token));
+        if (record.Exception is { } ex && SecretForms.AppearsIn(ex.ToString(), forms))
+            record.Exception = new RedactedException(ex.GetType().FullName + ": " + SecretForms.Redact(ex.Message, forms));
     }
 
     private static string? BearerOf(HttpContext? context)
