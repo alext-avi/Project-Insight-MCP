@@ -15,20 +15,30 @@ Settings use the double-underscore form in App Service and environment variables
 | `ProjectInsight__BaseUrl` | Your Project Insight API URL, an absolute https URL such as `https://your-tenant.projectinsight.net/api/` |
 | `Web__PublicBaseUrl` | The server's public https origin with no path, such as `https://<app>` |
 | `Auth__AllowedPiUserIds` | Comma-separated Project Insight user ids allowed to connect. At least one. Matching ignores case. |
-| `Storage__Mode` | `Azure` in production |
-| `Storage__TableEndpoint`, `Storage__BlobEndpoint` | Storage account endpoints (https). The app's managed identity reads and writes them. `Storage__ConnectionString` can replace both. |
-| `APPLICATIONINSIGHTS_CONNECTION_STRING` | Application Insights connection string |
+| `Storage__TableEndpoint`, `Storage__BlobEndpoint` | Storage account endpoints (https). The app's managed identity reads and writes them. |
 
-The app refuses to start when a required setting is missing or unsafe.
+The app refuses to start when `ProjectInsight__BaseUrl`, `Web__PublicBaseUrl` or
+`Auth__AllowedPiUserIds` is missing or invalid, when storage has neither both endpoints nor
+`Storage__ConnectionString` (outside Development), or when a setting is unsafe (see below). It does
+not check that storage is reachable or that its credentials work: those fail on the first request.
 
 ## Optional settings
 
 | Setting | Default | Description |
 |---------|---------|-------------|
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | none | Application Insights connection string. Recommended: without it the app runs without telemetry, and says nothing about it. The Bicep template sets it. |
+| `Storage__Mode` | `Azure` | `Azure` uses the storage settings above. `Local` (in-memory OAuth state, drafts on disk) is refused outside Development. |
+| `Storage__ConnectionString` | none | Replaces both storage endpoints, for Azurite or local development only. The Bicep storage account has shared-key access turned off, so an account-key connection string fails in Azure. |
 | `Auth__PiTokenLifetimeDays` | `90` | Lifetime of the Project Insight token, 1 to 90 days |
-| `Auth__AllowedRedirectUris` | Claude and ChatGPT callbacks | Replaces the default OAuth redirect list |
-| `Auth__AllowedCimdHosts` | `claude.ai`, `chatgpt.com` | Replaces the default list of hosts that may publish client metadata |
-| `Auth__AllowedOrigins` | none | Browser origins allowed to call the server |
+| `Auth__AllowedRedirectUris__0`, `__1`, … | Claude and ChatGPT callbacks | Replaces the default OAuth redirect list |
+| `Auth__AllowedCimdHosts__0`, `__1`, … | `claude.ai`, `chatgpt.com` | Replaces the default list of hosts that may publish client metadata |
+| `Auth__AllowedOrigins__0`, `__1`, … | none | Browser origins allowed to call the server |
+| `TZ` | `America/New_York` from the Bicep template; UTC without it | Time zone (an IANA name) for dates such as "today" in time-change drafts and their warnings. Set it to the team's zone. |
+
+The three `Allowed…` settings are lists: give each entry its own numbered setting, such as
+`Auth__AllowedRedirectUris__0=https://claude.ai/api/mcp/auth_callback`. The app refuses to start if
+one of them is set as a single value (`Auth__AllowedRedirectUris=…`), which would otherwise be
+ignored and leave the defaults in place.
 
 ## Settings that must not be set
 

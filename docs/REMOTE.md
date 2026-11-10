@@ -57,6 +57,11 @@ For Claude and ChatGPT it stays in the vendor's connector service, out of the mo
 Claude Code and Codex it is in your OS keychain (or a credentials file on Linux and Windows), which
 an agent with shell access could read, the same as the local tool's stored credentials.
 
+## Dates
+
+Dates such as "today" in time-change drafts, and the warnings about dates far in the past or future,
+use the server's configured time zone, not your device's.
+
 ## Limits
 
 The server rate-limits each client IP address:
@@ -64,7 +69,7 @@ The server rate-limits each client IP address:
 | Endpoint | Limit |
 |----------|-------|
 | `/register` | 10 per hour |
-| `/authorize` | 30 per 10 minutes |
+| `/authorize` and `/authorize/start`, together | 30 per 10 minutes |
 | `/authorize/complete` | 20 per 10 minutes |
 | `/token` | 30 per 10 minutes |
 | `/mcp` | 300 per minute |
@@ -72,6 +77,11 @@ The server rate-limits each client IP address:
 Going over a limit returns HTTP 429 with a `Retry-After` header. Separately, `/mcp` accepts at most 30 new
 tokens per minute from one address (each costs the server a check with Project Insight); a token the
 server checked in the last 10 minutes doesn't count.
+
+At most 3 sign-ins can be in progress from one network (an IPv4 address, or an IPv6 /64) at a time,
+and 200 across the server. A sign-in is in progress from **Sign in to Project Insight** until you
+finish it, it ends after too many wrong codes, or 15 minutes pass. A fourth start shows "Too many
+sign-ins are in progress from your network": finish one, or wait and start again.
 
 Hosted connectors (Claude, ChatGPT) call from their vendors' shared backend addresses, so many users
 of the same vendor share one limit for `/mcp`, `/token` and `/register`. If users see 429 errors,
