@@ -12,6 +12,8 @@ public static class AuthorizeEndpoints
 {
     public const int MaxAttempts = 5;
     public const int MaxOutstandingSessions = 200;
+    /// <summary>Per client network (IPv4 address or IPv6 /64), so a few addresses can't take the whole global cap.</summary>
+    public const int MaxSessionsPerClient = 3;
     public const string CookieName = "__Host-pi_auth";
     private static readonly TimeSpan SessionLife = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan CodeLife = TimeSpan.FromMinutes(5);
@@ -26,7 +28,7 @@ public static class AuthorizeEndpoints
         }).WithOAuthHeaders().RequireRateLimiting(RateLimits.Authorize);
 
         app.MapPost("/authorize/start", async (HttpContext http, ClientResolver clients, RedirectPolicy policy, IOptions<WebOptions> web,
-            IPiActivationClient pi, ISessionStore sessions, IConfiguration config, TimeProvider time, CancellationToken ct) =>
+            IPiActivationClient pi, ISessionStore sessions, IConfiguration config, TimeProvider time, ILoggerFactory loggers, CancellationToken ct) =>
         {
             if (CrossSiteOrNotForm(http, web.Value) is { } refused)
                 return refused;
@@ -37,35 +39,65 @@ public static class AuthorizeEndpoints
             if (failure is not null)
                 return failure;
 
-            var redirectHost = new Uri(request!.RedirectUri).Host;
-            var activation = await pi.StartAsync($"MCP connector ({redirectHost})", ct);
-            var piHost = new Uri(config["ProjectInsight:BaseUrl"]!).Host;
-            if (activation is null || activation.ActivationUrl.Scheme != Uri.UriSchemeHttps || activation.ActivationUrl.Host != piHost)
-                return AuthorizePages.Error(502, "Project Insight didn't start the sign-in. Try again in a moment.");
-
+            // The slot is reserved before PI is asked, so a start the caps refuse never opens a PI activation.
             var cookie = CodeProtector.NewCode();
             var now = time.GetUtcNow();
             var session = new SignInSession
             {
                 Id = CodeProtector.NewCode(),
-                ClientId = request.Client.ClientId,
+                ClientId = request!.Client.ClientId,
                 RedirectUri = request.RedirectUri,
                 State = request.State,
                 CodeChallenge = request.CodeChallenge,
                 Resource = request.Resource,
-                PiActivationId = activation.ActivationId,
-                PiActivationUrl = activation.ActivationUrl.AbsoluteUri,
+                PiActivationId = "",
+                PiActivationUrl = "",
                 CookieHash = TokenHash.Of(cookie),
-                ExpiresAt = now + SessionLife
+                ExpiresAt = now + SessionLife,
+                Status = SessionStatus.Starting,
+                // The rate limiter's partition, so one network can't hold more than its share of the global cap.
+                ClientKeyHash = TokenHash.Of(RateLimits.ClientKey(http))
             };
-            if (!await sessions.TryCreateAsync(session, MaxOutstandingSessions, now, ct))
-                return AuthorizePages.Error(503, "Too many sign-ins in progress. Try again in a few minutes.");
-
-            http.Response.Cookies.Append(CookieName, cookie, new CookieOptions
+            switch (await sessions.TryCreateAsync(session, MaxOutstandingSessions, MaxSessionsPerClient, now, ct))
             {
-                Secure = true, HttpOnly = true, SameSite = SameSiteMode.Lax, Path = "/", MaxAge = SessionLife
-            });
-            return AuthorizePages.Activation(session.Id, activation.ActivationUrl, new Uri(request.RedirectUri), error: null);
+                case SessionCreate.ClientFull:
+                    return AuthorizePages.Error(429, "Too many sign-ins are in progress from your network. Finish one, or try again in 15 minutes.");
+                case SessionCreate.Full:
+                    return AuthorizePages.Error(503, "Too many sign-ins in progress. Try again in a few minutes.");
+            }
+
+            var started = false;
+            try
+            {
+                var redirectHost = new Uri(request.RedirectUri).Host;
+                var activation = await pi.StartAsync($"MCP connector ({redirectHost})", ct);
+                var piHost = new Uri(config["ProjectInsight:BaseUrl"]!).Host;
+                if (activation is null || activation.ActivationUrl.Scheme != Uri.UriSchemeHttps || activation.ActivationUrl.Host != piHost)
+                    return AuthorizePages.Error(502, "Project Insight didn't start the sign-in. Try again in a moment.");
+
+                // The re-read supplies the store's Version; nobody else knows the id yet, so the replace only fails if the store does.
+                if (await sessions.GetAsync(session.Id, ct) is not { } reserved
+                    || !await sessions.TryReplaceAsync(reserved with
+                    {
+                        PiActivationId = activation.ActivationId,
+                        PiActivationUrl = activation.ActivationUrl.AbsoluteUri,
+                        Status = SessionStatus.Pending
+                    }, ct))
+                    return AuthorizePages.Error(503, "Something went wrong starting the sign-in. Try again in a moment.");
+                started = true;
+
+                http.Response.Cookies.Append(CookieName, cookie, new CookieOptions
+                {
+                    Secure = true, HttpOnly = true, SameSite = SameSiteMode.Lax, Path = "/", MaxAge = SessionLife
+                });
+                return AuthorizePages.Activation(session.Id, activation.ActivationUrl, new Uri(request.RedirectUri), error: null);
+            }
+            finally
+            {
+                // A start that didn't finish gives its slot back.
+                if (!started)
+                    await DeleteQuietlyAsync(sessions, session.Id, loggers.CreateLogger("ProjectInsightMCP.Web.Authorize"));
+            }
         }).WithOAuthHeaders().RequireRateLimiting(RateLimits.Authorize);
 
         app.MapPost("/authorize/complete", async (HttpContext http, ISessionStore sessions, ICodeStore codes, IPiActivationClient pi,
@@ -80,7 +112,8 @@ public static class AuthorizeEndpoints
             var code = form["activation_code"].ToString().Trim();
             var now = time.GetUtcNow();
 
-            var session = sessionId.Length > 0 ? await sessions.GetAsync(sessionId, ct) : null;
+            // Only the shape /authorize/start issues reaches the store: anything else would make a bad table key.
+            var session = CodeProtector.IsWellFormed(sessionId) ? await sessions.GetAsync(sessionId, ct) : null;
             if (session is null || session.ExpiresAt <= now)
                 return AuthorizePages.Error(400, "This sign-in has expired. Start again from Claude or ChatGPT.");
             var cookie = http.Request.Cookies[CookieName];
@@ -161,6 +194,19 @@ public static class AuthorizeEndpoints
         catch (Exception ex)
         {
             logger.LogWarning("Could not restore sign-in {Session}: {Error}", TokenHash.Of(id)[..12], ex.GetType().Name);
+        }
+    }
+
+    private static async Task DeleteQuietlyAsync(ISessionStore sessions, string id, ILogger logger)
+    {
+        try
+        {
+            await sessions.DeleteAsync(id, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // It expires with the session life anyway.
+            logger.LogWarning("Could not release sign-in {Session}: {Error}", TokenHash.Of(id)[..12], ex.GetType().Name);
         }
     }
 

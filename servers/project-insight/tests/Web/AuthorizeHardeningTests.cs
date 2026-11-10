@@ -55,12 +55,19 @@ public class AuthorizeHardeningTests
 
     private sealed class AbortAfterClaimStore(ISessionStore inner) : ISessionStore
     {
-        private int _gets;
-        public Task<bool> TryCreateAsync(SignInSession s, int max, DateTimeOffset now, CancellationToken ct) => inner.TryCreateAsync(s, max, now, ct);
-        // 1st read validates the request, 2nd is the re-read right after the claim: that one is aborted.
+        private int _claimed;
+        public Task<SessionCreate> TryCreateAsync(SignInSession s, int max, int maxPerClient, DateTimeOffset now, CancellationToken ct)
+            => inner.TryCreateAsync(s, max, maxPerClient, now, ct);
+        // The first read after the claim is the re-read right after it: that one is aborted.
         public Task<SignInSession?> GetAsync(string id, CancellationToken ct)
-            => Interlocked.Increment(ref _gets) == 2 ? throw new OperationCanceledException() : inner.GetAsync(id, ct);
-        public Task<bool> TryReplaceAsync(SignInSession u, CancellationToken ct) => inner.TryReplaceAsync(u, ct);
+            => Interlocked.Exchange(ref _claimed, 0) == 1 ? throw new OperationCanceledException() : inner.GetAsync(id, ct);
+        public async Task<bool> TryReplaceAsync(SignInSession u, CancellationToken ct)
+        {
+            var replaced = await inner.TryReplaceAsync(u, ct);
+            if (replaced && u.Status == SessionStatus.Completing)
+                Interlocked.Exchange(ref _claimed, 1);
+            return replaced;
+        }
         public Task DeleteAsync(string id, CancellationToken ct) => inner.DeleteAsync(id, ct);
         public Task PruneAsync(DateTimeOffset now, CancellationToken ct) => inner.PruneAsync(now, ct);
     }

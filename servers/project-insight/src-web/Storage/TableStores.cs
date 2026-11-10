@@ -77,12 +77,17 @@ public sealed class TableSessionStore(TableClient table) : ISessionStore
 {
     private const string Partition = TableUtil.Partition;
 
-    public async Task<bool> TryCreateAsync(SignInSession session, int maxOutstanding, DateTimeOffset now, CancellationToken ct)
+    public async Task<SessionCreate> TryCreateAsync(SignInSession session, int maxOutstanding, int maxPerClient, DateTimeOffset now, CancellationToken ct)
     {
-        if (await TableUtil.CountAtMostAsync(table, TableUtil.NotBefore("ExpiresAt", now), maxOutstanding, ct) >= maxOutstanding)
-            return false;
+        // Count, then add: not atomic, but the rate limit bounds how far concurrent starts can overshoot.
+        var live = TableUtil.NotBefore("ExpiresAt", now);
+        if (session.ClientKeyHash is { } key
+            && await TableUtil.CountAtMostAsync(table, $"{live} and ClientKey eq '{key.Replace("'", "''")}'", maxPerClient, ct) >= maxPerClient)
+            return SessionCreate.ClientFull;
+        if (await TableUtil.CountAtMostAsync(table, live, maxOutstanding, ct) >= maxOutstanding)
+            return SessionCreate.Full;
         await table.AddEntityAsync(ToEntity(session), ct);
-        return true;
+        return SessionCreate.Created;
     }
 
     public async Task<SignInSession?> GetAsync(string id, CancellationToken ct)
@@ -118,7 +123,8 @@ public sealed class TableSessionStore(TableClient table) : ISessionStore
     private static TableEntity ToEntity(SignInSession s) => new(Partition, s.Id)
     {
         ["Json"] = JsonSerializer.Serialize(s with { Version = null }, TableUtil.Json),
-        ["ExpiresAt"] = s.ExpiresAt
+        ["ExpiresAt"] = s.ExpiresAt,
+        ["ClientKey"] = s.ClientKeyHash
     };
 }
 

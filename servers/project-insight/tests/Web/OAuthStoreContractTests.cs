@@ -237,7 +237,7 @@ public abstract class SessionStoreContract
         var store = await CreateAsync();
         var s = Session("s1");
 
-        Assert.True(await store.TryCreateAsync(s, 10, Now, default));
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(s, 10, 10, Now, default));
 
         var read = (await store.GetAsync("s1", default))!;
         Assert.NotNull(read.Version);
@@ -250,11 +250,27 @@ public abstract class SessionStoreContract
     {
         Skip.IfNot(Available);
         var store = await CreateAsync();
-        Assert.True(await store.TryCreateAsync(Session("old", Now.AddMinutes(-1)), 2, Now, default));
-        Assert.True(await store.TryCreateAsync(Session("a"), 2, Now, default));
-        Assert.True(await store.TryCreateAsync(Session("b"), 2, Now, default));
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(Session("old", Now.AddMinutes(-1)), 2, 10, Now, default));
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(Session("a"), 2, 10, Now, default));
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(Session("b"), 2, 10, Now, default));
 
-        Assert.False(await store.TryCreateAsync(Session("c"), 2, Now, default));
+        Assert.Equal(SessionCreate.Full, await store.TryCreateAsync(Session("c"), 2, 10, Now, default));
+    }
+
+    [SkippableFact]
+    public async Task Each_client_key_has_its_own_cap_below_the_global_one()
+    {
+        Skip.IfNot(Available);
+        var store = await CreateAsync();
+        SignInSession From(string id, string key, DateTimeOffset? expires = null) => Session(id, expires) with { ClientKeyHash = key };
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(From("old", "k1", Now.AddMinutes(-1)), 10, 2, Now, default));
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(From("a", "k1"), 10, 2, Now, default));
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(From("b", "k1"), 10, 2, Now, default));
+
+        Assert.Equal(SessionCreate.ClientFull, await store.TryCreateAsync(From("c", "k1"), 10, 2, Now, default));
+        Assert.Null(await store.GetAsync("c", default));
+        Assert.Equal(SessionCreate.Created, await store.TryCreateAsync(From("d", "k2"), 10, 2, Now, default));
+        Assert.Equal("k2", (await store.GetAsync("d", default))!.ClientKeyHash);
     }
 
     [SkippableFact]
@@ -262,7 +278,7 @@ public abstract class SessionStoreContract
     {
         Skip.IfNot(Available);
         var store = await CreateAsync();
-        await store.TryCreateAsync(Session("s1"), 10, Now, default);
+        await store.TryCreateAsync(Session("s1"), 10, 10, Now, default);
         var first = (await store.GetAsync("s1", default))!;
 
         Assert.True(await store.TryReplaceAsync(first with { Attempts = 1 }, default));
@@ -279,7 +295,7 @@ public abstract class SessionStoreContract
     {
         Skip.IfNot(Available);
         var store = await CreateAsync();
-        await store.TryCreateAsync(Session("s1"), 10, Now, default);
+        await store.TryCreateAsync(Session("s1"), 10, 10, Now, default);
         var read = (await store.GetAsync("s1", default))!;
 
         var results = await Task.WhenAll(Enumerable.Range(0, 8)
@@ -293,7 +309,7 @@ public abstract class SessionStoreContract
     {
         Skip.IfNot(Available);
         var store = await CreateAsync();
-        await store.TryCreateAsync(Session("old", Now.AddMinutes(-1)), 10, Now, default);
+        await store.TryCreateAsync(Session("old", Now.AddMinutes(-1)), 10, 10, Now, default);
 
         await store.DeleteAsync("never-existed", default);
         await store.PruneAsync(Now, default);
@@ -305,9 +321,9 @@ public abstract class SessionStoreContract
     {
         Skip.IfNot(Available);
         var store = await CreateAsync();
-        await store.TryCreateAsync(Session("gone"), 10, Now, default);
-        await store.TryCreateAsync(Session("old", Now.AddMinutes(-1)), 10, Now, default);
-        await store.TryCreateAsync(Session("live"), 10, Now, default);
+        await store.TryCreateAsync(Session("gone"), 10, 10, Now, default);
+        await store.TryCreateAsync(Session("old", Now.AddMinutes(-1)), 10, 10, Now, default);
+        await store.TryCreateAsync(Session("live"), 10, 10, Now, default);
 
         await store.DeleteAsync("gone", default);
         await store.PruneAsync(Now, default);

@@ -23,6 +23,10 @@ public static class TokenEndpoint
                    clientId = form["client_id"].ToString(), redirect = form["redirect_uri"].ToString(), resource = form["resource"].ToString();
             if (code.Length == 0 || verifier.Length == 0 || clientId.Length == 0 || redirect.Length == 0)
                 return Error("invalid_request", "code, code_verifier, client_id and redirect_uri are required.");
+            // The store only ever sees the code's hash; a code /authorize never issued needs no lookup at all.
+            // client_id reaches the client store (the touch below) only once it has matched the code's own.
+            if (!CodeProtector.IsWellFormed(code))
+                return Error("invalid_grant", "The code is invalid, expired or already used.");
 
             // Taken (deleted) before any check, so a wrong verifier burns the code and can't be retried.
             var stored = await codes.TryTakeAsync(CodeProtector.Hash(code), ct);

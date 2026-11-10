@@ -110,7 +110,7 @@ public class HardeningTests
         {
             Id = "s-old", ClientId = "c", RedirectUri = "https://claude.ai/api/mcp/auth_callback", CodeChallenge = AuthorizeFlow.Challenge,
             PiActivationId = "a", PiActivationUrl = "https://pi.test/x", CookieHash = "h", ExpiresAt = past
-        }, 200, past.AddMinutes(-20), default);
+        }, 200, 3, past.AddMinutes(-20), default);
         var old = Drafts.New(owner: PiStub.UserA, at: time.Now);
         await drafts.CreateAsync(old);
         time.Now = time.Now.AddDays(8);

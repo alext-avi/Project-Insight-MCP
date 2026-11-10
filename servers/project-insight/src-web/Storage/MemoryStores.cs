@@ -54,14 +54,17 @@ public sealed class MemorySessionStore : ISessionStore
 
     private string NextVersion() => Interlocked.Increment(ref _version).ToString();
 
-    public Task<bool> TryCreateAsync(SignInSession session, int maxOutstanding, DateTimeOffset now, CancellationToken ct)
+    public Task<SessionCreate> TryCreateAsync(SignInSession session, int maxOutstanding, int maxPerClient, DateTimeOffset now, CancellationToken ct)
     {
         lock (_gate)
         {
-            if (_sessions.Values.Count(s => s.ExpiresAt > now) >= maxOutstanding)
-                return Task.FromResult(false);
+            var live = _sessions.Values.Where(s => s.ExpiresAt > now).ToList();
+            if (session.ClientKeyHash is not null && live.Count(s => s.ClientKeyHash == session.ClientKeyHash) >= maxPerClient)
+                return Task.FromResult(SessionCreate.ClientFull);
+            if (live.Count >= maxOutstanding)
+                return Task.FromResult(SessionCreate.Full);
             _sessions[session.Id] = session with { Version = NextVersion() };
-            return Task.FromResult(true);
+            return Task.FromResult(SessionCreate.Created);
         }
     }
 

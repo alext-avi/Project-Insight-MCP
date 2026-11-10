@@ -29,8 +29,8 @@ internal sealed class Rendezvous(int count = 2)
 /// <summary>Sessions whose reads meet at <paramref name="meet"/>: racing posts all see the same version.</summary>
 internal sealed class RendezvousSessionStore(ISessionStore inner, Rendezvous meet) : ISessionStore
 {
-    public Task<bool> TryCreateAsync(SignInSession session, int maxOutstanding, DateTimeOffset now, CancellationToken ct)
-        => inner.TryCreateAsync(session, maxOutstanding, now, ct);
+    public Task<SessionCreate> TryCreateAsync(SignInSession session, int maxOutstanding, int maxPerClient, DateTimeOffset now, CancellationToken ct)
+        => inner.TryCreateAsync(session, maxOutstanding, maxPerClient, now, ct);
 
     public async Task<SignInSession?> GetAsync(string id, CancellationToken ct)
     {

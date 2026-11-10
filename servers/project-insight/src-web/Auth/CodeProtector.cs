@@ -16,6 +16,9 @@ public static class CodeProtector
 
     public static string NewCode() => Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32));
 
+    /// <summary>Whether <paramref name="value"/> has the shape <see cref="NewCode"/> produces: 43 base64url characters.</summary>
+    public static bool IsWellFormed(string? value) => value is { Length: 43 } && value.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
+
     public static string Hash(string code) => TokenHash.Of(code);
 
     public static byte[] Seal(string code, byte[] plaintext)
