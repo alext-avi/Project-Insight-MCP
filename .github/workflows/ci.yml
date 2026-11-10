@@ -32,7 +32,7 @@ jobs:
               run: |
                   docker run -d --name azurite -p 10000-10002:10000-10002 mcr.microsoft.com/azure-storage/azurite:3.37.0 azurite --skipApiVersionCheck --loose --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
                   for port in 10000 10001 10002; do
-                      for i in $(seq 1 30); do
+                      for _ in $(seq 1 30); do
                           (echo > /dev/tcp/127.0.0.1/$port) 2>/dev/null && continue 2
                           sleep 1
                       done
@@ -41,8 +41,10 @@ jobs:
                       exit 1
                   done
 
-            # The tests project references core, server and both hosts, so this restores every project, each
-            # against its packages.lock.json. Later steps don't restore again.
+            # The tests project references core, server and both hosts, so this restores every project. Each is
+            # checked against its packages.lock.json except the stdio host, which has none: single-file publish
+            # makes its lock file machine- and SDK-specific. Its packages are pinned and also in the tests lock.
+            # Later steps don't restore again.
             - name: Restore (locked)
               run: dotnet restore servers/project-insight/tests --locked-mode
 
