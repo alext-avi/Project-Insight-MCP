@@ -395,6 +395,7 @@ Every action in `deploy.yml` is pinned to a full commit SHA, with the tag as a c
 - **PI device-activation phishing:** PI's create-request needs no authentication, so an attacker who knows the tenant can phish a user into approving an activation directly at PI, without our server. Our server adds nothing to that beyond what the consent page, the attempt cap and `Auth:AllowedPiUserIds` already limit. The PI admin should restrict or monitor device activations if PI allows it.
 - **Model-chosen ids in PI paths:** some PI path segments built from model-supplied ids (e.g. `projectId`) aren't escaped, so a crafted id reaches other PI paths with the same user's token. It gains no privilege, and every URL stays relative to the configured PI host. Fixed opportunistically with `Uri.EscapeDataString`.
 - **Restarts on deploy:** every push to `main` restarts the app; the shutdown timeout covers in-flight commits.
+- **Activation by users who aren't allowed:** a user not on `Auth:AllowedPiUserIds` who completes activation leaves a 90-day PI token that PI minted and the server discarded (PI returns the user id only together with the token). They can revoke it in PI. Best-effort server-side revocation is revisited after the go-live gate shows PI's revocation API.
 
 ## Testing
 

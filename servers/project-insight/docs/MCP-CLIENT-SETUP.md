@@ -2,29 +2,32 @@
 
 ## Overview
 
-This guide shows you how to configure the Project Insight MCP server with various MCP clients (VS Code Copilot, Claude Desktop, etc.).
+This guide shows how to configure the Project Insight MCP server with MCP clients (VS Code Copilot, Claude Desktop, and others).
 
-The server supports **two transport modes**:
-- **STDIO** (recommended for local use) - runs as a local subprocess
-- **HTTP** (for cloud/shared deployment) - runs as Azure Functions
+There are two ways to connect:
+- **Local stdio** (`projectinsight-mcp`): runs as a subprocess on your machine. Described below.
+- **Remote** (`https://<app>/mcp`): the web host on Azure App Service, if your owner runs one. You sign in with your own Project Insight account. See [docs/REMOTE.md](../../../docs/REMOTE.md) for Claude, Claude Code, ChatGPT and Codex.
 
-## Quick Start: Local STDIO Mode
+## Local stdio
 
-This is the simplest setup for personal use.
+Install the tool once:
+
+```bash
+dotnet tool install -g ProjectInsight.MCP
+```
 
 ### VS Code Copilot
 
-Add to your VS Code `settings.json`:
+Add to `.vscode/mcp.json`:
 
 ```json
 {
-  "github.copilot.chat.mcpServers": {
+  "servers": {
     "project-insight": {
-      "command": "dotnet",
-      "args": ["run", "--project", "/path/to/Project-Insight-MCP/servers/project-insight/src-stdio"],
+      "type": "stdio",
+      "command": "projectinsight-mcp",
       "env": {
-        "ProjectInsight__BaseUrl": "https://your-domain.projectinsight.net/api/",
-        "ProjectInsight__ApiToken": "your-api-token-here"
+        "ProjectInsight__BaseUrl": "https://your-tenant.projectinsight.net/api/"
       }
     }
   }
@@ -33,130 +36,44 @@ Add to your VS Code `settings.json`:
 
 ### Claude Desktop
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+Use the `.mcpb` bundle from the Releases page, or add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
 
 ```json
 {
   "mcpServers": {
     "project-insight": {
-      "command": "dotnet",
-      "args": ["run", "--project", "/path/to/Project-Insight-MCP/servers/project-insight/src-stdio"],
+      "command": "projectinsight-mcp",
       "env": {
-        "ProjectInsight__BaseUrl": "https://your-domain.projectinsight.net/api/",
-        "ProjectInsight__ApiToken": "your-api-token-here"
+        "ProjectInsight__BaseUrl": "https://your-tenant.projectinsight.net/api/"
       }
     }
   }
 }
 ```
 
-## HTTP Mode (Cloud Deployment)
+Leave the token out to sign in with SSO: ask the assistant to "link my Project Insight account".
+To use a static token instead, add `ProjectInsight__ApiToken`. See [AUTHENTICATION.md](./AUTHENTICATION.md).
 
-For team sharing or enterprise use, deploy to Azure Functions and use HTTP transport.
+### Running from source
 
-### VS Code Copilot (HTTP)
-
-```json
-{
-  "github.copilot.chat.mcpServers": {
-    "project-insight": {
-      "transport": "http", 
-      "url": "https://your-function-app.azurewebsites.net/api/mcp"
-    }
-  }
-}
-```
-
-### Local Development (HTTP)
-
-For testing the Azure Functions version locally:
-
-```json
-{
-  "github.copilot.chat.mcpServers": {
-    "project-insight-local": {
-      "transport": "http",
-      "url": "http://localhost:7071/api/mcp"
-    }
-  }
-}
-```
+Replace the command with `dotnet` and the arguments `["run", "--project", "/path/to/Project-Insight-MCP/servers/project-insight/src-stdio"]`.
 
 ## Configuration Reference
 
-### Environment Variables
-
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `ProjectInsight__BaseUrl` | Project Insight API base URL | ✅ |
-| `ProjectInsight__ApiToken` | API authentication token | ✅ |
-
-### Getting Your API Token
-
-1. Log into Project Insight
-2. Navigate to **Settings** → **API Access**
-3. Generate or copy your API token
-4. Keep this token secure - it has access to your project data
-
-## Quick Test Commands
-
-Once configured, you can test the MCP server directly:
-
-### 1. Test MCP Tools List
-```bash
-curl -X POST http://localhost:7071/api/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}'
-```
-
-### 2. Test Project Search
-```bash
-curl -X POST http://localhost:7071/api/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "search_projects", "arguments": {}}}'
-```
-
-### 3. Test Health Endpoint
-```bash
-curl "http://localhost:7071/api/health?test-api"
-```
+| `ProjectInsight__BaseUrl` | Project Insight API base URL | Yes |
+| `ProjectInsight__ApiToken` | Static API token | Only without SSO |
 
 ## Testing with MCP Inspector
 
 The MCP Inspector is the official debugging tool for MCP servers:
 
 ```bash
-# Install and run MCP Inspector
-npx @modelcontextprotocol/inspector dotnet run --project /path/to/src-stdio
+npx @modelcontextprotocol/inspector projectinsight-mcp
 ```
 
-This opens a web UI where you can:
-- View all available tools
-- Test tool execution interactively
-- Debug request/response payloads
-
-## VS Code Extension Configuration
-
-For VS Code MCP extensions, create this configuration:
-
-**File**: `.vscode/mcp-servers.json`
-
-```json
-{
-  "servers": [
-    {
-      "name": "project-insight",
-      "url": "http://localhost:7071/api/mcp",
-      "transport": "http",
-      "capabilities": {
-        "tools": ["search_projects"],
-        "resources": []
-      },
-      "description": "Project Insight project management tools"
-    }
-  ]
-}
-```
+It opens a web UI where you can list tools, call them and read the request and response payloads.
 
 ## Available MCP Tools
 
@@ -211,39 +128,13 @@ Use the search_projects tool to get project information
 
 ## Troubleshooting
 
-### 1. Connection Issues
-- Ensure Azure Function is running: `lsof -i :7071`
-- Test health endpoint: `curl http://localhost:7071/api/health`
+### 1. Connection issues
+- Check that `projectinsight-mcp` is on your PATH, or use its full path (such as `~/.dotnet/tools/projectinsight-mcp`).
+- Restart the client after changing its config.
 
-### 2. Authentication Issues  
-- Verify API token in local.settings.json
-- Test auth: `curl "http://localhost:7071/api/health?validate-auth=true"`
+### 2. Authentication issues
+- Check `ProjectInsight__BaseUrl` is an absolute https URL ending in `/api/`.
+- For SSO, run the link flow again. For a static token, check it has not expired.
 
-### 3. Tool Discovery Issues
-- Test tools list: `curl -X POST http://localhost:7071/api/mcp -H "Content-Type: application/json" -d '{"method": "tools/list"}'`
-
-### 4. MCP Protocol Issues
-- Verify JSON-RPC 2.0 format in requests
-- Check response format matches MCP specification
-
-## Production Configuration
-
-For production deployment (Azure Functions), update URLs:
-
-```json
-{
-  "mcpServers": {
-    "project-insight-prod": {
-      "transport": "http",
-      "url": "https://your-function-app.azurewebsites.net/api/mcp",
-      "name": "Project Insight MCP Server (Production)"
-    }
-  }
-}
-```
-
----
-
-**Local Server**: `http://localhost:7071/api/mcp`  
-**Health Check**: `http://localhost:7071/api/health`  
-**Server Info**: `http://localhost:7071/api/info`
+### 3. Remote server issues
+- See [docs/REMOTE.md](../../../docs/REMOTE.md) for sign-in steps, limits and revocation.

@@ -9,7 +9,7 @@ This project creates a Model Context Protocol (MCP) server for the Project Insig
 - **Task Management**: Handle project tasks and assignments  
 - **Resource Management**: Manage project resources and allocations
 - **Authentication**: Token-based authentication with Project Insight API
-- **Type Safety**: Full TypeScript implementation with proper types
+- **Type Safety**: C# on .NET 10 with typed models
 
 ## API Integration
 
@@ -20,7 +20,7 @@ This project creates a Model Context Protocol (MCP) server for the Project Insig
 
 ## Implementation Guidelines
 
-- Follow MCP TypeScript SDK best practices
+- Follow the official MCP C# SDK best practices
 - Implement proper error handling for API failures
 - Use structured logging (stderr only for STDIO transport)
 - Validate all inputs with proper schemas
@@ -32,7 +32,7 @@ This project creates a Model Context Protocol (MCP) server for the Project Insig
 - Store API credentials securely (environment variables)
 - Validate API responses
 - Handle sensitive project data appropriately
-- Implement proper CORS for HTTP transport
+- The remote web host (`servers/project-insight/src-web`) passes each user's own Project Insight token through; never add a shared token
 
 ## Testing Strategy
 

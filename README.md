@@ -35,9 +35,9 @@ Requires the [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0
 
 Then point your client's MCP config at the `projectinsight-mcp` command — see the [server guide](./servers/project-insight/README.md) for ready-to-paste config.
 
-### ☁️ Remote server — claude.ai connector / Copilot (self-host on Azure)
+### ☁️ Remote server — Claude, ChatGPT, Codex (self-host on Azure)
 
-Deploy the Azure Functions server with its OAuth 2.1 + PKCE connector so claude.ai and Copilot can connect over HTTPS. Infrastructure-as-code lives in [`bicep/`](./bicep/); walkthrough in the [deployment docs](./servers/project-insight/docs/).
+Self-host the web host on Azure App Service. It fronts Project Insight's device activation with OAuth 2.1, so each user signs in with their own account. Infrastructure-as-code and the owner's one-time setup are in [`bicep/README.md`](./bicep/README.md). To connect a client to a running server, see [`docs/REMOTE.md`](./docs/REMOTE.md).
 
 ## Authentication
 
@@ -60,14 +60,15 @@ To link via SSO, just ask the assistant **"link my Project Insight account"**, o
 ```
 Project-Insight-MCP/
 ├── servers/project-insight/
-│   ├── core/         # PI API client, auth helpers, MCP tool definitions/handlers
-│   ├── src/          # Azure Functions remote server (+ OAuth 2.1/PKCE bridge)
-│   ├── src-stdio/    # stdio host (official MCP C# SDK) → .mcpb bundle + ProjectInsight.MCP NuGet tool
+│   ├── core/         # PI API client, auth helpers, time-change logic
+│   ├── server/       # shared MCP wiring and tool handlers
+│   ├── src-web/      # remote web host (ASP.NET Core, OAuth 2.1) for App Service
+│   ├── src-stdio/    # local stdio host → .mcpb bundle + ProjectInsight.MCP NuGet tool
 │   ├── tests/        # xUnit tests, incl. end-to-end through the MCP SDK client
 │   ├── mcpb/         # bundle manifest + build staging
-│   └── docs/         # setup, auth, and deployment guides
+│   └── docs/         # setup and auth guides
 ├── bicep/            # Azure infrastructure-as-code (self-host)
-├── docs/             # general integration guides
+├── docs/             # REMOTE.md (connect a client), agents.md, integration guides
 └── examples/         # usage examples
 ```
 
@@ -75,7 +76,8 @@ Project-Insight-MCP/
 
 - [**Server guide**](./servers/project-insight/README.md) — install, auth, and the full tool list
 - [Authentication](./servers/project-insight/docs/AUTHENTICATION.md)
-- [Deployment & infrastructure](./servers/project-insight/docs/)
+- [Connecting to the remote server](./docs/REMOTE.md)
+- [Deployment & infrastructure](./bicep/README.md)
 
 ## Contributing
 

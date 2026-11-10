@@ -1,195 +1,41 @@
-# VS Code Setup Guide - Project Insight MCP Server
+# VS Code Setup
 
-## 🚀 **Quick Start**
+## Extensions
 
-Your Project Insight MCP server is now fully configured for VS Code development!
+- **C# Dev Kit** for .NET development and debugging.
+- **Bicep**, if you edit `bicep/`.
 
-### **1. Open in VS Code**
-```bash
-# Option A: Open workspace file
-code ProjectInsightMCP.code-workspace
+You need the .NET 10 SDK. No Azure Functions tools are needed.
 
-# Option B: Open folder
-code .
-```
+## Tasks
 
-### **2. Install Recommended Extensions**
-VS Code will prompt you to install recommended extensions, or install manually:
-- **C# Dev Kit** - Essential for .NET development
-- **Azure Functions** - For Azure Functions development and debugging
-- **REST Client** - For testing HTTP endpoints directly in VS Code
+Press `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows, Linux) and run "Tasks: Run Task". The tasks
+are in `.vscode/tasks.json`:
 
-## 🛠️ **Available VS Code Tasks**
+| Task | What it does |
+|------|--------------|
+| `build` | Builds the web host (`src-web`) |
+| `build stdio` | Builds the local stdio tool (`src-stdio`) |
+| `test` | Runs the test project (`servers/project-insight/tests`) |
+| `watch web` | Runs the web host with `dotnet watch` (background) |
 
-Press `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows/Linux) and type "Tasks: Run Task":
+From a terminal, the same tests run as `dotnet test servers/project-insight/tests -c Release`.
 
-### **Build & Development**
-- **`build`** - Build the project
-- **`clean`** - Clean build artifacts  
-- **`restore`** - Restore NuGet packages
-- **`func: start`** - Start Azure Functions runtime (with auto-build)
-- **`func: stop`** - Stop running Azure Functions
+## Debugging
 
-### **Testing**
-- **`test: health`** - Quick health check
-- **`test: mcp tools`** - Test MCP tools list
-- **`test: search projects`** - Test project search
-- **`test: full suite`** - Run complete test suite
+`.vscode/launch.json` has one configuration, **Debug web host**. It runs the `build` task, then
+launches `ProjectInsightMCP.Web.dll` with `ASPNETCORE_ENVIRONMENT=Development`. Set breakpoints and
+press `F5`.
 
-### **Deployment**
-- **`deploy to azure`** - Deploy to Azure Functions
+The web host needs settings before it starts. For a local run, set them as environment variables or
+in user secrets. See [Getting started](../../../docs/agents.md#getting-started) for the list, including
+`Storage__Mode=Local`.
 
-## 🐛 **Debugging**
+To debug the stdio tool, launch it from your MCP client or from the MCP Inspector
+(`npx @modelcontextprotocol/inspector projectinsight-mcp`).
 
-### **Launch Configurations Available:**
+## Troubleshooting
 
-1. **`Launch Azure Functions`** - Start with debugger attached
-2. **`Attach to Azure Functions`** - Attach to running instance
-3. **`Debug .NET Core`** - Direct .NET debugging
-
-### **How to Debug:**
-1. Set breakpoints in your code
-2. Press `F5` or go to Run & Debug panel
-3. Select "Launch Azure Functions"
-4. The debugger will start and hit your breakpoints
-
-## 🧪 **Testing from VS Code**
-
-### **Method 1: REST Client (Recommended)**
-1. Open `test-requests.http`
-2. Click "Send Request" above any HTTP request
-3. View responses inline
-
-### **Method 2: Tasks**
-1. `Cmd+Shift+P` → "Tasks: Run Task"
-2. Select any test task
-3. View output in terminal
-
-### **Method 3: Integrated Terminal**
-```bash
-# Start the function
-func start
-
-# In another terminal
-./quick-test-mcp.sh
-```
-
-## 📁 **VS Code Configuration Files**
-
-| File | Purpose |
-|------|---------|
-| `.vscode/tasks.json` | Build, test, and deployment tasks |
-| `.vscode/launch.json` | Debug configurations |
-| `.vscode/settings.json` | Project-specific settings |
-| `.vscode/extensions.json` | Recommended extensions |
-| `test-requests.http` | HTTP test requests |
-| `ProjectInsightMCP.code-workspace` | Workspace definition |
-
-## ⚡ **Quick Development Workflow**
-
-### **Daily Development:**
-1. **Open VS Code**: `code ProjectInsightMCP.code-workspace`
-2. **Start Function**: `Cmd+Shift+P` → "Tasks: Run Task" → "func: start"
-3. **Test Changes**: Open `test-requests.http` and click "Send Request"
-4. **Debug Issues**: Set breakpoints and press `F5`
-
-### **Testing Workflow:**
-1. **Health Check**: Run task "test: health"
-2. **MCP Validation**: Run task "test: mcp tools"  
-3. **Full Test**: Run task "test: full suite"
-4. **Interactive Testing**: Use `test-requests.http`
-
-## 🔧 **Keyboard Shortcuts**
-
-| Action | Shortcut | Task |
-|--------|----------|------|
-| Build | `Cmd+Shift+B` | Build project |
-| Debug | `F5` | Start debugging |
-| Command Palette | `Cmd+Shift+P` | Access tasks/commands |
-| Terminal | `Cmd+`` | Open integrated terminal |
-| Problems | `Cmd+Shift+M` | View build errors |
-
-## 📊 **Monitoring & Logs**
-
-### **View Function Logs:**
-1. Start function with task "func: start"
-2. Watch output in Terminal panel
-3. View detailed logs in integrated terminal
-
-### **Health Monitoring:**
-- **Quick Check**: Run "test: health" task
-- **Detailed Check**: Open `test-requests.http` and use health endpoints
-- **Real-time**: Keep terminal open while running functions
-
-## 🚀 **Deployment from VS Code**
-
-### **Azure Deployment:**
-1. **Configure**: Edit `deploy-params.json` if needed
-2. **Deploy**: Run task "deploy to azure"
-3. **Monitor**: Watch deployment progress in terminal
-4. **Test**: Use `test-deployment.sh` script
-
-### **Quick Deploy:**
-```bash
-# From VS Code terminal
-./deploy.sh
-```
-
-## 🔍 **Troubleshooting**
-
-### **Common Issues:**
-
-**Function won't start:**
-- Run "clean" task then "build" task
-- Check the .NET 10 SDK and the .NET 8 runtime are installed
-- Verify Azure Functions Core Tools v4
-
-**Debugging not working:**
-- Ensure C# Dev Kit extension is installed
-- Check launch configuration in `.vscode/launch.json`
-- Restart VS Code
-
-**Tests failing:**
-- Verify function is running with "func: start" task
-- Check API credentials in `local.settings.json`
-- Run "test: health" to diagnose
-
-**Build errors:**
-- Run "restore" task to update packages
-- Check Problems panel (`Cmd+Shift+M`)
-- Verify .NET SDK version
-
-## 📋 **VS Code Features Enabled**
-
-✅ **IntelliSense** - Full C# code completion  
-✅ **Debugging** - Breakpoints and step-through debugging  
-✅ **Task Runner** - Build, test, and deploy tasks  
-✅ **HTTP Testing** - REST Client integration  
-✅ **Azure Integration** - Azure Functions extension  
-✅ **Git Integration** - Source control panel  
-✅ **Terminal** - Integrated terminal for commands  
-✅ **Error Highlighting** - Real-time error detection  
-
-## 🎯 **Pro Tips**
-
-1. **Multi-Terminal**: Use split terminal for function + testing
-2. **Watch Mode**: Keep "func: start" running while developing
-3. **REST Client**: Use `test-requests.http` for quick API testing
-4. **Debugging**: Set breakpoints in MCP handlers for debugging
-5. **Task Shortcuts**: Create custom keybindings for frequent tasks
-
-## ✅ **Ready to Code!**
-
-Your VS Code environment is fully configured for Project Insight MCP server development. You can now:
-
-- 🔧 **Build and debug** with full IDE support
-- 🧪 **Test HTTP endpoints** directly in editor
-- 🚀 **Deploy to Azure** with one command
-- 📊 **Monitor health** and performance
-- 🔍 **Debug issues** with breakpoints
-
-**Happy coding!** 🎉
-
----
-
-*Start by opening the workspace file and running the "func: start" task to get going!*
+- **Web host exits at startup:** read the message. It names the setting that is missing or unsafe.
+- **Build errors:** check the Problems panel (`Cmd+Shift+M`) and that `dotnet --version` is 10.x.
+- **Debugger will not attach:** make sure C# Dev Kit is installed and restart VS Code.
