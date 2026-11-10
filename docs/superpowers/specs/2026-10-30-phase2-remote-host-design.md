@@ -324,14 +324,25 @@ It also flags the Azure identifiers the history rewrite removed: `/subscriptions
 
 So the infrastructure adds visibility rather than a lockout:
 
-- a `CanNotDelete` lock on this app's resources;
-- **Activity Log alerts** to the owner on:
-  - `Microsoft.Storage/storageAccounts/write`
-  - `Microsoft.Web/sites/write`
-  - `Microsoft.Web/sites/config/write`
-  - `Microsoft.Web/sites/basicPublishingCredentialsPolicies/write`
-  - `Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write`
-  - `Microsoft.Authorization/roleAssignments/write`
+- a `CanNotDelete` lock on this app's resources: the web app, storage account, deployer identity, Log Analytics workspace, App Insights, action group and both alert rules;
+- a diagnostic setting sending the web app's `AppServiceAuditLogs` and `AppServicePlatformLogs` to the workspace, since a Kudu publish with an Entra token may leave no Activity Log event;
+- **Activity Log alerts** to the owner, any status (denied and failed attempts email too, and so does the owner's own Bicep redeploy):
+  - on the web app, storage account, deployer identity and the group-wide alert:
+    - `Microsoft.Storage/storageAccounts/write`
+    - `Microsoft.Web/sites/write`
+    - `Microsoft.Web/sites/config/write`
+    - `Microsoft.Web/sites/basicPublishingCredentialsPolicies/write`
+    - `Microsoft.Web/sites/sitecontainers/write`
+    - `Microsoft.Web/sites/extensions/write`
+    - `Microsoft.Insights/diagnosticSettings/write` and `/delete`
+    - `Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write`
+    - `Microsoft.Insights/activityLogAlerts/write` and `/delete`
+  - on the whole resource group:
+    - `Microsoft.Authorization/roleAssignments/write` and `/delete`
+    - `Microsoft.Authorization/roleDefinitions/write` (a subscription-level resource: an edit made at subscription scope may not be seen)
+    - `Microsoft.Authorization/locks/delete`
+    - `Microsoft.Insights/activityLogAlerts/write` and `/delete`
+    - `Microsoft.Insights/actionGroups/write` and `/delete`
 
 If the server ever holds tokens for more than the owner and a few colleagues, the next step is a dedicated resource group or subscription where only the owner holds roles.
 

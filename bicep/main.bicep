@@ -274,14 +274,21 @@ resource ownerAlerts 'Microsoft.Insights/actionGroups@2023-01-01' = {
   }
 }
 
-// Changes that could expose tokens in flight or weaken the deploy trust, made outside this template.
+// Changes that could expose tokens in flight or weaken the deploy trust, made outside this template. Role
+// assignments are watched group-wide by accessChanges below. The alert operations only occur on accessChanges,
+// which this rule also watches, so neither alert can be edited without the other emailing.
 var watchedOperations = [
   'Microsoft.Storage/storageAccounts/write'
   'Microsoft.Web/sites/write'
   'Microsoft.Web/sites/config/write'
   'Microsoft.Web/sites/basicPublishingCredentialsPolicies/write'
+  'Microsoft.Web/sites/sitecontainers/write'
+  'Microsoft.Web/sites/extensions/write'
+  'Microsoft.Insights/diagnosticSettings/write'
+  'Microsoft.Insights/diagnosticSettings/delete'
   'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write'
-  'Microsoft.Authorization/roleAssignments/write'
+  'Microsoft.Insights/activityLogAlerts/write'
+  'Microsoft.Insights/activityLogAlerts/delete'
 ]
 
 resource riskyChanges 'Microsoft.Insights/activityLogAlerts@2020-10-01' = {
@@ -290,7 +297,7 @@ resource riskyChanges 'Microsoft.Insights/activityLogAlerts@2020-10-01' = {
   tags: tags
   properties: {
     enabled: true
-    scopes: [ site.id, storage.id, deployer.id ]
+    scopes: [ site.id, storage.id, deployer.id, accessChanges.id ]
     condition: {
       allOf: [
         { field: 'category', equals: 'Administrative' }
@@ -299,6 +306,94 @@ resource riskyChanges 'Microsoft.Insights/activityLogAlerts@2020-10-01' = {
     }
     actions: { actionGroups: [ { actionGroupId: ownerAlerts.id } ] }
   }
+}
+
+// Changes anywhere in the shared resource group that could grant access to this app or silence these alerts:
+// role assignments at any scope in the group (the group itself included), the custom role, lock removal, and
+// edits to alert rules and action groups. Other people's resources share the group; these operations are rare.
+var watchedGroupOperations = [
+  'Microsoft.Authorization/roleAssignments/write'
+  'Microsoft.Authorization/roleAssignments/delete'
+  'Microsoft.Authorization/roleDefinitions/write'
+  'Microsoft.Authorization/locks/delete'
+  'Microsoft.Insights/activityLogAlerts/write'
+  'Microsoft.Insights/activityLogAlerts/delete'
+  'Microsoft.Insights/actionGroups/write'
+  'Microsoft.Insights/actionGroups/delete'
+]
+
+resource accessChanges 'Microsoft.Insights/activityLogAlerts@2020-10-01' = {
+  name: '${namePrefix}-access-changes'
+  location: 'global'
+  tags: tags
+  properties: {
+    enabled: true
+    scopes: [ resourceGroup().id ]
+    condition: {
+      allOf: [
+        { field: 'category', equals: 'Administrative' }
+        { anyOf: [for op in watchedGroupOperations: { field: 'operationName', equals: op }] }
+      ]
+    }
+    actions: { actionGroups: [ { actionGroupId: ownerAlerts.id } ] }
+  }
+}
+
+// Kudu/SCM sign-ins and publishes (AppServiceAuditLogs) and platform events (AppServicePlatformLogs). A publish
+// through Kudu with an Entra token may leave no Administrative Activity Log event, so this is where it shows up.
+resource siteDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  scope: site
+  name: 'audit-to-logs'
+  properties: {
+    workspaceId: logs.id
+    logs: [
+      { category: 'AppServiceAuditLogs', enabled: true }
+      { category: 'AppServicePlatformLogs', enabled: true }
+    ]
+  }
+}
+
+// The rest of this app's resources: the deploy identity, the evidence, and the alerting itself. Contributors can't
+// remove locks (that takes Microsoft.Authorization/locks/delete), and accessChanges emails if someone who can does.
+var lockProperties = {
+  level: 'CanNotDelete'
+  notes: 'Remote MCP server for Project Insight.'
+}
+
+resource deployerLock 'Microsoft.Authorization/locks@2020-05-01' = {
+  scope: deployer
+  name: 'do-not-delete'
+  properties: lockProperties
+}
+
+resource logsLock 'Microsoft.Authorization/locks@2020-05-01' = {
+  scope: logs
+  name: 'do-not-delete'
+  properties: lockProperties
+}
+
+resource insightsLock 'Microsoft.Authorization/locks@2020-05-01' = {
+  scope: insights
+  name: 'do-not-delete'
+  properties: lockProperties
+}
+
+resource ownerAlertsLock 'Microsoft.Authorization/locks@2020-05-01' = {
+  scope: ownerAlerts
+  name: 'do-not-delete'
+  properties: lockProperties
+}
+
+resource riskyChangesLock 'Microsoft.Authorization/locks@2020-05-01' = {
+  scope: riskyChanges
+  name: 'do-not-delete'
+  properties: lockProperties
+}
+
+resource accessChangesLock 'Microsoft.Authorization/locks@2020-05-01' = {
+  scope: accessChanges
+  name: 'do-not-delete'
+  properties: lockProperties
 }
 
 output webAppName string = site.name

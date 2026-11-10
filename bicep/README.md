@@ -7,10 +7,11 @@ One-time setup for the remote MCP server on Azure App Service. Design: `docs/sup
 - Log Analytics workspace and Application Insights, for logs and telemetry.
 - Storage account (no shared keys) with the tables `OAuthClients`, `OAuthSessions`, `OAuthCodes` and the blob container `drafts`.
 - Linux App Service plan (B1, one instance) and the web app `<prefix>-web` with a system-assigned identity, HTTPS only, FTP and SCM basic credentials off.
+- A diagnostic setting sending the web app's `AppServiceAuditLogs` (Kudu/SCM sign-ins and publishes) and `AppServicePlatformLogs` to the workspace.
 - Role assignments giving the web app's identity table and blob data access to the storage account.
 - A user-assigned `deployer` identity, federated to `deploy.yml` on `main` in the `production` environment, with a custom role that can only publish code and restart the app.
-- `CanNotDelete` locks on the web app and the storage account.
-- An email action group and an Activity Log alert for risky changes (storage, app config, credentials policy, federation, role assignments).
+- `CanNotDelete` locks on the web app, the storage account, the deployer identity, the workspace, App Insights, the action group and both alert rules.
+- An email action group and two Activity Log alerts (section 9).
 
 ## 2. Before you start
 
@@ -77,6 +78,42 @@ Actions, "Deploy remote server", Run workflow on `main`.
 - If step 3 fails with `RoleDefinitionDoesNotExist`, the new custom role hasn't replicated yet; run step 3 again.
 - If you do switch roles, remove the old custom-role assignment from the web app (deployments are incremental and leave it in place).
 
-## 9. Who has access
+## 9. Alerts and audit logs
 
-The app lives in a shared resource group whose contributors the owner reviewed and accepted. Alerts email the owner on risky changes.
+Both alerts email the action group (`alertEmail`):
+
+- **`<prefix>-risky-changes`**, on the web app, storage account, deployer identity and the other alert: writes to
+  the storage account, the app, its config, its basic-credentials policies, sidecar containers
+  (`sites/sitecontainers`), site extensions (`sites/extensions`, which ARM OneDeploy uses), its diagnostic setting,
+  the deployer's federated credential, and changes to `<prefix>-access-changes`.
+- **`<prefix>-access-changes`**, on the whole resource group: role assignments created or deleted at any scope in
+  the group (the group itself included), custom role definition writes, lock deletions, and changes to any alert
+  rule or action group. The group is shared, so other people's changes of these kinds email you too; they're rare.
+
+What to expect:
+
+- **Every matching event emails, whatever its outcome.** A denied or failed attempt emails too (for example a
+  deploy action trying a write its role doesn't allow), and so does each watched operation a successful one
+  performs.
+- **Re-running step 3 emails.** A Bicep deploy writes the app, its config, the credentials policies, the
+  diagnostic setting, the federated credential, role assignments, the alerts and the action group, so expect a
+  burst of emails each time. Check that they line up with your deploy.
+- **Custom role edits: needs verification.** Role definitions are subscription-level resources. This template
+  writes the custom role through the resource group's scope, which the group-wide alert should see; an edit made at
+  subscription scope (the default for `az role definition update`) probably isn't seen. Edit the role once after
+  setup and check for the email. If none arrives and you can, add a subscription-scoped Activity Log alert for
+  `Microsoft.Authorization/roleDefinitions/write`.
+- **The action group is its own weak point.** Someone who changes its email address or disables it gets the
+  resulting alert routed through the changed group. Glance at the action group now and then.
+- **Kudu publishes may not reach the Activity Log.** A publish through Kudu with an Entra token may leave no
+  Administrative event; `AppServiceAuditLogs` records it instead.
+
+Owner follow-up, not yet in the template: after the first deploy, run `AppServiceAuditLogs | take 20` in the
+workspace (if the table is missing, check that the category is available for this plan), learn which columns hold
+the caller's identity and the protocol, and add a log search alert (`Microsoft.Insights/scheduledQueryRules`) for
+publishes and SCM sign-ins by anyone other than the deployer identity. It isn't in the template because the
+column names haven't been checked against real rows.
+
+## 10. Who has access
+
+The app lives in a shared resource group whose contributors the owner reviewed and accepted. Alerts email the owner on risky changes (section 9).
