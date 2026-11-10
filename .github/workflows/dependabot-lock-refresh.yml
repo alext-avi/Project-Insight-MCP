@@ -5,6 +5,10 @@ name: Refresh lock files on Dependabot PRs
 # This regenerates every lock file on a Dependabot branch and commits any that changed. A push made with
 # GITHUB_TOKEN starts no workflows, so it then starts CI and the secret scan itself; their checks land on the new
 # commit, which is where branch protection looks for them.
+#
+# Once this commit is on a Dependabot PR, Dependabot stops rebasing or updating that PR itself (it leaves PRs with
+# other authors' commits alone). Comment `@dependabot recreate` to rebuild it: that drops the commit, and this
+# workflow then runs again and adds it back.
 on:
     pull_request:
         paths:
@@ -16,7 +20,8 @@ permissions:
     contents: read
 
 concurrency:
-    group: lock-refresh-${{ github.head_ref }}
+    # The head repository too: a fork PR can reuse a Dependabot branch's name, and must not cancel its refresh.
+    group: lock-refresh-${{ github.event.pull_request.head.repo.full_name }}-${{ github.head_ref }}
     cancel-in-progress: true
 
 jobs:
@@ -28,8 +33,8 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 15
         permissions:
-            contents: write
-            actions: write
+            contents: write # push the refreshed lock files to the Dependabot branch
+            actions: write # start ci.yml and secret-scan.yml with workflow_dispatch
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
