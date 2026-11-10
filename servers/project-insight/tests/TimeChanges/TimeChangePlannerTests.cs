@@ -43,6 +43,36 @@ public sealed class TimeChangePlannerTests : IDisposable
         new() { Action = "delete", TimeEntryId = "te-4" }
     ];
 
+    private sealed class PruneFailsStore(IDraftStore inner, Exception failure) : IDraftStore
+    {
+        public Task<Draft?> GetAsync(string ownerId, string id, CancellationToken ct = default) => inner.GetAsync(ownerId, id, ct);
+        public Task CreateAsync(Draft draft, CancellationToken ct = default) => inner.CreateAsync(draft, ct);
+        public Task<Draft?> TryTransitionAsync(string ownerId, string id, string expectedStatus, Action<Draft> update, CancellationToken ct = default)
+            => inner.TryTransitionAsync(ownerId, id, expectedStatus, update, ct);
+        public Task PruneAsync(string ownerId, CancellationToken ct = default) => throw failure;
+        public Task PruneAllAsync(CancellationToken ct = default) => throw failure;
+    }
+
+    [Fact]
+    public async Task A_prune_that_fails_after_the_draft_is_saved_does_not_fail_the_plan()
+    {
+        // Not only file-system errors: a storage service throws its own exception types (throttling, a lost race).
+        var planner = new TimeChangePlanner(_pi, new PruneFailsStore(_store, new InvalidOperationException("storage throttled")), _time);
+
+        var result = await planner.PlanAsync("Log Tuesday", TypicalChanges(), default);
+
+        Assert.NotNull(result.Draft);
+        Assert.NotNull(await _store.GetAsync("u-1", result.Draft!.Id));
+    }
+
+    [Fact]
+    public async Task Cancellation_during_the_prune_still_cancels_the_plan()
+    {
+        var planner = new TimeChangePlanner(_pi, new PruneFailsStore(_store, new OperationCanceledException()), _time);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => planner.PlanAsync("Log Tuesday", TypicalChanges(), default));
+    }
+
     [Fact]
     public async Task Plan_stores_a_draft_and_writes_nothing_to_project_insight()
     {

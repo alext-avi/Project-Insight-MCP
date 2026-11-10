@@ -14,7 +14,7 @@ public static class WebStorage
         services.AddSingleton<ICodeStore>(sp => Local(sp) ? new MemoryCodeStore() : new TableCodeStore(Table(sp, "OAuthCodes")));
         services.AddSingleton<IDraftStore>(sp => Local(sp)
             ? new FileDraftStore(Config(sp)["ProjectInsight:DraftsPath"] ?? throw new InvalidOperationException("Storage:Mode Local needs ProjectInsight:DraftsPath."), sp.GetRequiredService<TimeProvider>())
-            : new BlobDraftStore(Blobs(sp).GetBlobContainerClient("drafts"), sp.GetRequiredService<TimeProvider>()));
+            : new BlobDraftStore(Blobs(sp).GetBlobContainerClient("drafts"), sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<BlobDraftStore>>()));
         return services;
     }
 

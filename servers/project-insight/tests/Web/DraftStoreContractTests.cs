@@ -162,4 +162,61 @@ public sealed class BlobDraftStoreContractTests : DraftStoreContract
         await container.CreateIfNotExistsAsync();
         return new BlobDraftStore(container, Time);
     }
+
+    [SkippableFact]
+    public async Task A_storage_failure_reaches_the_caller_as_a_short_fixed_message()
+    {
+        Skip.IfNot(Available);
+        // A container that doesn't exist: every write fails with the service's full error text.
+        var store = new BlobDraftStore(new BlobContainerClient(AzuriteStorage.ConnectionString, AzuriteStorage.UniqueName("missing")), Time);
+
+        var create = await Assert.ThrowsAsync<TimeChangeException>(() => store.CreateAsync(Drafts.New()));
+        var prune = await Assert.ThrowsAsync<TimeChangeException>(() => store.PruneAllAsync());
+
+        Assert.Equal(BlobDraftStore.Unavailable, create.Message);
+        Assert.Equal(BlobDraftStore.Unavailable, prune.Message);
+    }
+
+    [SkippableFact]
+    public async Task A_plans_prune_reads_an_owners_drafts_at_most_hourly()
+    {
+        Skip.IfNot(Available);
+        var container = new CountingContainer(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("drafts"));
+        await container.CreateIfNotExistsAsync();
+        var store = new BlobDraftStore(container, Time);
+        await store.CreateAsync(Drafts.New(id: "d_one1"));
+        await store.CreateAsync(Drafts.New(id: "d_two2"));
+
+        await store.PruneAsync("u-1");
+        var afterFirst = container.Downloads;
+        await store.PruneAsync("u-1");
+        var afterSecond = container.Downloads;
+        Time.Now += TimeSpan.FromMinutes(61);
+        await store.PruneAsync("u-1");
+
+        Assert.Equal(2, afterFirst);
+        Assert.Equal(afterFirst, afterSecond);
+        Assert.Equal(4, container.Downloads);
+    }
+
+    private sealed class CountingContainer : BlobContainerClient
+    {
+        private readonly string _connectionString;
+        private int _downloads;
+
+        public CountingContainer(string connectionString, string name) : base(connectionString, name) => _connectionString = connectionString;
+
+        public int Downloads => _downloads;
+        public override BlobClient GetBlobClient(string blobName) => new CountingBlob(this, _connectionString, Name, blobName);
+
+        private sealed class CountingBlob(CountingContainer owner, string connectionString, string container, string name)
+            : BlobClient(connectionString, container, name)
+        {
+            public override Task<Azure.Response<Azure.Storage.Blobs.Models.BlobDownloadResult>> DownloadContentAsync(CancellationToken cancellationToken = default)
+            {
+                Interlocked.Increment(ref owner._downloads);
+                return base.DownloadContentAsync(cancellationToken);
+            }
+        }
+    }
 }
