@@ -20,8 +20,9 @@ Then run `/mcp` in Claude Code and choose project-insight to sign in.
 
 ## ChatGPT
 
-Settings → Apps & Connectors → Advanced → Developer mode, then Create: URL `https://<app>/mcp`,
-authentication OAuth. Sign in as above.
+Add a custom MCP server (connector) with URL `https://<app>/mcp` and OAuth authentication, then sign
+in as above. Where that lives in ChatGPT's settings, and which plans and workspace settings allow it,
+changes over time: follow OpenAI's help article "Connecting custom MCP servers in ChatGPT".
 
 ## Codex
 
