@@ -47,7 +47,7 @@ public static class TokenEndpoint
             {
                 try
                 {
-                    await clients.TouchAsync(clientId, now, CancellationToken.None);
+                    await clients.TouchAsync(clientId, now, signedIn: true, CancellationToken.None);
                 }
                 catch (Exception ex)
                 {

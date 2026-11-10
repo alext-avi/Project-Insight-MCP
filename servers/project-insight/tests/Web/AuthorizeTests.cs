@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
+using ProjectInsightMCP.Tests.TimeChanges;
 using ProjectInsightMCP.Web.Storage;
 using Xunit;
 
@@ -105,6 +106,22 @@ public class AuthorizeTests
         Assert.Contains("httponly", cookie, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("samesite=lax", cookie, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("https://pi.test/device/activate/act-1", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Start_refreshes_the_registrations_last_use_so_eviction_and_pruning_pass_it_over()
+    {
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        using var factory = new WebFactory { ExtraServices = s => s.AddSingleton<TimeProvider>(time) };
+        var flow = new AuthorizeFlow(factory);
+        var clientId = await flow.RegisterAsync();
+        time.Now = time.Now.AddHours(20);
+
+        await flow.StartAsync(AuthorizeFlow.Query(clientId));
+
+        var stored = await factory.Services.GetRequiredService<IClientStore>().GetAsync(clientId, default);
+        Assert.Equal(time.Now, stored!.LastUsed);
+        Assert.False(stored.Used); // only a finished sign-in earns a used client's longer life
     }
 
     [Fact]

@@ -149,7 +149,7 @@ public abstract class ClientStoreContract
         await store.TryAddAsync(Client("stale", Now.AddDays(-100)), 10, default);
         await store.TryAddAsync(Client("touched", Now.AddDays(-100)), 10, default);
 
-        await store.TouchAsync("touched", Now, default);
+        await store.TouchAsync("touched", Now, signedIn: true, default);
         Assert.Equal(Now, (await store.GetAsync("touched", default))!.LastUsed);
         Assert.True((await store.GetAsync("touched", default))!.Used);
 
@@ -185,11 +185,45 @@ public abstract class ClientStoreContract
         Skip.IfNot(Available);
         var store = await CreateAsync();
         await store.TryAddAsync(Client("signed-in-once", Now.AddHours(-48)), 10, default);
-        await store.TouchAsync("signed-in-once", Now.AddHours(-47), default);
+        await store.TouchAsync("signed-in-once", Now.AddHours(-47), signedIn: true, default);
 
         await store.PruneAsync(Now.AddDays(-120), Now.AddHours(-24), default);
 
         Assert.NotNull(await store.GetAsync("signed-in-once", default));
+    }
+
+    [SkippableFact]
+    public async Task A_started_sign_in_refreshes_last_used_without_marking_the_client_used()
+    {
+        Skip.IfNot(Available);
+        var store = await CreateAsync();
+        await store.TryAddAsync(Client("starting", Now.AddHours(-30)), 2, default);
+        await store.TryAddAsync(Client("idle", Now.AddHours(-1)), 2, default);
+
+        await store.TouchAsync("starting", Now, signedIn: false, default);
+
+        var read = (await store.GetAsync("starting", default))!;
+        Assert.Equal(Now, read.LastUsed);
+        Assert.False(read.Used);
+        // Now the newest never-used client: the cap evicts the other one, and the never-used prune spares it.
+        Assert.True(await store.TryAddAsync(Client("new", Now), 2, default));
+        Assert.Null(await store.GetAsync("idle", default));
+        await store.PruneAsync(Now.AddDays(-120), Now.AddHours(-24), default);
+        Assert.NotNull(await store.GetAsync("starting", default));
+    }
+
+    [SkippableFact]
+    public async Task A_finished_sign_in_after_a_start_marks_the_client_used()
+    {
+        Skip.IfNot(Available);
+        var store = await CreateAsync();
+        await store.TryAddAsync(Client("c1", Now.AddHours(-2)), 10, default);
+
+        await store.TouchAsync("c1", Now.AddHours(-1), signedIn: false, default);
+        await store.TouchAsync("c1", Now, signedIn: true, default);
+        await store.TouchAsync("c1", Now, signedIn: false, default);
+
+        Assert.True((await store.GetAsync("c1", default))!.Used);
     }
 }
 
@@ -207,6 +241,39 @@ public sealed class TableClientStoreTests : ClientStoreContract
         var table = new TableClient(AzuriteStorage.ConnectionString, AzuriteStorage.UniqueName("clients"));
         await table.CreateIfNotExistsAsync();
         return new TableClientStore(table);
+    }
+
+    private static readonly DateTimeOffset Now = new(2026, 11, 2, 9, 0, 0, TimeSpan.Zero);
+
+    [SkippableFact]
+    public async Task Prune_keeps_a_client_touched_after_the_prune_read_it()
+    {
+        Skip.IfNot(Available);
+        var table = new TouchBeforeDeleteTable(AzuriteStorage.ConnectionString!, AzuriteStorage.UniqueName("clients"));
+        await table.CreateIfNotExistsAsync();
+        var store = new TableClientStore(table);
+        await store.TryAddAsync(new RegisteredClient("stale", "Claude", [AuthorizeFlow.ClaudeCallback], Now.AddDays(-2)), 10, default);
+        // A sign-in starts between the prune's query and its delete.
+        table.BeforeFirstDelete = () => store.TouchAsync("stale", Now, signedIn: false, default);
+
+        await store.PruneAsync(Now.AddDays(-120), Now.AddHours(-24), default);
+
+        Assert.NotNull(await store.GetAsync("stale", default));
+    }
+
+    private sealed class TouchBeforeDeleteTable(string connectionString, string name) : TableClient(connectionString, name)
+    {
+        public Func<Task>? BeforeFirstDelete { get; set; }
+
+        public override async Task<Azure.Response> DeleteEntityAsync(string partitionKey, string rowKey, Azure.ETag ifMatch = default, CancellationToken cancellationToken = default)
+        {
+            if (BeforeFirstDelete is { } before)
+            {
+                BeforeFirstDelete = null;
+                await before();
+            }
+            return await base.DeleteEntityAsync(partitionKey, rowKey, ifMatch, cancellationToken);
+        }
     }
 }
 

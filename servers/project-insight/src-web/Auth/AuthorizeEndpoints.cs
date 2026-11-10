@@ -28,8 +28,10 @@ public static class AuthorizeEndpoints
         }).WithOAuthHeaders().RequireRateLimiting(RateLimits.Authorize);
 
         app.MapPost("/authorize/start", async (HttpContext http, ClientResolver clients, RedirectPolicy policy, IOptions<WebOptions> web,
-            IPiActivationClient pi, ISessionStore sessions, IConfiguration config, TimeProvider time, ILoggerFactory loggers, CancellationToken ct) =>
+            IPiActivationClient pi, ISessionStore sessions, IClientStore registered, IConfiguration config, TimeProvider time, ILoggerFactory loggers,
+            CancellationToken ct) =>
         {
+            var logger = loggers.CreateLogger("ProjectInsightMCP.Web.Authorize");
             if (CrossSiteOrNotForm(http, web.Value) is { } refused)
                 return refused;
             if (await FormInput.ReadAsync(http.Request, ct) is not { } form)
@@ -66,6 +68,20 @@ public static class AuthorizeEndpoints
                     return AuthorizePages.Error(503, "Too many sign-ins in progress. Try again in a few minutes.");
             }
 
+            // A registration with a sign-in under way is the newest, not the oldest, when the cap evicts or the prune
+            // runs, so it is still there when /token marks it used. Never fails the start.
+            if (!request.Client.IsMetadataDocument)
+            {
+                try
+                {
+                    await registered.TouchAsync(request.Client.ClientId, now, signedIn: false, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning("Could not record a sign-in start for a registered client: {Error}", ex.GetType().Name);
+                }
+            }
+
             var started = false;
             try
             {
@@ -96,7 +112,7 @@ public static class AuthorizeEndpoints
             {
                 // A start that didn't finish gives its slot back.
                 if (!started)
-                    await DeleteQuietlyAsync(sessions, session.Id, loggers.CreateLogger("ProjectInsightMCP.Web.Authorize"));
+                    await DeleteQuietlyAsync(sessions, session.Id, logger);
             }
         }).WithOAuthHeaders().RequireRateLimiting(RateLimits.Authorize);
 

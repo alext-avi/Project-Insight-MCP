@@ -27,11 +27,11 @@ public sealed class MemoryClientStore : IClientStore
         }
     }
 
-    public Task TouchAsync(string clientId, DateTimeOffset at, CancellationToken ct)
+    public Task TouchAsync(string clientId, DateTimeOffset at, bool signedIn, CancellationToken ct)
     {
         lock (_gate)
             if (_clients.TryGetValue(clientId, out var c))
-                _clients[clientId] = c with { LastUsed = at, Used = true };
+                _clients[clientId] = c with { LastUsed = at, Used = c.Used || signedIn };
         return Task.CompletedTask;
     }
 

@@ -1,8 +1,9 @@
 namespace ProjectInsightMCP.Web.Storage;
 
 /// <summary>
-/// <paramref name="LastUsed"/> is the registration time until the first successful sign-in, then the latest one;
-/// <paramref name="Used"/> says which, so a registration nobody finished can be pruned sooner.
+/// <paramref name="LastUsed"/> is the registration time until the first sign-in starts, then the latest start or
+/// finish; <paramref name="Used"/> says whether a sign-in ever finished, so a registration nobody finished can be
+/// pruned sooner.
 /// </summary>
 public sealed record RegisteredClient(string ClientId, string? ClientName, IReadOnlyList<string> RedirectUris, DateTimeOffset LastUsed, bool Used = false);
 
@@ -14,8 +15,12 @@ public interface IClientStore
     /// signs in with can't lock out new ones. False only when every client held has signed in.
     /// </summary>
     Task<bool> TryAddAsync(RegisteredClient client, int max, CancellationToken ct);
-    /// <summary>Marks the client as used at <paramref name="at"/> (a sign-in finished).</summary>
-    Task TouchAsync(string clientId, DateTimeOffset at, CancellationToken ct);
+    /// <summary>
+    /// Sets LastUsed to <paramref name="at"/>, and marks the client used when <paramref name="signedIn"/> (a sign-in
+    /// finished). A start only refreshes LastUsed: it keeps the client off the eviction and never-used prune lists while
+    /// the sign-in runs, but anyone can start one, so it must not earn the longer life of a used client.
+    /// </summary>
+    Task TouchAsync(string clientId, DateTimeOffset at, bool signedIn, CancellationToken ct);
     /// <summary>Removes used clients last used before <paramref name="unusedSince"/> and never-used ones registered before <paramref name="neverUsedSince"/>.</summary>
     Task PruneAsync(DateTimeOffset unusedSince, DateTimeOffset neverUsedSince, CancellationToken ct);
 }

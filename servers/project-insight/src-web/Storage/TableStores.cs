@@ -24,7 +24,16 @@ internal static class TableUtil
     public static async Task DeleteMatchingAsync(TableClient table, string filter, CancellationToken ct)
     {
         await foreach (var e in table.QueryAsync<TableEntity>(filter, select: ["PartitionKey", "RowKey"], cancellationToken: ct))
-            await table.DeleteEntityAsync(Partition, e.RowKey, ETag.All, ct);
+        {
+            try
+            {
+                // Only the row as read: one changed since (a client touched by a sign-in) may no longer match.
+                await table.DeleteEntityAsync(Partition, e.RowKey, e.ETag, ct);
+            }
+            catch (RequestFailedException ex) when (ex.Status is 404 or 412)
+            {
+            }
+        }
     }
 
     public static async Task<int> CountAtMostAsync(TableClient table, string filter, int limit, CancellationToken ct)
@@ -173,19 +182,20 @@ public sealed class TableClientStore(TableClient table) : IClientStore
         return false;
     }
 
-    public async Task TouchAsync(string clientId, DateTimeOffset at, CancellationToken ct)
+    public async Task TouchAsync(string clientId, DateTimeOffset at, bool signedIn, CancellationToken ct)
     {
         var current = await GetAsync(clientId, ct);
         if (current is null)
             return;
+        var used = current.Used || signedIn;
         try
         {
             // Merge only the changed fields; a missing row (pruned meanwhile) is fine.
             await table.UpdateEntityAsync(new TableEntity(Partition, clientId)
             {
-                ["Json"] = JsonSerializer.Serialize(current with { LastUsed = at, Used = true }, TableUtil.Json),
+                ["Json"] = JsonSerializer.Serialize(current with { LastUsed = at, Used = used }, TableUtil.Json),
                 ["LastUsed"] = at,
-                ["Used"] = true
+                ["Used"] = used
             }, ETag.All, TableUpdateMode.Merge, ct);
         }
         catch (RequestFailedException ex) when (ex.Status == 404)

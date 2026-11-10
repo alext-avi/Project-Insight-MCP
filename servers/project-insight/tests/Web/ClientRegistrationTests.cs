@@ -103,7 +103,7 @@ public class ClientRegistrationTests
     {
         public Task<ProjectInsightMCP.Web.Storage.RegisteredClient?> GetAsync(string clientId, CancellationToken ct) => throw new InvalidOperationException("store touched");
         public Task<bool> TryAddAsync(ProjectInsightMCP.Web.Storage.RegisteredClient client, int max, CancellationToken ct) => throw new InvalidOperationException();
-        public Task TouchAsync(string clientId, DateTimeOffset at, CancellationToken ct) => throw new InvalidOperationException();
+        public Task TouchAsync(string clientId, DateTimeOffset at, bool signedIn, CancellationToken ct) => throw new InvalidOperationException();
         public Task PruneAsync(DateTimeOffset unusedSince, DateTimeOffset neverUsedSince, CancellationToken ct) => throw new InvalidOperationException();
     }
 }

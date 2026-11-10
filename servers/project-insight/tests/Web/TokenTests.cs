@@ -257,7 +257,7 @@ public class TokenTests
     {
         public Task<RegisteredClient?> GetAsync(string clientId, CancellationToken ct) => inner.GetAsync(clientId, ct);
         public Task<bool> TryAddAsync(RegisteredClient client, int max, CancellationToken ct) => inner.TryAddAsync(client, max, ct);
-        public Task TouchAsync(string clientId, DateTimeOffset at, CancellationToken ct) => throw new InvalidOperationException("store down");
+        public Task TouchAsync(string clientId, DateTimeOffset at, bool signedIn, CancellationToken ct) => throw new InvalidOperationException("store down");
         public Task PruneAsync(DateTimeOffset unusedSince, DateTimeOffset neverUsedSince, CancellationToken ct) => inner.PruneAsync(unusedSince, neverUsedSince, ct);
     }
 }
