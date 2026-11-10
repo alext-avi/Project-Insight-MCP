@@ -55,6 +55,8 @@ jobs:
             - name: Restore (locked)
               run: dotnet restore servers/project-insight/tests --locked-mode
 
+            # -warnaserror also fails on high and critical package advisories; low and moderate stay warnings
+            # (servers/project-insight/Directory.Build.props).
             - name: Build
               run: dotnet build servers/project-insight/tests --configuration Release --no-restore -warnaserror
 
