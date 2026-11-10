@@ -104,6 +104,28 @@ public class ScrubberTests
 
     [Theory]
     [MemberData(nameof(EscapedForms))]
+    public void Structured_content_loses_every_json_spelling_held_inside_a_decoded_value_or_name(string form)
+    {
+        // A string field that carries a PI error body: decoding the structured content leaves the escape in place.
+        var result = new CallToolResult
+        {
+            Content = [],
+            StructuredContent = JsonSerializer.SerializeToElement(new Dictionary<string, string>
+            {
+                ["error"] = $"{{\"message\":\"bad {form} here\"}}",
+                [$"key {form}"] = "v"
+            })
+        };
+
+        ToolResultScrubber.Scrub(result, Base64Sample);
+
+        var structured = result.StructuredContent!.Value;
+        Assert.Equal("{\"message\":\"bad [redacted] here\"}", structured.GetProperty("error").GetString());
+        Assert.Equal("v", structured.GetProperty("key [redacted]").GetString());
+    }
+
+    [Theory]
+    [MemberData(nameof(EscapedForms))]
     public async Task Handler_redacts_every_json_spelling_of_the_bearer(string form)
     {
         var inner = new StubHandler(r => new HttpResponseMessage(System.Net.HttpStatusCode.BadRequest)

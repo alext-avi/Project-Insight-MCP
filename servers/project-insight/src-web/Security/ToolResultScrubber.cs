@@ -12,7 +12,8 @@ public static class ToolResultScrubber
     {
         foreach (var text in result.Content.OfType<TextContentBlock>())
             text.Text = SecretForms.Redact(text.Text, secret);
-        // Compared after JSON decoding, so no escaping of the token can hide it.
+        // Compared after JSON decoding, and in every JSON spelling: a decoded string can still hold an escaped one
+        // (a PI error body passed through as a value), so no escaping of the token can hide it.
         if (result.StructuredContent is { } structured && Mentions(structured, secret))
             result.StructuredContent = Rewrite(structured, secret);
         return result;
@@ -20,9 +21,9 @@ public static class ToolResultScrubber
 
     private static bool Mentions(JsonElement e, string secret) => e.ValueKind switch
     {
-        JsonValueKind.Object => e.EnumerateObject().Any(p => p.Name.Contains(secret, StringComparison.Ordinal) || Mentions(p.Value, secret)),
+        JsonValueKind.Object => e.EnumerateObject().Any(p => SecretForms.AppearsIn(p.Name, secret) || Mentions(p.Value, secret)),
         JsonValueKind.Array => e.EnumerateArray().Any(i => Mentions(i, secret)),
-        JsonValueKind.String => e.GetString()!.Contains(secret, StringComparison.Ordinal),
+        JsonValueKind.String => SecretForms.AppearsIn(e.GetString()!, secret),
         _ => false
     };
 
@@ -43,7 +44,7 @@ public static class ToolResultScrubber
                 writer.WriteStartObject();
                 foreach (var p in e.EnumerateObject())
                 {
-                    writer.WritePropertyName(p.Name.Replace(secret, SecretForms.Redacted, StringComparison.Ordinal));
+                    writer.WritePropertyName(SecretForms.Redact(p.Name, secret));
                     Write(writer, p.Value, secret);
                 }
                 writer.WriteEndObject();
@@ -55,7 +56,7 @@ public static class ToolResultScrubber
                 writer.WriteEndArray();
                 break;
             case JsonValueKind.String:
-                writer.WriteStringValue(e.GetString()!.Replace(secret, SecretForms.Redacted, StringComparison.Ordinal));
+                writer.WriteStringValue(SecretForms.Redact(e.GetString()!, secret));
                 break;
             default:
                 e.WriteTo(writer);
