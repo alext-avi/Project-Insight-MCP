@@ -26,12 +26,16 @@ regex = '''(?i)/subscriptions/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[
 secretGroup = 1
 keywords = ["/subscriptions/"]
 
+# The label, then up to a few quote, backtick, bold, table-cell or space characters around an optional ':' '=' or
+# '=>', then the GUID. Labels: tenant, subscription and sub alone; tenant, subscription, client, app(lication),
+# object, principal and directory followed by "id" (joined, or with '-', '_' or a space); the portal's
+# "Application (client) ID" and "Directory (tenant) ID"; AZURE_*_ID and ARM_*_ID; and the CLI's -s flag.
 [[rules]]
 id = "azure-id-assignment"
 description = "A GUID given as a tenant, subscription, client, app, object or principal id"
-regex = '''(?i)\b(?:tenant|tenant[-_]?id|subscription|subscription[-_]?id|client[-_]?id|app[-_]?id|object[-_]?id|principal[-_]?id|(?:azure|arm)_[a-z0-9_]*?_id)\b["']?\s{0,3}(?:[:=]|=>)?\s{0,3}["']?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b'''
+regex = '''(?im)(?:\b(?:sub|tenant|subscription|(?:tenant|subscription|client|app(?:lication)?|object|principal|directory)[-_ ]?id|(?:application|directory) ?\((?:client|tenant)\) ?id|(?:azure|arm)_[a-z0-9_]*?_id)\b|(?:^|\s)-s)[\s"'`*|]{0,6}(?:[:=]|=>)?[\s"'`*|]{0,6}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b'''
 secretGroup = 1
-keywords = ["tenant", "subscription", "client", "appid", "app_id", "app-id", "object", "principal", "azure_", "arm_"]
+keywords = ["tenant", "sub", "client", "app", "object", "principal", "directory", "azure_", "arm_", "-s"]
 
 [[rules]]
 id = "app-insights-key"
@@ -43,11 +47,12 @@ keywords = ["instrumentationkey", "applicationid"]
 [[rules]]
 id = "azure-storage-host"
 description = "An Azure Storage account hostname"
-regex = '''(?i)\b([a-z0-9]{3,24})\.(?:blob|table|queue|file|dfs)\.core\.windows\.net'''
+# A private-endpoint name, <account>.privatelink.blob.core.windows.net, captures the account, not "privatelink".
+regex = '''(?i)\b([a-z0-9]{3,24})\.(?:privatelink\.)?(?:blob|table|queue|file|dfs)\.core\.windows\.net'''
 secretGroup = 1
 keywords = [".core.windows.net"]
   [rules.allowlist]
-  # Placeholders, the Azurite account, and the private-endpoint DNS zone.
+  # Placeholders, the Azurite account, and the private-endpoint DNS zone named on its own.
   regexes = ['''(?i)^(acct|account|myaccount|youraccount|mystorageaccount|yourstorageaccount|storageaccount|example|devstoreaccount1|privatelink)$''']
 
 # GUIDs that identify nobody: the all-zero placeholder, built-in Azure role definitions used in bicep/
