@@ -5,6 +5,8 @@ param namePrefix = 'pi-mcp'
 param location = 'centralus'
 param piBaseUrl = 'https://your-tenant.projectinsight.net/api/'
 param allowedPiUserIds = '00000000-0000-0000-0000-000000000000'
+// Instead of the ids, or as well: everyone whose PI profile email is on one of these domains.
+// param allowedEmailDomains = ['example.com']
 param alertEmail = 'you@example.com'
 param githubRepository = 'alext-avi/Project-Insight-MCP'
 param timeZone = 'America/New_York' // IANA id; the server's "today" for the time-change tools

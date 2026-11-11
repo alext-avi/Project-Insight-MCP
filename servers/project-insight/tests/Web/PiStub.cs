@@ -22,6 +22,10 @@ public sealed class PiStub : HttpMessageHandler
     public const string NotFoundToken = "pi-token-pi-answers-404";
     public const string RedirectToken = "pi-token-pi-redirects";
     public const string TimeoutToken = "pi-token-pi-times-out";
+    /// <summary>A token for <see cref="EmailUser"/> (on no id allow-list) whose PI profile has <paramref name="email"/>; "" means no email.</summary>
+    public static string WithEmail(string email) => EmailTokenPrefix + Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(email));
+    public const string EmailTokenPrefix = "pi-token-with-email-";
+    public const string EmailUser = "0f0e2a4c-3333-4a4a-9b9b-dddddddddddd";
     public const string ActivationCode = "GOOD-CODE";
     public const string ActivationId = "act-1";
 
@@ -65,6 +69,11 @@ public sealed class PiStub : HttpMessageHandler
             var redirect = new HttpResponseMessage(HttpStatusCode.Found);
             redirect.Headers.Location = new Uri("https://elsewhere.test/me");
             return redirect;
+        }
+        if (path == "/api/user/me" && token?.StartsWith(EmailTokenPrefix, StringComparison.Ordinal) == true)
+        {
+            var email = System.Text.Encoding.UTF8.GetString(Convert.FromHexString(token[EmailTokenPrefix.Length..]));
+            return Json(email.Length == 0 ? new { id = EmailUser, name = "No email" } : (object)new { id = EmailUser, name = "Has email", email });
         }
         if (path == "/api/user/me")
             return token switch

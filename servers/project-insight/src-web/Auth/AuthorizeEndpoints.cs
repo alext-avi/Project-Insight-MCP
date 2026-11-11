@@ -132,7 +132,8 @@ public static class AuthorizeEndpoints
         }).WithOAuthHeaders().RequireRateLimiting(RateLimits.Authorize);
 
         app.MapPost("/authorize/complete", async (HttpContext http, ISessionStore sessions, ICodeStore codes, IPiActivationClient pi,
-            IOptions<WebOptions> web, IOptions<AuthOptions> auth, TimeProvider time, ILoggerFactory loggers, CancellationToken ct) =>
+            PiIdentityClient identity, IOptions<WebOptions> web, IOptions<AuthOptions> auth, TimeProvider time, ILoggerFactory loggers,
+            CancellationToken ct) =>
         {
             var logger = loggers.CreateLogger("ProjectInsightMCP.Web.Authorize");
             if (CrossSiteOrNotForm(http, web.Value) is { } refused)
@@ -190,7 +191,23 @@ public static class AuthorizeEndpoints
 
                 await sessions.DeleteAsync(session.Id, CancellationToken.None);
                 if (!auth.Value.PiUserIds.Contains(result.UserId!))
-                    return AuthorizePages.Error(403, "This server isn't open to your Project Insight account.");
+                {
+                    // Not listed by id, but an allowed email domain can still admit them. PI's activation answer has no
+                    // email, so ask PI who the new token belongs to (the same check /mcp makes, and it warms its cache).
+                    var who = auth.Value.EmailDomains.Count == 0
+                        ? null
+                        : await identity.ResolveAsync(result.ApiToken!, CancellationToken.None);
+                    if (who is { Status: PiIdentityStatus.Unavailable })
+                        return AuthorizePages.Error(503, "Project Insight didn't respond. Start again from Claude or ChatGPT in a moment.");
+                    if (who is not { Status: PiIdentityStatus.Ok }
+                        || !string.Equals(who.UserId, result.UserId, StringComparison.OrdinalIgnoreCase)
+                        || !auth.Value.Allows(result.UserId!, who.Email))
+                    {
+                        // The id is what an admin adds to Auth:AllowedPiUserIds to let this person in.
+                        logger.LogWarning("Refused sign-in: PI user {PiUserId} is not allowed on this server", result.UserId);
+                        return AuthorizePages.Error(403, "This server isn't open to your Project Insight account.");
+                    }
+                }
 
                 var authCode = CodeProtector.NewCode();
                 var payload = new CodePayload(result.ApiToken!,

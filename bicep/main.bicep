@@ -12,8 +12,11 @@ param location string = resourceGroup().location
 @description('Project Insight API base URL, e.g. https://your-tenant.projectinsight.net/api/')
 param piBaseUrl string
 
-@description('Comma-separated PI user ids allowed to use the server.')
-param allowedPiUserIds string
+@description('Comma-separated PI user ids allowed to use the server. May be empty when allowedEmailDomains is set.')
+param allowedPiUserIds string = ''
+
+@description('Email domains (e.g. example.com) whose PI users may use the server, matched against the email on each user\'s PI profile.')
+param allowedEmailDomains array = []
 
 @description('Where Activity Log alerts about risky changes are emailed.')
 param alertEmail string
@@ -145,7 +148,8 @@ var host = site.properties.defaultHostName
 resource appSettings 'Microsoft.Web/sites/config@2024-04-01' = {
   parent: site
   name: 'appsettings'
-  properties: {
+  // List settings take one numbered setting per entry (Auth__AllowedEmailDomains__0, __1, …).
+  properties: union({
     ProjectInsight__BaseUrl: piBaseUrl
     Web__PublicBaseUrl: 'https://${host}'
     AllowedHosts: '${host};localhost'
@@ -162,7 +166,7 @@ resource appSettings 'Microsoft.Web/sites/config@2024-04-01' = {
     WEBSITES_CONTAINER_STOP_TIME_LIMIT: '90'
     // The time-change tools compute "today" (far-date warnings, the year in dates) in the server's local zone.
     TZ: timeZone
-  }
+  }, toObject(range(0, length(allowedEmailDomains)), i => 'Auth__AllowedEmailDomains__${i}', i => string(allowedEmailDomains[i])))
 }
 
 resource appTables 'Microsoft.Authorization/roleAssignments@2022-04-01' = {

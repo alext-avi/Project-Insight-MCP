@@ -44,6 +44,29 @@ public sealed class AuthOptions
     public IReadOnlySet<string> PiUserIds => AllowedPiUserIds
         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
         .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Email domains, such as example.com, whose PI users may use the server as well as those in
+    /// <see cref="AllowedPiUserIds"/>. The whole domain after the @ must match, ignoring case: list subdomains too.
+    /// </summary>
+    public string[]? AllowedEmailDomains { get; set; }
+    public IReadOnlySet<string> EmailDomains => (AllowedEmailDomains ?? [])
+        .Select(d => d.Trim()).Where(d => d.Length > 0)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>True when the PI user is listed by id, or the email PI holds for them is on an allowed domain.</summary>
+    public bool Allows(string userId, string? email) =>
+        PiUserIds.Contains(userId) || (DomainOf(email) is { } domain && EmailDomains.Contains(domain));
+
+    /// <summary>The part after the one @ of an address, or null when it isn't a single-@ address.</summary>
+    public static string? DomainOf(string? email)
+    {
+        var address = email?.Trim();
+        if (string.IsNullOrEmpty(address))
+            return null;
+        var at = address.IndexOf('@');
+        return at > 0 && at == address.LastIndexOf('@') && at < address.Length - 1 ? address[(at + 1)..] : null;
+    }
     public IReadOnlyList<string> RedirectUris => AllowedRedirectUris ?? DefaultRedirectUris;
     public IReadOnlySet<string> CimdHosts => (AllowedCimdHosts ?? DefaultCimdHosts).ToHashSet(StringComparer.OrdinalIgnoreCase);
     public IReadOnlySet<string> Origins => (AllowedOrigins ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);

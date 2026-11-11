@@ -6,7 +6,13 @@ namespace ProjectInsightMCP.Web;
 public static class StartupChecks
 {
     private static readonly string[] ListSettings =
-        [nameof(AuthOptions.AllowedRedirectUris), nameof(AuthOptions.AllowedCimdHosts), nameof(AuthOptions.AllowedOrigins)];
+        [nameof(AuthOptions.AllowedRedirectUris), nameof(AuthOptions.AllowedCimdHosts), nameof(AuthOptions.AllowedOrigins),
+            nameof(AuthOptions.AllowedEmailDomains)];
+
+    // A plain DNS name: labels of letters, digits and inner hyphens, at least one dot. No @, wildcard or trailing dot.
+    private static readonly System.Text.RegularExpressions.Regex DomainName = new(
+        @"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     public static void Validate(IConfiguration config, WebOptions web, AuthOptions auth, IHostEnvironment environment)
     {
@@ -18,8 +24,13 @@ public static class StartupChecks
             throw new InvalidOperationException("Web:PublicBaseUrl must be an https origin with no path, such as https://host.");
         if (auth.PiTokenLifetimeDays is < 1 or > 90)
             throw new InvalidOperationException("Auth:PiTokenLifetimeDays must be between 1 and 90.");
-        if (auth.PiUserIds.Count == 0)
-            throw new InvalidOperationException("Auth:AllowedPiUserIds must list at least one PI user id.");
+        if (auth.PiUserIds.Count == 0 && auth.EmailDomains.Count == 0)
+            throw new InvalidOperationException(
+                "Auth:AllowedPiUserIds must list at least one PI user id, or Auth:AllowedEmailDomains at least one email domain.");
+        foreach (var domain in auth.EmailDomains)
+            if (!DomainName.IsMatch(domain))
+                throw new InvalidOperationException(
+                    $"Auth:AllowedEmailDomains has an entry that is not a plain domain such as example.com: '{domain}'.");
         // The binder can't turn a single value into a list, and would leave the defaults in place without a word.
         foreach (var list in ListSettings)
             if (config[$"Auth:{list}"] is not null)

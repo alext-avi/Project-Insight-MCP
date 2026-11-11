@@ -53,7 +53,7 @@ public sealed partial class PiBearerHandler(
             case PiIdentityStatus.Rejected:
                 return AuthenticateResult.Fail("Project Insight rejected the token.");
         }
-        if (!auth.Value.PiUserIds.Contains(who.UserId!))
+        if (!auth.Value.Allows(who.UserId!, who.Email))
         {
             Context.Items[Outcome] = "forbidden";
             return AuthenticateResult.Fail("This PI user is not allowed on this server.");

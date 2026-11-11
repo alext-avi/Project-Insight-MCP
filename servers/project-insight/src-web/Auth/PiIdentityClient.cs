@@ -8,7 +8,8 @@ namespace ProjectInsightMCP.Web.Auth;
 
 public enum PiIdentityStatus { Ok, Rejected, Unavailable }
 
-public sealed record PiIdentity(PiIdentityStatus Status, string? UserId);
+/// <summary>Who PI says a token belongs to. <paramref name="Email"/> is the address on the user's PI profile, if any.</summary>
+public sealed record PiIdentity(PiIdentityStatus Status, string? UserId, string? Email = null);
 
 /// <summary>
 /// Asks PI who a bearer token belongs to. PI is the only judge of a pass-through token, so this is
@@ -69,7 +70,7 @@ public sealed class PiIdentityClient(IHttpClientFactory http, IMemoryCache cache
             var user = await response.Content.ReadFromJsonAsync<User>(Json, ct);
             return string.IsNullOrEmpty(user?.Id)
                 ? new PiIdentity(PiIdentityStatus.Unavailable, null)
-                : new PiIdentity(PiIdentityStatus.Ok, user.Id);
+                : new PiIdentity(PiIdentityStatus.Ok, user.Id, user.Email);
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException && !ct.IsCancellationRequested)
         {
