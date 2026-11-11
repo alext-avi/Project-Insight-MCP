@@ -27,6 +27,31 @@ public class McpEndpointTests
         Assert.Contains(await mcp.ListResourcesAsync(), r => r.Uri == "ui://project-insight/time-changes.html");
     }
 
+    [Fact]
+    public async Task Instructions_name_only_tools_the_web_host_lists()
+    {
+        using var factory = new WebFactory();
+        await using var mcp = await factory.ConnectAsync(PiStub.TokenA);
+
+        Assert.Equal(ProjectInsightMCP.Server.ProjectInsightServer.Instructions, mcp.ServerInstructions);
+        var listed = (await mcp.ListToolsAsync()).Select(t => t.Name).ToHashSet();
+        var named = System.Text.RegularExpressions.Regex.Matches(mcp.ServerInstructions!, @"\b[a-z]+(?:_[a-z]+)+\b")
+            .Select(m => m.Value).ToList();
+        Assert.NotEmpty(named);
+        Assert.All(named, name => Assert.Contains(name, listed));
+    }
+
+    [Fact]
+    public async Task The_organizations_own_guidance_follows_the_instructions()
+    {
+        using var factory = new WebFactory();
+        factory.Settings["ProjectInsight:Instructions"] = "  Timesheets are due Monday by noon.  ";
+        await using var mcp = await factory.ConnectAsync(PiStub.TokenA);
+
+        Assert.StartsWith(ProjectInsightMCP.Server.ProjectInsightServer.Instructions, mcp.ServerInstructions);
+        Assert.EndsWith("\n\nGuidance from this organization:\nTimesheets are due Monday by noon.", mcp.ServerInstructions);
+    }
+
     [Theory]
     [InlineData("link_pi_account")]
     [InlineData("complete_pi_link")]

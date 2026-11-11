@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using ModelContextProtocol;
@@ -78,7 +79,34 @@ public static class ProjectInsightServer
 {
     public const string ServerName = "Project Insight MCP Server";
 
-    private const string ServerDescription = "Project management server for Project Insight. IMPORTANT: Use the 'fields' parameter to control response size and reduce token usage. Presets: 'minimal' (Id,Name), 'summary' (key fields), 'standard', 'full'. Default is 'summary'. Always use 'minimal' or 'summary' unless you specifically need more data.";
+    private const string ServerDescription =
+        "Project Insight timesheets, time entries, PTO, projects, tasks and staffing, as the signed-in user.";
+
+    /// <summary>
+    /// Sent to clients at initialize; clients such as Claude give it to the model, so it says when to reach for
+    /// these tools, not only how. Tool names here must exist on every host (the web host hides the sign-in tools).
+    /// </summary>
+    public const string Instructions =
+        """
+        Project Insight is the organization's project-management and time-tracking system. Use these tools whenever the user asks about their timesheets; logging, fixing or reviewing hours; time entries; PTO or time off; projects or tasks; who is staffed on what; or rate cards, even if they don't name Project Insight.
+
+        - Every call runs as the signed-in user, with that user's Project Insight permissions. Call get_current_user when you need to know who that is; get_my_time_status summarizes their current timesheet and recent hours.
+        - To add, change or remove time entries, prefer plan_time_changes: it drafts the changes without writing anything, and the user reviews the draft. Call commit_time_changes only after the user agrees. Use create_time_entry, update_time_entry or delete_time_entry only when the user asks to skip the review.
+        - Submitting, approving, rejecting or unsubmitting a timesheet moves it through the approval workflow and notifies other people: confirm with the user first.
+        - Most read tools take a 'fields' parameter. Use 'minimal' or 'summary' (the default) unless you need more detail.
+        """;
+
+    /// <summary>
+    /// The deployment's own guidance for the model, appended to <see cref="Instructions"/>, e.g. "Timesheets are due
+    /// Monday by noon." Blank adds nothing.
+    /// </summary>
+    public const string InstructionsSetting = "ProjectInsight:Instructions";
+
+    /// <summary>The built-in instructions, followed by the deployment's own guidance when it has any.</summary>
+    public static string InstructionsWith(string? extra) =>
+        string.IsNullOrWhiteSpace(extra)
+            ? Instructions
+            : Instructions + "\n\nGuidance from this organization:\n" + extra.Trim();
 
     private static readonly JsonSerializerOptions SchemaOptions = new()
     {
@@ -95,6 +123,9 @@ public static class ProjectInsightServer
         services.TryAddSingleton<ToolCallGate>();
         // One queue for the whole process unless the host replaces this with a per-user key (the web host does, after this call).
         services.TryAddSingleton<IToolCallKey>(SingleUserToolCallKey.Instance);
+        // Read when the options are built, not now: a host's configuration can still be gaining sources at this point.
+        services.AddOptions<McpServerOptions>().Configure<IConfiguration>((o, config) =>
+            o.ServerInstructions = InstructionsWith(config[InstructionsSetting]));
 
         return services
             .AddMcpServer(o =>
