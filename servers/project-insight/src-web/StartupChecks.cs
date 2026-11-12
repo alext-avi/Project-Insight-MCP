@@ -18,8 +18,6 @@ public static class StartupChecks
             throw new InvalidOperationException("Web:PublicBaseUrl must be an https origin with no path, such as https://host.");
         if (auth.PiTokenLifetimeDays is < 1 or > 90)
             throw new InvalidOperationException("Auth:PiTokenLifetimeDays must be between 1 and 90.");
-        if (auth.PiUserIds.Count == 0)
-            throw new InvalidOperationException("Auth:AllowedPiUserIds must list at least one PI user id.");
         // The binder can't turn a single value into a list, and would leave the defaults in place without a word.
         foreach (var list in ListSettings)
             if (config[$"Auth:{list}"] is not null)

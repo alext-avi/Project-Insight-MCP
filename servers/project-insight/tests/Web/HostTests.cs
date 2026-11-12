@@ -38,7 +38,6 @@ public class HostTests
     [InlineData("Web:PublicBaseUrl", "http://mcp.test", "Web:PublicBaseUrl")]
     [InlineData("Web:PublicBaseUrl", "https://mcp.test/sub", "Web:PublicBaseUrl")]
     [InlineData("ProjectInsight:BaseUrl", "", "ProjectInsight:BaseUrl")]
-    [InlineData("Auth:AllowedPiUserIds", "", "Auth:AllowedPiUserIds")]
     [InlineData("Auth:PiTokenLifetimeDays", "91", "Auth:PiTokenLifetimeDays")]
     public void Startup_refuses_unsafe_configuration(string key, string value, string named)
     {
@@ -161,7 +160,7 @@ public class HostTests
         }).Build();
 
         StartupChecks.Validate(config, new WebOptions { PublicBaseUrl = "https://mcp.test" },
-            new AuthOptions { AllowedPiUserIds = "u" }, new HostingEnvironment { EnvironmentName = "Production" });
+            new AuthOptions(), new HostingEnvironment { EnvironmentName = "Production" });
     }
 
     [Fact]

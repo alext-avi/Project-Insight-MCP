@@ -22,7 +22,6 @@ public sealed class WebFactory : WebApplicationFactory<Program>
     {
         ["Web:PublicBaseUrl"] = "https://mcp.test",
         ["ProjectInsight:BaseUrl"] = "https://pi.test/api/",
-        ["Auth:AllowedPiUserIds"] = $"{PiStub.UserA},{PiStub.UserB}",
         ["Storage:Mode"] = "Local",
         ["AllowedHosts"] = "*"
     };

@@ -5,8 +5,12 @@ Bicep template in [`bicep/`](./bicep/README.md) sets the required ones. Connecti
 covered in [docs/REMOTE.md](./docs/REMOTE.md).
 
 Settings use the double-underscore form in App Service and environment variables
-(`Auth__AllowedPiUserIds`), and the colon form in `appsettings` files and error messages
-(`Auth:AllowedPiUserIds`).
+(`Auth__PiTokenLifetimeDays`), and the colon form in `appsettings` files and error messages
+(`Auth:PiTokenLifetimeDays`).
+
+Anyone who can sign in to your Project Insight can connect, and every call runs with their own PI
+permissions. To limit who uses it, limit who has the connector: in Claude, an organization Owner
+decides which members can add it.
 
 ## Required settings
 
@@ -14,11 +18,10 @@ Settings use the double-underscore form in App Service and environment variables
 |---------|-------------|
 | `ProjectInsight__BaseUrl` | Your Project Insight API URL, an absolute https URL such as `https://your-tenant.projectinsight.net/api/` |
 | `Web__PublicBaseUrl` | The server's public https origin with no path, such as `https://<app>` |
-| `Auth__AllowedPiUserIds` | Comma-separated Project Insight user ids allowed to connect. At least one. Matching ignores case. |
 | `Storage__TableEndpoint`, `Storage__BlobEndpoint` | Storage account endpoints (https). The app's managed identity reads and writes them. |
 
-The app refuses to start when `ProjectInsight__BaseUrl`, `Web__PublicBaseUrl` or
-`Auth__AllowedPiUserIds` is missing or invalid, when storage has neither both endpoints nor
+The app refuses to start when `ProjectInsight__BaseUrl` or `Web__PublicBaseUrl` is missing or
+invalid, when storage has neither both endpoints nor
 `Storage__ConnectionString` (outside Development), or when a setting is unsafe (see below). It does
 not check that storage is reachable or that its credentials work: those fail on the first request.
 

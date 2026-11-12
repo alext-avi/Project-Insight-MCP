@@ -241,13 +241,13 @@ npx @modelcontextprotocol/inspector projectinsight-mcp
 
 ### Debugging
 The "Debug web host" configuration in VS Code runs the web host on `https://localhost:5001` with
-in-memory storage. It takes your Project Insight API URL and your PI user id from the environment
-VS Code starts in, so they stay out of the repository:
+in-memory storage. It takes your Project Insight API URL from the environment VS Code starts in, so it
+stays out of the repository:
 
 1. Trust the development certificate: `dotnet dev-certs https --trust`.
-2. Set `ProjectInsight__BaseUrl` (such as `https://your-tenant.projectinsight.net/api/`) and
-   `Auth__AllowedPiUserIds` in your shell, then start VS Code from it (`code .`).
-3. Press F5. Without those two variables the host stops at startup and names the missing setting.
+2. Set `ProjectInsight__BaseUrl` (such as `https://your-tenant.projectinsight.net/api/`) in your
+   shell, then start VS Code from it (`code .`).
+3. Press F5. Without that variable the host stops at startup and names the missing setting.
 
 ## 🆘 Troubleshooting
 

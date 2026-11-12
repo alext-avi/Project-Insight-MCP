@@ -22,7 +22,7 @@ This is a **Model Context Protocol (MCP) server** that integrates with the **Pro
 
 4. **`src-web/`**: the remote host on App Service
    - `/mcp` (stateless streamable HTTP), the OAuth endpoints (`/register`, `/authorize`, `/token`) and `/healthz`
-   - The access token a client holds is the user's own PI token; `Auth:AllowedPiUserIds` limits who may connect
+   - The access token a client holds is the user's own PI token; anyone PI accepts may connect, with their own permissions
    - Per-IP rate limits, Table and Blob storage for OAuth state and drafts
    - The sign-in tools (`complete_authentication`, `link_pi_account`, `complete_pi_link`) are hidden here
 
@@ -86,7 +86,6 @@ export Storage__Mode=Local
 export ProjectInsight__BaseUrl=https://your-tenant.projectinsight.net/api/
 export ProjectInsight__DraftsPath=/tmp/pi-drafts
 export Web__PublicBaseUrl=https://localhost:5001
-export Auth__AllowedPiUserIds=<your-pi-user-id>
 dotnet run --project servers/project-insight/src-web/ProjectInsightMCP.Web.csproj --urls https://localhost:5001
 ```
 
@@ -194,9 +193,8 @@ ProjectInsight/
 
 1. **No shared token**: the web host passes each user's own PI token through and refuses to start with `ProjectInsight:ApiToken` set
 2. **HTTPS**: the web host is HTTPS only
-3. **Allow list**: `Auth:AllowedPiUserIds` limits who can connect
-4. **Token handling**: bearer tokens, authorization codes and activation codes never appear in logs or telemetry
-5. **Input Validation**: All MCP inputs are validated against schemas
+3. **Token handling**: bearer tokens, authorization codes and activation codes never appear in logs or telemetry
+4. **Input Validation**: All MCP inputs are validated against schemas
 
 ## 🚀 Deployment
 

@@ -106,13 +106,6 @@ After you revoke a token in Project Insight, tool calls fail at Project Insight 
 may keep accepting the token at `/mcp` for up to 10 minutes, because it caches a successful identity
 check. After that the client is asked to sign in again.
 
-## If you are not on the allow list
-
-If your Project Insight account is not allowed, the sign-in ends with "This server isn't open to your
-Project Insight account." Project Insight has already created a token during activation. The server
-discards it, but it stays valid in Project Insight until it expires on its own (after the server's token
-lifetime, 90 days by default) or you revoke it there.
-
 ## If a token leaks
 
 Not yet verified. The server must not be used until the owner has filled in this section with the

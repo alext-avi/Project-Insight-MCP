@@ -12,9 +12,6 @@ param location string = resourceGroup().location
 @description('Project Insight API base URL, e.g. https://your-tenant.projectinsight.net/api/')
 param piBaseUrl string
 
-@description('Comma-separated PI user ids allowed to use the server.')
-param allowedPiUserIds string
-
 @description('Where Activity Log alerts about risky changes are emailed.')
 param alertEmail string
 
@@ -152,7 +149,6 @@ resource appSettings 'Microsoft.Web/sites/config@2024-04-01' = {
     Storage__Mode: 'Azure'
     Storage__TableEndpoint: storage.properties.primaryEndpoints.table
     Storage__BlobEndpoint: storage.properties.primaryEndpoints.blob
-    Auth__AllowedPiUserIds: allowedPiUserIds
     Auth__PiTokenLifetimeDays: '90'
     APPLICATIONINSIGHTS_CONNECTION_STRING: insights.properties.ConnectionString
     // The app runs its own forwarded-headers pass (ForwardLimit 1, right-most X-Forwarded-For) and StartupChecks

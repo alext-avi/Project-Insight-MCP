@@ -204,7 +204,7 @@ public class AuthorizeTests
     }
 
     [Fact]
-    public async Task User_not_on_the_allowlist_gets_no_code()
+    public async Task Any_pi_user_who_completes_activation_gets_a_code()
     {
         using var factory = new WebFactory();
         factory.Pi.ActivationResult = (PiStub.StrangerToken, "0f0e2a4c-9999-4a4a-9b9b-cccccccccccc", "2027-01-28T12:00:00");
@@ -213,8 +213,10 @@ public class AuthorizeTests
 
         var response = await flow.CompleteAsync(session, PiStub.ActivationCode);
 
-        Assert.NotEqual(HttpStatusCode.Redirect, response.StatusCode);
-        Assert.Contains("isn't open to your Project Insight account", await response.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var back = QueryHelpers.ParseQuery(response.Headers.Location!.Query);
+        Assert.False(string.IsNullOrEmpty(back["code"]));
+        Assert.False(back.ContainsKey("error"));
     }
 
     [Fact]
