@@ -189,8 +189,6 @@ public static class AuthorizeEndpoints
                 }
 
                 await sessions.DeleteAsync(session.Id, CancellationToken.None);
-                if (!auth.Value.PiUserIds.Contains(result.UserId!))
-                    return AuthorizePages.Error(403, "This server isn't open to your Project Insight account.");
 
                 var authCode = CodeProtector.NewCode();
                 var payload = new CodePayload(result.ApiToken!,

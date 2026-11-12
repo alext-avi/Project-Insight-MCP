@@ -33,17 +33,12 @@ public sealed class AuthOptions
         ["https://claude.ai/api/mcp/auth_callback", "https://chatgpt.com/connector_platform_oauth_redirect"];
     public static readonly string[] DefaultCimdHosts = ["claude.ai", "chatgpt.com"];
 
-    /// <summary>Comma-separated PI user ids allowed to use the server.</summary>
-    public string AllowedPiUserIds { get; set; } = "";
     public int PiTokenLifetimeDays { get; set; } = 90;
     // Nullable so configuration replaces the defaults instead of appending to them.
     public string[]? AllowedRedirectUris { get; set; }
     public string[]? AllowedCimdHosts { get; set; }
     public string[]? AllowedOrigins { get; set; }
 
-    public IReadOnlySet<string> PiUserIds => AllowedPiUserIds
-        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-        .ToHashSet(StringComparer.OrdinalIgnoreCase);
     public IReadOnlyList<string> RedirectUris => AllowedRedirectUris ?? DefaultRedirectUris;
     public IReadOnlySet<string> CimdHosts => (AllowedCimdHosts ?? DefaultCimdHosts).ToHashSet(StringComparer.OrdinalIgnoreCase);
     public IReadOnlySet<string> Origins => (AllowedOrigins ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);

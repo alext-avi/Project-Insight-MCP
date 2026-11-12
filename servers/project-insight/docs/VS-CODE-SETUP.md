@@ -28,10 +28,10 @@ launches `ProjectInsightMCP.Web.dll` with `ASPNETCORE_ENVIRONMENT=Development`. 
 press `F5`.
 
 The configuration sets the local-run settings itself (`Storage__Mode=Local`, the URLs, the drafts
-folder) and takes `ProjectInsight__BaseUrl` and `Auth__AllowedPiUserIds` from the environment VS Code
+folder) and takes `ProjectInsight__BaseUrl` from the environment VS Code
 was started in. The web host doesn't read user secrets, and these environment values override
-`appsettings.json`, so set those two in your shell and start VS Code from it (`code .`), as the
-[README](../README.md#debugging) describes. Without them the host stops at startup and names the missing
+`appsettings.json`, so set it in your shell and start VS Code from it (`code .`), as the
+[README](../README.md#debugging) describes. Without it the host stops at startup and names the missing
 setting. For the full list of settings, see
 [Run the web host locally](../../../docs/agents.md#run-the-web-host-locally).
 

@@ -39,7 +39,7 @@ The host never holds a shared PI token. Each user signs in through the host's OA
 drives PI's device activation. PI issues a token to that user, and the access token the client holds
 is that PI token. Every tool call then runs with the user's own PI permissions.
 
-- Only PI users listed in `Auth:AllowedPiUserIds` can connect.
+- Anyone who can sign in to the configured Project Insight can connect.
 - The token lasts `Auth:PiTokenLifetimeDays` days (default 90, allowed 1 to 90).
 - The host refuses to start if `ProjectInsight:ApiToken` is set, because it would override every
   user's token.
@@ -58,6 +58,4 @@ in [CONFIGURATION.md](../../../CONFIGURATION.md).
 - **Authentication failed or token expired:** sign in again (local: run the link flow; remote:
   reconnect the connector).
 - **Access forbidden:** your PI account lacks permission for that action.
-- **"This server isn't open to your Project Insight account":** the owner has not allowed your PI
-  user. Ask them to add it.
 - **Invalid base URL:** use an absolute https URL ending in `/api/`.

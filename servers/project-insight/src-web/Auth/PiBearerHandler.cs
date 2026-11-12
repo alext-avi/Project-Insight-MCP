@@ -9,12 +9,12 @@ using ProjectInsightMCP.Services;
 namespace ProjectInsightMCP.Web.Auth;
 
 /// <summary>
-/// Pass-through bearer authentication: the bearer token is a PI token. PI says whose it is;
-/// the allowlist says whether they may use this server.
+/// Pass-through bearer authentication: the bearer token is a PI token, and PI says whose it is.
+/// Anyone PI accepts may use the server, with their own PI permissions.
 /// </summary>
 public sealed partial class PiBearerHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder,
-    PiIdentityClient identity, IOptions<AuthOptions> auth, IOptions<WebOptions> web,
+    PiIdentityClient identity, IOptions<WebOptions> web,
     PartitionedRateLimiter<HttpContext> unknownTokens)
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
@@ -53,11 +53,6 @@ public sealed partial class PiBearerHandler(
             case PiIdentityStatus.Rejected:
                 return AuthenticateResult.Fail("Project Insight rejected the token.");
         }
-        if (!auth.Value.PiUserIds.Contains(who.UserId!))
-        {
-            Context.Items[Outcome] = "forbidden";
-            return AuthenticateResult.Fail("This PI user is not allowed on this server.");
-        }
 
         // The MCP endpoint is stateless, so tools resolve services from this request's scope.
         var services = Context.RequestServices;
@@ -80,9 +75,6 @@ public sealed partial class PiBearerHandler(
                 Response.StatusCode = StatusCodes.Status429TooManyRequests;
                 Response.Headers.RetryAfter = "60";
                 return Task.CompletedTask;
-            case "forbidden":
-                Response.StatusCode = StatusCodes.Status403Forbidden;
-                return Response.WriteAsync("This server isn't open to your Project Insight account.");
             default:
                 Response.StatusCode = StatusCodes.Status401Unauthorized;
                 Response.Headers.WWWAuthenticate = $"Bearer resource_metadata=\"{web.Value.ResourceMetadataUrl}\", scope=\"pi\"";

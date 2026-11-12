@@ -110,20 +110,10 @@ public class BearerAuthTests
     }
 
     [Fact]
-    public async Task Pi_user_not_on_the_allowlist_gets_403()
+    public async Task Any_user_pi_accepts_reaches_the_mcp_server()
     {
         using var factory = new WebFactory();
-        var response = await factory.Client().SendAsync(McpPost(PiStub.StrangerToken));
-
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Allowlist_ignores_the_case_of_pi_user_ids()
-    {
-        // The stub returns user B's id in upper case; the allowlist has it in lower case.
-        using var factory = new WebFactory();
-        await using var mcp = await factory.ConnectAsync(PiStub.TokenB);
+        await using var mcp = await factory.ConnectAsync(PiStub.StrangerToken);
 
         Assert.NotEmpty(await mcp.ListToolsAsync());
     }
