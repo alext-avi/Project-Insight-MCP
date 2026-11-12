@@ -214,6 +214,9 @@ public class AuthorizeTests
         var response = await flow.CompleteAsync(session, PiStub.ActivationCode);
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var back = QueryHelpers.ParseQuery(response.Headers.Location!.Query);
+        Assert.False(string.IsNullOrEmpty(back["code"]));
+        Assert.False(back.ContainsKey("error"));
     }
 
     [Fact]
