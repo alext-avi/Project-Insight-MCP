@@ -2,9 +2,11 @@ name: Refresh lock files on Dependabot PRs
 
 # Dependabot updates the lock file of the project whose package it bumps, but not the lock files of the projects
 # that reference it (src-web and tests reference server and core), so CI's locked restore then fails with NU1004.
-# This regenerates every lock file on a Dependabot branch and commits any that changed. A push made with
-# GITHUB_TOKEN starts no workflows, so it then starts CI and the secret scan itself; their checks land on the new
-# commit, which is where branch protection looks for them.
+# This regenerates every lock file on a Dependabot branch and commits any that changed. That push starts the PR's
+# own CI, secret scan and this workflow, but GitHub holds those runs for approval (github-actions[bot] counts as a
+# first-time contributor under the repo's approval policy), and only the PR's own pull_request runs satisfy branch
+# protection. So when this adds a commit, the PR's checks wait until the repo owner clicks "Approve workflows to
+# run" on the PR. (Starting the checks with workflow_dispatch instead doesn't help: those runs don't count for the PR.)
 #
 # Two jobs, so the write token never shares a runner with the restore: "regenerate" evaluates the PR's project
 # files with a read-only token and hands over the lock files as an artifact; "commit" takes only those files.
@@ -61,7 +63,6 @@ jobs:
         timeout-minutes: 10
         permissions:
             contents: write # push the refreshed lock files to the Dependabot branch
-            actions: write # start ci.yml and secret-scan.yml with workflow_dispatch
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
@@ -84,9 +85,8 @@ jobs:
                       if [ -f "$src" ]; then cp "$src" "$f"; fi
                   done
 
-            # Safe to re-run: if the branch already carries these lock files (an earlier attempt pushed them but a
-            # dispatch failed), it only starts the checks again.
-            - name: Commit and start the checks
+            # Safe to re-run: if the branch already carries these lock files, it leaves the branch alone.
+            - name: Commit the lock files
               env:
                   GH_TOKEN: ${{ github.token }}
                   BRANCH: ${{ github.head_ref }}
@@ -106,19 +106,17 @@ jobs:
                   tip=$(git rev-parse FETCH_HEAD)
                   if [ "$tip" != "$HEAD_SHA" ]; then
                       if git diff --quiet FETCH_HEAD -- "$locks" && [ "$(git rev-parse "$tip^")" = "$HEAD_SHA" ]; then
-                          echo "The branch already has these lock files; starting the checks again."
+                          echo "The branch already has these lock files."
                       else
                           echo "The branch moved on since this run started; its own run will refresh it."
-                          exit 0
                       fi
-                  else
-                      git diff --stat -- "$locks"
-                      git config user.name "github-actions[bot]"
-                      git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-                      git add -- "$locks"
-                      git commit -m "chore(deps): refresh dependent lock files"
-                      git push "$remote" "HEAD:refs/heads/${BRANCH}"
+                      exit 0
                   fi
 
-                  gh workflow run ci.yml --repo "$REPO" --ref "$BRANCH"
-                  gh workflow run secret-scan.yml --repo "$REPO" --ref "$BRANCH"
+                  git diff --stat -- "$locks"
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  git add -- "$locks"
+                  git commit -m "chore(deps): refresh dependent lock files"
+                  git push "$remote" "HEAD:refs/heads/${BRANCH}"
+                  echo "::notice::Pushed refreshed lock files. The PR's checks on this commit are held: open the PR and click \"Approve workflows to run\"."

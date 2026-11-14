@@ -19,13 +19,21 @@ updates:
       # The repo's own tool, pinned in .config/dotnet-tools.json; it is released from here, not updated from NuGet.
       ignore:
           - dependency-name: "projectinsight.mcp"
+          # These follow the .NET release the projects target (net10.0, and ASP.NET Core 10's shared framework), so
+          # their major versions arrive with a move to the next .NET, not one package at a time.
+          - dependency-name: "Microsoft.Extensions.*"
+            update-types: ["version-update:semver-major"]
+          - dependency-name: "Microsoft.AspNetCore.*"
+            update-types: ["version-update:semver-major"]
       groups:
           # The MCP SDK's packages share one version (ModelContextProtocolVersion in Directory.Build.props), so they
-          # update together, majors included. A dependency joins the first group it matches.
+          # update together, majors included. Dependabot doesn't reliably keep a dependency to the first group it
+          # matches, so minor-and-patch excludes them explicitly.
           mcp-sdk:
               patterns: ["ModelContextProtocol*"]
           minor-and-patch:
               update-types: [minor, patch]
+              exclude-patterns: ["ModelContextProtocol*"]
 
     - package-ecosystem: github-actions
       directory: "/"
