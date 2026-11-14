@@ -67,6 +67,7 @@ public sealed class SdkServerTests : IAsyncLifetime
     {
         Assert.Equal(ProjectInsightServer.ServerName, _client.ServerInfo!.Name);
         Assert.NotNull(_client.ServerCapabilities.Tools);
+        Assert.Equal(ProjectInsightServer.Instructions, _client.ServerInstructions);
     }
 
     [Fact]

@@ -36,6 +36,7 @@ not check that storage is reachable or that its credentials work: those fail on 
 | `Auth__AllowedRedirectUris__0`, `__1`, … | Claude and ChatGPT callbacks | Replaces the default OAuth redirect list |
 | `Auth__AllowedCimdHosts__0`, `__1`, … | `claude.ai`, `chatgpt.com` | Replaces the default list of hosts that may publish client metadata |
 | `Auth__AllowedOrigins__0`, `__1`, … | none | Browser origins allowed to call the server |
+| `ProjectInsight__Instructions` | none | Your organization's own guidance for the AI, appended to the instructions the server sends clients when they connect (what the tools are for and when to use them). For example: `Timesheets are due Monday by noon. Log internal meetings to the Internal project.` Clients that show server instructions to the model, such as Claude, then follow it. The local `projectinsight-mcp` tool reads the same setting. |
 | `TZ` | `America/New_York` from the Bicep template; UTC without it | Time zone (an IANA name) for dates such as "today" in time-change drafts and their warnings. Set it to the team's zone. |
 
 The three `Allowed…` settings are lists: give each entry its own numbered setting, such as
