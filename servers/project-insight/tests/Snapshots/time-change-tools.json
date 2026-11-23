@@ -16,7 +16,7 @@
             "type": "object",
             "properties": {
               "action": {
-                "description": "create, update or delete.",
+                "description": "create, update or delete for time entries; create_pto, update_pto or delete_pto for PTO.",
                 "type": "string"
               },
               "timeEntryId": {
@@ -77,6 +77,27 @@
               },
               "user": {
                 "description": "create only: whose time (user id or name). Defaults to the signed-in user.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "ptoEntryId": {
+                "description": "update_pto/delete_pto: the PTO entry id (not the time entry id it creates).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "timeCode": {
+                "description": "PTO only: the time code name, such as PTO. An exact name wins, else a unique partial match. Or give timeCodeId.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "timeCodeId": {
+                "description": "PTO only: the time code id. Use instead of timeCode when known.",
                 "type": [
                   "string",
                   "null"
@@ -197,6 +218,30 @@
                       "null"
                     ]
                   },
+                  "kind": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "linkedTimeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoApproved": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
                   "savedId": {
                     "type": [
                       "string",
@@ -238,6 +283,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -288,6 +345,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -748,6 +817,30 @@
                       "null"
                     ]
                   },
+                  "kind": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "linkedTimeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoApproved": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
                   "savedId": {
                     "type": [
                       "string",
@@ -789,6 +882,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -839,6 +944,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -1304,6 +1421,30 @@
                       "null"
                     ]
                   },
+                  "kind": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "linkedTimeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoApproved": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
                   "savedId": {
                     "type": [
                       "string",
@@ -1345,6 +1486,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -1395,6 +1548,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -1855,6 +2020,30 @@
                       "null"
                     ]
                   },
+                  "kind": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "linkedTimeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoApproved": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
                   "savedId": {
                     "type": [
                       "string",
@@ -1896,6 +2085,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -1946,6 +2147,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -2407,6 +2620,30 @@
                       "null"
                     ]
                   },
+                  "kind": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "linkedTimeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoApproved": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
                   "savedId": {
                     "type": [
                       "string",
@@ -2448,6 +2685,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -2498,6 +2747,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -2959,6 +3220,30 @@
                       "null"
                     ]
                   },
+                  "kind": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "linkedTimeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoApproved": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
                   "savedId": {
                     "type": [
                       "string",
@@ -3000,6 +3285,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -3050,6 +3347,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"

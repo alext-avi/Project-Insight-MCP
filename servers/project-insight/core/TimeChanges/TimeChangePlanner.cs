@@ -139,6 +139,8 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
     {
         var n = i + 1;
         var action = (c.Action ?? "").Trim().ToLowerInvariant();
+        if (ChangeAction.IsPto(action))
+            return await BuildPtoRowAsync(i, action, c, caller, resolver, clarifications, seen, isUndo, ct);
         if (action == ChangeAction.Create)
         {
             var date = ParseDate(n, c.Date);
@@ -162,7 +164,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         }
 
         if (action is not (ChangeAction.Update or ChangeAction.Delete))
-            throw Invalid(n, "action must be create, update or delete.");
+            throw Invalid(n, "action must be create, update or delete, or create_pto, update_pto or delete_pto.");
         if (string.IsNullOrWhiteSpace(c.TimeEntryId))
             throw Invalid(n, $"{action} needs timeEntryId.");
         var id = c.TimeEntryId.Trim();
@@ -175,6 +177,8 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             clarifications.Add(new Clarification { ChangeIndex = i, Field = "timeEntryId", Query = id, Message = $"No time entry with id {id}." });
             return null;
         }
+        if (entry.IsPto)
+            throw Invalid(n, $"time entry {id} belongs to a PTO entry. Use {action}_pto with the PTO entry's id instead.");
         var owner = entry.UserId == caller.Id
             ? caller
             : await resolver.UserByIdAsync(entry.UserId, ct) ?? new PiUser(entry.UserId, entry.UserId);
@@ -215,6 +219,101 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         }
         return new DraftRow { Index = i, Action = action, UserId = owner.Id, UserName = owner.Name, TimeEntryId = id, Before = before, After = after };
     }
+
+    private async Task<DraftRow?> BuildPtoRowAsync(int i, string action, ChangeInput c, PiUser caller, TimeChangeResolver resolver,
+        List<Clarification> clarifications, HashSet<string> seen, bool isUndo, CancellationToken ct)
+    {
+        var n = i + 1;
+        if (c.Billable is not null || c.TaskId is not null || c.Project is not null || c.Task is not null)
+            throw Invalid(n, $"{action} takes no task, project or billable. PTO has a time code instead.");
+
+        if (action == ChangeAction.CreatePto)
+        {
+            var date = ParseDate(n, c.Date);
+            var hours = ParseHours(n, c.Hours, isUndo);
+            var user = await resolver.UserAsync(i, c.User, caller, ct);
+            if (user.Clarification is { } uc)
+            {
+                clarifications.Add(uc);
+                return null;
+            }
+            var code = await resolver.TimeCodeAsync(i, user.Value!.Id, c.TimeCodeId, c.TimeCode, ct);
+            if (code.Clarification is { } cc)
+            {
+                clarifications.Add(cc);
+                return null;
+            }
+            var row = new DraftRow
+            {
+                Index = i, Action = action, Kind = RowKind.Pto, UserId = user.Value.Id, UserName = user.Value.Name,
+                After = PtoValues(code.Value!, date, hours, Blank(c.Description))
+            };
+            if (code.Unknown)
+                Warn(row, WarningCode.UnknownTimeCode, $"Time code {code.Value!.Id} isn't one this person has used for PTO");
+            return row;
+        }
+
+        if (string.IsNullOrWhiteSpace(c.PtoEntryId))
+            throw Invalid(n, $"{action} needs ptoEntryId.");
+        var id = c.PtoEntryId.Trim();
+        if (!seen.Add("pto:" + id))
+            throw Invalid(n, $"PTO entry {id} appears in more than one change. Combine them into one change.");
+        var pto = await pi.GetPtoAsync(id, ct);
+        if (pto is null)
+        {
+            clarifications.Add(new Clarification { ChangeIndex = i, Field = "ptoEntryId", Query = id, Message = $"No PTO entry with id {id}." });
+            return null;
+        }
+        var owner = pto.UserId == caller.Id
+            ? caller
+            : await resolver.UserByIdAsync(pto.UserId, ct) ?? new PiUser(pto.UserId, pto.UserId);
+        var before = PtoValues(new PiTimeCode(pto.TimeCodeId, pto.TimeCodeName ?? pto.TimeCodeId), pto.Date, pto.Hours, Blank(pto.Description));
+        DraftRow Row(EntryValues? after) => new()
+        {
+            Index = i, Action = action, Kind = RowKind.Pto, UserId = owner.Id, UserName = owner.Name, PtoEntryId = id,
+            LinkedTimeEntryId = pto.TimeEntryId, PtoApproved = pto.Approved ? true : null, Before = before, After = after
+        };
+        if (action == ChangeAction.DeletePto)
+            return Row(null);
+
+        if (!string.IsNullOrWhiteSpace(c.User) && !isUndo)
+            throw Invalid(n, "an update can't change whose PTO it is. Delete the entry and create a new one for the other person.");
+        var after = before.Clone();
+        if (c.Date is not null) after.Date = ParseDate(n, c.Date);
+        if (c.Hours is not null) after.Hours = ParseHours(n, c.Hours, isUndo);
+        if (c.Description is not null) after.Description = Blank(c.Description);
+        string? unknownCode = null;
+        if (c.TimeCodeId is not null || c.TimeCode is not null)
+        {
+            var code = await resolver.TimeCodeAsync(i, owner.Id, c.TimeCodeId, c.TimeCode, ct);
+            if (code.Clarification is { } cc)
+            {
+                clarifications.Add(cc);
+                return null;
+            }
+            after.TimeCodeId = code.Value!.Id;
+            after.TimeCodeName = code.Value.Name;
+            if (code.Unknown) unknownCode = code.Value.Id;
+        }
+        if (after.Date == before.Date && after.Hours == before.Hours && after.TimeCodeId == before.TimeCodeId &&
+            (after.Description ?? "") == (before.Description ?? ""))
+        {
+            if (isUndo)
+                return null;
+            throw Invalid(n, $"this update changes nothing on PTO entry {id}.");
+        }
+        var updated = Row(after);
+        if (unknownCode is { } unknown)
+            Warn(updated, WarningCode.UnknownTimeCode, $"Time code {unknown} isn't one this person has used for PTO");
+        return updated;
+    }
+
+    /// <summary>A PTO row's values. PTO has no task or project, so those stay empty.</summary>
+    private static EntryValues PtoValues(PiTimeCode code, DateOnly date, decimal hours, string? description) => new()
+    {
+        TaskId = "", TaskName = "", ProjectId = "", ProjectName = "", Date = date, Hours = hours, Billable = false,
+        Description = description, TimeCodeId = code.Id, TimeCodeName = code.Name
+    };
 
     /// <summary>
     /// PI's own look for each person on the card: their photo, else their initials and colours.

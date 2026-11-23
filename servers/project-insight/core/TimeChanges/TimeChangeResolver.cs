@@ -27,11 +27,13 @@ public static class NameMatch
 /// <summary>Turns the names an agent gives into PI ids. One instance per plan (it caches lookups).</summary>
 public sealed class TimeChangeResolver(ITimeEntryGateway pi)
 {
-    public sealed record Resolved<T>(T? Value, Clarification? Clarification) where T : class;
+    /// <param name="Unknown">A time code id taken as given because this person has no PTO using it.</param>
+    public sealed record Resolved<T>(T? Value, Clarification? Clarification, bool Unknown = false) where T : class;
 
     private IReadOnlyList<PiNamed>? _projects;
     private readonly Dictionary<string, IReadOnlyList<PiNamed>> _tasks = new();
     private readonly Dictionary<string, PiUser?> _users = new();
+    private readonly Dictionary<string, IReadOnlyList<PiTimeCode>> _timeCodes = new();
 
     public async Task<Resolved<PiUser>> UserAsync(int index, string? user, PiUser caller, CancellationToken ct)
     {
@@ -110,6 +112,46 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
                 t.Candidates.Select(c => new Candidate { Id = c.Id, Name = c.Name })));
 
         return new(new PiTask(t.Match.Id, t.Match.Name, p.Match.Id, p.Match.Name), null);
+    }
+
+    /// <summary>
+    /// A PTO time code: the id as given (flagged unknown when this person has never used it), else an exact
+    /// name, else a unique partial name. PI has no time-code list, so the known codes are the ones on this
+    /// person's PTO records.
+    /// </summary>
+    public async Task<Resolved<PiTimeCode>> TimeCodeAsync(int index, string userId, string? timeCodeId, string? timeCode, CancellationToken ct)
+    {
+        if (!_timeCodes.TryGetValue(userId, out var known))
+        {
+            var pto = await pi.ListPtoAsync(userId, ct);
+            _timeCodes[userId] = known = pto
+                .GroupBy(p => p.TimeCodeId)
+                .Select(g => new PiTimeCode(g.Key, g.Select(p => p.TimeCodeName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? g.Key))
+                .ToList();
+        }
+        if (!string.IsNullOrWhiteSpace(timeCodeId))
+        {
+            var id = timeCodeId.Trim();
+            return known.FirstOrDefault(c => c.Id == id) is { } byId
+                ? new(byId, null)
+                : new(new PiTimeCode(id, id), null, Unknown: true);
+        }
+        var candidates = known.Select(c => new Candidate { Id = c.Id, Name = c.Name }).ToList();
+        if (string.IsNullOrWhiteSpace(timeCode))
+            return new(null, Clarify(index, "timeCode", "", "Give timeCode or timeCodeId.", candidates));
+
+        var query = timeCode.Trim();
+        var exact = known.Where(c => string.Equals(c.Name.Trim(), query, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (exact.Count == 1)
+            return new(exact[0], null);
+        var partial = exact.Count > 1 ? exact : known.Where(c => c.Name.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (partial.Count == 1)
+            return new(partial[0], null);
+        return new(null, Clarify(index, "timeCode", query,
+            partial.Count == 0
+                ? $"No PTO time code matches \"{query}\"."
+                : $"{partial.Count} PTO time codes match \"{query}\". Use the exact name or a timeCodeId.",
+            candidates));
     }
 
     private static Clarification Clarify(int index, string field, string query, string message, IEnumerable<Candidate>? candidates = null)
