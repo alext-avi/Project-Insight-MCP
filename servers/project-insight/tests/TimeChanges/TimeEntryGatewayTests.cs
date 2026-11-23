@@ -160,6 +160,82 @@ public class TimeEntryGatewayTests
         Assert.Null(await gw.GetEntryAsync("te-9", default));
     }
 
+    private const string PtoListJson = """
+        [{"Id":"pto-1","User_Id":"u-1","Date":"2026-11-02T00:00:00","PTOHours":8,"TimeCode_Id":"tc-1",
+          "TimeCode":{"Id":"tc-1","Name":"PTO","IsActive":true},"TimeEntry_Id":"te-9","Description":"Trip"},
+         {"Id":"acc-1","User_Id":"u-1","Date":"2026-01-01T00:00:00","PTOHours":0,"PTOAdded":8,"PTOBalance":8}]
+        """;
+
+    [Fact]
+    public async Task Search_keeps_task_less_entries_as_pto()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.OK,
+            """[{"Id":"te-9","Date":"2026-11-02T00:00:00","ActualHours":8,"IsBillable":false,"Task_Id":null,"User_Id":"u-1"}]"""));
+
+        var e = Assert.Single(await gw.SearchEntriesAsync("u-1", new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 7), default));
+
+        Assert.True(e.IsPto);
+        Assert.Equal("", e.TaskId);
+        Assert.Equal("", e.ProjectId);
+    }
+
+    [Fact]
+    public async Task ListPto_maps_records_and_time_codes()
+    {
+        var (gw, pi) = Create(Json(HttpStatusCode.OK, PtoListJson));
+
+        var pto = Assert.Single(await gw.ListPtoAsync("u-1", default));
+
+        Assert.Equal(new PiPto("pto-1", "u-1", new DateOnly(2026, 11, 2), 8m, "tc-1", "PTO", "Trip", "te-9", false), pto);
+        Assert.Contains("/api/user-pto/list-by-user/u-1", pi.Requests[0].Uri.PathAndQuery);
+    }
+
+    [Fact]
+    public async Task GetPto_returns_null_when_missing()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.NotFound, "{}"));
+
+        Assert.Null(await gw.GetPtoAsync("pto-9", default));
+    }
+
+    [Fact]
+    public async Task CreatePto_posts_date_as_M_d_yyyy_without_id()
+    {
+        var (gw, pi) = Create(Json(HttpStatusCode.OK, """{"SavedId":"pto-new","Success":true}"""));
+
+        var result = await gw.CreatePtoAsync(new PtoWrite("u-1", new DateOnly(2026, 11, 2), 8m, "tc-1", "Trip"), default);
+
+        Assert.Equal(new PiWrite(true, "pto-new", null), result);
+        var body = JsonDocument.Parse(Assert.Single(pi.Requests).Body).RootElement;
+        Assert.Equal("11/2/2026", body.GetProperty("Date").GetString());
+        Assert.False(body.TryGetProperty("Id", out _));
+    }
+
+    [Fact]
+    public async Task UpdatePto_posts_id_and_clears_a_null_description()
+    {
+        var (gw, pi) = Create(Json(HttpStatusCode.OK, """{"SavedId":"pto-1","Success":true}"""));
+
+        var result = await gw.UpdatePtoAsync("pto-1", new PtoWrite("u-1", new DateOnly(2026, 11, 3), 4m, "tc-1", null), default);
+
+        Assert.True(result.Success);
+        var body = JsonDocument.Parse(Assert.Single(pi.Requests).Body).RootElement;
+        Assert.Equal("pto-1", body.GetProperty("Id").GetString());
+        Assert.Equal("", body.GetProperty("Description").GetString());
+        Assert.Equal("u-1", body.GetProperty("User_Id").GetString());
+    }
+
+    [Fact]
+    public async Task DeletePto_502_is_uncertain()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.BadGateway, "bad gateway"));
+
+        var result = await gw.DeletePtoAsync("pto-1", default);
+
+        Assert.False(result.Success);
+        Assert.True(result.Uncertain);
+    }
+
     private static ProjectInsightTimeEntryGateway Unanswered(Exception failure, string? apiToken = "t")
     {
         var config = new ConfigurationBuilder()

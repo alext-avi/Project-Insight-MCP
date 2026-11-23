@@ -21,6 +21,17 @@ public sealed class FakeGateway : ITimeEntryGateway
 
     public List<PiEntry> Entries { get; } = new();
 
+    public List<PiPto> Pto { get; } = new();
+
+    /// <summary>PI deletes a PTO record's linked time entry with it. Set false to simulate PI leaving it behind.</summary>
+    public bool DeletePtoRemovesLinkedEntry { get; set; } = true;
+
+    /// <summary>PI updates a PTO record's linked time entry in place. Set false to simulate it staying put.</summary>
+    public bool UpdatePtoMovesLinkedEntry { get; set; } = true;
+
+    /// <summary>When true, ListPtoAsync throws pi_unavailable.</summary>
+    public bool PtoListThrows { get; set; }
+
     /// <summary>Project colours by project id; projects not listed have none.</summary>
     public Dictionary<string, string> ProjectColors { get; } = new();
 
@@ -74,6 +85,16 @@ public sealed class FakeGateway : ITimeEntryGateway
         var entry = new PiEntry(id, userId, date, hours, billable, description, task.Id, task.Name, task.ProjectId, task.ProjectName, null, task.ProjectColor);
         Entries.Add(entry);
         return entry;
+    }
+
+    public PiPto AddPto(string id, string userId, DateOnly date, decimal hours, string timeCodeId = "tc-1",
+        string timeCodeName = "PTO", bool approved = false)
+    {
+        var entryId = $"te-pto-{id}";
+        var pto = new PiPto(id, userId, date, hours, timeCodeId, timeCodeName, null, entryId, approved);
+        Pto.Add(pto);
+        Entries.Add(new PiEntry(entryId, userId, date, hours, false, null, "", "", "", "", null, IsPto: true));
+        return pto;
     }
 
     public async Task<PiUser> GetCurrentUserAsync(CancellationToken ct) { await Enter(); return Caller; }
@@ -163,6 +184,73 @@ public sealed class FakeGateway : ITimeEntryGateway
         AfterWrite?.Invoke(Writes.Count);
         return new PiWrite(true, null, null);
     }
+
+    public async Task<IReadOnlyList<PiPto>> ListPtoAsync(string userId, CancellationToken ct)
+    {
+        await Enter();
+        if (PtoListThrows) throw new TimeChangeException("pi_unavailable", "Could not read PTO in Project Insight.");
+        return Pto.Where(p => p.UserId == userId).ToList();
+    }
+
+    public async Task<PiPto?> GetPtoAsync(string ptoEntryId, CancellationToken ct)
+    { await Enter(); return Pto.FirstOrDefault(p => p.Id == ptoEntryId); }
+
+    public async Task<PiWrite> CreatePtoAsync(PtoWrite w, CancellationToken ct)
+    {
+        await Enter();
+        if (ThrowOnWrite?.Invoke("create_pto", null) is { } thrown) throw thrown;
+        if (ct.IsCancellationRequested) return new PiWrite(false, null, "The operation was canceled.");
+        if (FailWrite?.Invoke("create_pto", null) is { } error) return new PiWrite(false, null, error);
+        if (UncertainWrite?.Invoke("create_pto", null) is { } unsure) return new PiWrite(false, null, unsure, Uncertain: true);
+        var id = $"pto-{_next++}";
+        var entryId = $"te-pto-{id}";
+        Pto.Add(new PiPto(id, w.UserId, w.Date, w.Hours, w.TimeCodeId, TimeCodeName(w.TimeCodeId), w.Description, entryId, false));
+        Entries.Add(new PiEntry(entryId, w.UserId, w.Date, w.Hours, false, w.Description, "", "", "", "", null, IsPto: true));
+        Writes.Add($"create_pto:{id}");
+        AfterWrite?.Invoke(Writes.Count);
+        return new PiWrite(true, id, null);
+    }
+
+    public async Task<PiWrite> UpdatePtoAsync(string ptoEntryId, PtoWrite w, CancellationToken ct)
+    {
+        await Enter();
+        if (ThrowOnWrite?.Invoke("update_pto", ptoEntryId) is { } thrown) throw thrown;
+        if (ct.IsCancellationRequested) return new PiWrite(false, null, "The operation was canceled.");
+        if (FailWrite?.Invoke("update_pto", ptoEntryId) is { } error) return new PiWrite(false, null, error);
+        if (UncertainWrite?.Invoke("update_pto", ptoEntryId) is { } unsure) return new PiWrite(false, null, unsure, Uncertain: true);
+        var i = Pto.FindIndex(p => p.Id == ptoEntryId);
+        if (i < 0) return new PiWrite(false, null, "Not found");
+        var old = Pto[i];
+        Pto[i] = old with
+        {
+            Date = w.Date, Hours = w.Hours, TimeCodeId = w.TimeCodeId, TimeCodeName = TimeCodeName(w.TimeCodeId), Description = w.Description
+        };
+        if (UpdatePtoMovesLinkedEntry && old.TimeEntryId is { } linked && Entries.FindIndex(e => e.Id == linked) is var j and >= 0)
+            Entries[j] = Entries[j] with { Date = w.Date, Hours = w.Hours, Description = w.Description };
+        Writes.Add($"update_pto:{ptoEntryId}");
+        AfterWrite?.Invoke(Writes.Count);
+        return new PiWrite(true, ptoEntryId, null);
+    }
+
+    public async Task<PiWrite> DeletePtoAsync(string ptoEntryId, CancellationToken ct)
+    {
+        await Enter();
+        if (ThrowOnWrite?.Invoke("delete_pto", ptoEntryId) is { } thrown) throw thrown;
+        if (ct.IsCancellationRequested) return new PiWrite(false, null, "The operation was canceled.");
+        if (FailWrite?.Invoke("delete_pto", ptoEntryId) is { } error) return new PiWrite(false, null, error);
+        if (UncertainWrite?.Invoke("delete_pto", ptoEntryId) is { } unsure) return new PiWrite(false, null, unsure, Uncertain: true);
+        var pto = Pto.FirstOrDefault(p => p.Id == ptoEntryId);
+        if (pto is null) return new PiWrite(false, null, "Not found");
+        Pto.Remove(pto);
+        if (DeletePtoRemovesLinkedEntry && pto.TimeEntryId is { } linked)
+            Entries.RemoveAll(e => e.Id == linked);
+        Writes.Add($"delete_pto:{ptoEntryId}");
+        AfterWrite?.Invoke(Writes.Count);
+        return new PiWrite(true, null, null);
+    }
+
+    private string? TimeCodeName(string timeCodeId) => Pto.FirstOrDefault(p => p.TimeCodeId == timeCodeId)?.TimeCodeName
+        ?? (timeCodeId == "tc-1" ? "PTO" : null);
 
     public async Task<IReadOnlyDictionary<string, PiLook>> GetUserLooksAsync(IReadOnlyCollection<string> userIds, CancellationToken ct)
     {
