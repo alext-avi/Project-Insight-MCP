@@ -236,7 +236,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
         ChangeAction.Delete => pi.DeleteEntryAsync(row.TimeEntryId!, ct),
         ChangeAction.CreatePto => CreatePtoAsync(row, row.After!, ct),
         ChangeAction.UpdatePto => pi.UpdatePtoAsync(row.PtoEntryId!, PtoWrite(row, row.After!), ct),
-        ChangeAction.DeletePto => DeletePtoAndCleanUpAsync(row, row.PtoEntryId!, row.Before!.Date, applying: true, ct),
+        ChangeAction.DeletePto => DeletePtoAsync(row.PtoEntryId!, ct),
         _ => throw new InvalidOperationException($"Unknown change action \"{row.Action}\".")
     };
 
@@ -245,7 +245,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
         ChangeAction.Create => pi.DeleteEntryAsync(row.SavedId!, ct),
         ChangeAction.Update => pi.UpdateEntryAsync(row.TimeEntryId!, Write(draft, row, row.Before!), ct),
         ChangeAction.Delete => pi.CreateEntryAsync(Write(draft, row, row.Before!), ct),
-        ChangeAction.CreatePto => DeletePtoAndCleanUpAsync(row, row.SavedId!, row.After!.Date, applying: false, ct),
+        ChangeAction.CreatePto => DeletePtoAsync(row.SavedId!, ct),
         ChangeAction.UpdatePto => pi.UpdatePtoAsync(row.PtoEntryId!, PtoWrite(row, row.Before!), ct),
         ChangeAction.DeletePto => CreatePtoAsync(row, row.Before!, ct),
         _ => throw new InvalidOperationException($"Unknown change action \"{row.Action}\".")
@@ -278,42 +278,11 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
     }
 
     /// <summary>
-    /// Deletes a PTO record. Per docs/PTO.md, PI deletes the PTO's linked time entry itself, so the check below is
-    /// defensive: if the entry is still there it is deleted so no orphan hours stay on the day.
-    /// When applying, a PTO that is gone but whose entry couldn't be removed can't be reversed (recreating the PTO
-    /// would make PI add a second linked entry), so that is reported as unanswered for the user to check.
-    /// When reversing, a cleanup failure is simply a failed step.
+    /// Deletes a PTO record and nothing else. Per docs/PTO.md, PI deletes the PTO's linked time entry itself. Reading or
+    /// deleting that entry straight after the PTO delete races PI (a day search still lists it, and a GET or DELETE of it
+    /// returns HTTP 500), so the committer leaves it to PI.
     /// </summary>
-    private async Task<PiWrite> DeletePtoAndCleanUpAsync(DraftRow row, string ptoEntryId, DateOnly date, bool applying, CancellationToken ct)
-    {
-        var deleted = await pi.DeletePtoAsync(ptoEntryId, ct);
-        var linkedEntryId = row.LinkedTimeEntryId;
-        if (!deleted.Success || linkedEntryId is null)
-            return deleted;
-        if (!applying)
-            return await CleanUpAsync(row.UserId, date, linkedEntryId, ct);
-        PiWrite cleanup;
-        try
-        {
-            cleanup = await CleanUpAsync(row.UserId, date, linkedEntryId, ct);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            cleanup = new PiWrite(false, null, ProjectInsightTimeEntryGateway.Clip(ex.Message), Uncertain: true);
-        }
-        return cleanup.Success ? deleted
-            : new PiWrite(false, null, $"The PTO entry was deleted, but its linked time entry {linkedEntryId} on that day could not be removed" +
-                $"{(string.IsNullOrWhiteSpace(cleanup.Error) ? "" : $" ({cleanup.Error})")}. Check that day in Project Insight and remove the entry if it is still there.", Uncertain: true);
-    }
-
-    /// <summary>
-    /// Looks for the leftover entry by searching its day, never by reading it by id: live PI answers a read of a
-    /// time entry that no longer exists with HTTP 500, not 404, which would look like an outage.
-    /// </summary>
-    private async Task<PiWrite> CleanUpAsync(string userId, DateOnly date, string linkedEntryId, CancellationToken ct)
-        => (await pi.SearchEntriesAsync(userId, date, date, ct)).Any(e => e.Id == linkedEntryId)
-            ? await pi.DeleteEntryAsync(linkedEntryId, ct)
-            : new PiWrite(true, null, null);
+    private Task<PiWrite> DeletePtoAsync(string ptoEntryId, CancellationToken ct) => pi.DeletePtoAsync(ptoEntryId, ct);
 
     private static EntryWrite Write(Draft draft, DraftRow row, EntryValues v)
         => new(row.UserId, v.TaskId, v.Date, v.Hours, v.Billable, v.Description,

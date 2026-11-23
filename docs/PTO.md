@@ -14,7 +14,7 @@ created, updated, moved and deleted, and both affected days were left empty.
 | 1 | What does the linked time entry look like? | Non-billable, with the PTO's hours, date and description, and **no task and no project** (`Task_Id` and `Project_Id` absent/null). The draft flow treats a time entry with no task as PTO-linked. |
 | 2 | What id does a PTO save return? | `savedId` is the **PTO record's id**, not the time entry's. Reading the PTO back gives its `TimeEntry_Id`. |
 | 3 | Does updating a PTO update its linked entry? | **Yes.** Changing hours, and moving the date, both update the same linked time entry in place, and its id doesn't change. No extra write is needed. |
-| 4 | Does deleting a PTO delete its linked entry? | **Yes.** After `DELETE /api/user-pto/pto-calendar/{id}`, the linked time entry is gone. The committer still checks, and removes a leftover linked entry if PI ever leaves one (defensive, never needed in this check). |
+| 4 | Does deleting a PTO delete its linked entry? | **Yes.** After `DELETE /api/user-pto/pto-calendar/{id}`, the linked time entry is gone. The committer relies on this and never touches the linked entry itself: straight after the PTO delete, a day search can still list the linked entry and a GET or DELETE of it returns HTTP 500, so a defensive cleanup would race PI. |
 | 5 | PTO on a submitted or locked timesheet | Not tested: no safe locked timesheet was available. The draft flow warns (`timesheet_*`), and if PI refuses, the commit fails and rolls back. |
 
 Other observations:
@@ -26,6 +26,7 @@ Other observations:
   time-code list, so a code can only be found by name once the person has used it.
 - `DateApproved` wasn't present on any usage record read here, so the `pto_approved` warning only fires on tenants
   that do return it.
-- `GET` of a time entry that no longer exists returns HTTP 500 (not 404), so the committer checks for a leftover
-  linked entry by searching that day rather than reading it by id.
+- `GET` of a time entry that no longer exists returns HTTP 500 (not 404).
+- `GET /api/user-pto/{id}` of a deleted PTO returns success with an empty record (no date or hours), which the
+  gateway treats as not found, so undo planning of a PTO that's already gone asks for clarification.
 - Editing a PTO record recalculates `PTOBalance` on later records. That's PI's own bookkeeping, not ours.

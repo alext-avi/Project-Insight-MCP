@@ -422,58 +422,24 @@ public sealed class TimeChangeCommitterTests : IDisposable
     }
 
     [Fact]
-    public async Task Rollback_cleans_linked_entry_when_pi_leaves_it()
-    {
-        var (draft, _) = await Plan([CreatePto("2026-10-26", 3m),
-            new() { Action = "create", Date = "2026-10-27", Hours = 2m, TaskId = "t-1" }]);
-        _pi.FailWrite = (op, _) => op == "create" ? "nope" : null;
-        _pi.DeletePtoRemovesLinkedEntry = false;
-
-        var result = await Commit(draft.Id);
-
-        Assert.Equal(RowOutcome.Reversed, result.Rows[0].Outcome);
-        Assert.Empty(_pi.Pto);
-        Assert.DoesNotContain(_pi.Entries, e => e.IsPto);
-        Assert.Contains("delete:te-pto-pto-100", _pi.Writes);
-    }
-
-    [Fact]
-    public async Task A_failed_cleanup_after_a_pto_delete_leaves_the_row_unknown()
+    public async Task Deleting_a_pto_makes_only_the_pto_write_and_leaves_the_linked_entry_to_pi()
     {
         var (draft, _) = await Plan([new() { Action = "delete_pto", PtoEntryId = AddWedPto().Id }]);
-        _pi.DeletePtoRemovesLinkedEntry = false;
-        _pi.FailWrite = (op, _) => op == "delete" ? "locked" : null;
-
-        var result = await Commit(draft.Id);
-
-        Assert.Equal(DraftStatus.Failed, result.Status);
-        Assert.Equal(RowOutcome.Unknown, result.Rows[0].Outcome);
-        Assert.True(result.OutcomeUnknown);
-        Assert.Empty(_pi.Pto);
-        Assert.Contains("te-pto-pto-1", result.Rows[0].Error);
-        Assert.Contains("linked time entry", result.Rows[0].Error);
-    }
-
-    [Fact]
-    public async Task Deleting_a_pto_commits_cleanly_when_reading_a_deleted_entry_would_fail_like_live_pi()
-    {
-        var (draft, _) = await Plan([new() { Action = "delete_pto", PtoEntryId = AddWedPto().Id }]);
-        _pi.GetMissingEntryThrows = true;
 
         var result = await Commit(draft.Id);
 
         Assert.Equal(DraftStatus.Committed, result.Status);
         Assert.Equal(RowOutcome.Applied, result.Rows[0].Outcome);
         Assert.Equal(["delete_pto:pto-1"], _pi.Writes);
+        Assert.DoesNotContain(_pi.Entries, e => e.IsPto);
     }
 
     [Fact]
-    public async Task Rolling_back_a_created_pto_is_clean_when_reading_a_deleted_entry_would_fail_like_live_pi()
+    public async Task Rolling_back_a_created_pto_makes_only_the_pto_write()
     {
         var (draft, _) = await Plan([CreatePto("2026-10-26", 3m),
             new() { Action = "create", Date = "2026-10-27", Hours = 2m, TaskId = "t-1" }]);
         _pi.FailWrite = (op, _) => op == "create" ? "nope" : null;
-        _pi.GetMissingEntryThrows = true;
 
         var result = await Commit(draft.Id);
 
