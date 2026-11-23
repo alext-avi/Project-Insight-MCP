@@ -129,4 +129,16 @@ public class TimeChangeCardTests
         Assert.Contains("if (w && isHttps(w.timesheetUrl))", Html);
         Assert.DoesNotContain("if (w.timesheetUrl)", Html);
     }
+
+    [Fact]
+    public void Card_labels_pto_rows()
+    {
+        Assert.Contains(".row.pto", Html);
+        Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(Html, "--pto:").Count);
+        Assert.Contains("\"PTO · \" + (", Html);
+        Assert.Contains("\"time off\"", Html);
+        Assert.Contains("\"PTO \" + (r.ptoEntryId || r.savedId)", Html);
+        Assert.Contains("t.ptoDelta", Html);
+        Assert.Contains("update_pto: \"update\"", Html);
+    }
 }

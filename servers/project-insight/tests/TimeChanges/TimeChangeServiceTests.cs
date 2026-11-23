@@ -41,6 +41,63 @@ public sealed class TimeChangeServiceTests : IDisposable
         Assert.DoesNotContain(r.ConfirmToken!, r.Text);
     }
 
+    private static ChangeInput CreatePto(string date, decimal hours) =>
+        new() { Action = "create_pto", Date = date, Hours = hours, TimeCodeId = "tc-1" };
+
+    [Fact]
+    public async Task Pto_draft_plans_commits_and_undoes_through_the_service()
+    {
+        // The planner names a time code from the person's PTO history; seed one outside the planned weeks, then drop it.
+        _pi.AddPto("seed", "u-1", new DateOnly(2026, 10, 12), 1m);
+        var plan = await _service.PlanAsync("Book PTO", [CreatePto("2026-10-26", 3m), CreatePto("2026-10-27", 1.75m)], default);
+
+        Assert.False(plan.IsError, plan.Text);
+        _pi.Pto.Clear();
+        _pi.Entries.RemoveAll(e => e.IsPto);
+        Assert.Contains("PTO · PTO · +3h", plan.Text);
+        Assert.DoesNotContain("›", plan.Text);
+        Assert.Contains(", PTO +4.75h", plan.Text);
+
+        var commit = await _service.CommitAsync(plan.View.Draft!.Id, default);
+        Assert.False(commit.IsError, commit.Text);
+        Assert.Equal(DraftStatus.Committed, commit.View.Draft!.Status);
+        Assert.Equal(2, _pi.Pto.Count);
+
+        var undo = await _service.UndoAsync(commit.View.Draft.Id, default);
+        Assert.False(undo.IsError, undo.Text);
+        Assert.Equal(DraftStatus.Draft, undo.View.Draft!.Status);
+        Assert.Contains("delete_pto · You · Mon 26 Oct · PTO · PTO · −3h", undo.Text);
+
+        var undone = await _service.CommitAsync(undo.View.Draft.Id, default);
+        Assert.False(undone.IsError, undone.Text);
+        Assert.Equal(DraftStatus.Committed, undone.View.Draft!.Status);
+        Assert.Empty(_pi.Pto);
+        Assert.DoesNotContain(_pi.Entries, e => e.IsPto);
+    }
+
+    [Fact]
+    public void Pto_row_reads_as_pto_with_time_code_and_summary_mentions_delta()
+    {
+        var pto = new DraftRow
+        {
+            Index = 0, Action = ChangeAction.UpdatePto, Kind = RowKind.Pto, UserId = "u-1", UserName = "Alex",
+            Before = new EntryValues { TimeCodeId = "tc-1", TimeCodeName = "Vacation", Date = new DateOnly(2026, 10, 26), Hours = 2m, TaskId = "", ProjectId = "", ProjectName = "", TaskName = "" },
+            After = new EntryValues { TimeCodeId = "tc-2", TimeCodeName = "Sick", Date = new DateOnly(2026, 10, 27), Hours = 3m, TaskId = "", ProjectId = "", ProjectName = "", TaskName = "" },
+        };
+        var view = new DraftView
+        {
+            Id = "d-1", Status = DraftStatus.Draft, Intent = "x", ProposedByName = "Alex", ProposedAt = Drafts.T0, ExpiresAt = Drafts.T0.AddHours(1), Rows = [pto],
+            Weeks = [new WeekView { UserId = "u-1", UserName = "Alex", IsCaller = true, Start = new DateOnly(2026, 10, 25), End = new DateOnly(2026, 10, 31) }],
+            Totals = new DraftTotals { Changes = 1, Days = 2, People = 1, NetHours = 1m, PtoDelta = 1m },
+        };
+
+        var text = TimeChangeText.For(new TimeChangesView { Kind = "draft", Draft = view }, new DateOnly(2026, 10, 27));
+
+        Assert.Contains("1. update_pto · You · Tue 27 Oct · PTO · Sick · 2h → 3h; moved from Mon 26 Oct; was PTO · Vacation", text);
+        Assert.Contains(", PTO +1h", text);
+        Assert.DoesNotContain("›", text);
+    }
+
     [Fact]
     public async Task Text_shows_the_year_of_a_date_outside_this_year()
     {
