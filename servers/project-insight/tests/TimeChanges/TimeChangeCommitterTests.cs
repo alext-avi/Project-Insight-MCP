@@ -438,7 +438,7 @@ public sealed class TimeChangeCommitterTests : IDisposable
     }
 
     [Fact]
-    public async Task A_failed_cleanup_of_the_linked_entry_fails_the_row()
+    public async Task A_failed_cleanup_after_a_pto_delete_leaves_the_row_unknown()
     {
         var (draft, _) = await Plan([new() { Action = "delete_pto", PtoEntryId = AddWedPto().Id }]);
         _pi.DeletePtoRemovesLinkedEntry = false;
@@ -447,8 +447,25 @@ public sealed class TimeChangeCommitterTests : IDisposable
         var result = await Commit(draft.Id);
 
         Assert.Equal(DraftStatus.Failed, result.Status);
-        Assert.Equal(RowOutcome.Rejected, result.Rows[0].Outcome);
-        Assert.Contains("locked", result.Error);
+        Assert.Equal(RowOutcome.Unknown, result.Rows[0].Outcome);
+        Assert.True(result.OutcomeUnknown);
+        Assert.Empty(_pi.Pto);
+        Assert.Contains("te-pto-pto-1", result.Rows[0].Error);
+        Assert.Contains("linked time entry", result.Rows[0].Error);
+    }
+
+    [Fact]
+    public async Task An_unanswered_pto_write_is_unknown_and_not_reversed_while_earlier_rows_are()
+    {
+        var (draft, _) = await Plan([new() { Action = "create", Date = "2026-10-27", Hours = 2m, TaskId = "t-1" }, CreatePto("2026-10-26", 3m)]);
+        _pi.UncertainWrite = (op, _) => op == "create_pto" ? "timeout" : null;
+
+        var result = await Commit(draft.Id);
+
+        Assert.Equal(DraftStatus.Failed, result.Status);
+        Assert.True(result.OutcomeUnknown);
+        Assert.Equal([RowOutcome.Reversed, RowOutcome.Unknown], result.Rows.Select(r => r.Outcome));
+        Assert.DoesNotContain(_pi.Writes, w => w.StartsWith("delete_pto"));
     }
 
     [Fact]
@@ -588,6 +605,16 @@ public sealed class TimeChangeCommitterTests : IDisposable
 
         Assert.Equal(DraftStatus.Committed, result.Status);
         Assert.Equal(["create:te-100"], _pi.Writes);
+    }
+
+    [Fact]
+    public async Task Stored_2_1_0_draft_still_commits_when_the_pto_list_cant_be_read()
+    {
+        var (draft, _) = await Plan([new() { Action = "create", Date = "2026-10-27", Hours = 1m, TaskId = "t-1" }]);
+        await _store.TryTransitionAsync("u-1", draft.Id, DraftStatus.Draft, d => d.PtoUnreadUsers = null);
+        _pi.PtoListThrows = true;
+
+        Assert.Equal(DraftStatus.Committed, (await Commit(draft.Id)).Status);
     }
 
     // The undo tests drive the planner and committer directly: the service's text rendering of PTO rows is a later task.
