@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text.Json.Serialization;
 
 namespace ProjectInsightMCP.TimeChanges;
 
@@ -128,7 +129,9 @@ public sealed class EntryValues
     public bool Billable { get; set; }
     public string? Description { get; set; }
     /// <summary>PTO rows only; time rows leave these null.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? TimeCodeId { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? TimeCodeName { get; set; }
 
     public EntryValues Clone() => (EntryValues)MemberwiseClone();
@@ -148,12 +151,16 @@ public sealed class DraftRow
     public required string UserName { get; set; }
     public string? TimeEntryId { get; set; }
     /// <summary><see cref="RowKind"/>; null (drafts stored before PTO) means time.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Kind { get; set; }
     /// <summary>PTO rows: the PTO entry being updated or deleted.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? PtoEntryId { get; set; }
     /// <summary>PTO update/delete rows: the time entry PI keeps for that PTO, so the card can leave it out of the day's context.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? LinkedTimeEntryId { get; set; }
     /// <summary>True when the PTO being updated or deleted was already approved; otherwise null.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? PtoApproved { get; set; }
     /// <summary>Id PI gave a created entry, or the new id of a deleted entry recreated during rollback.</summary>
     public string? SavedId { get; set; }

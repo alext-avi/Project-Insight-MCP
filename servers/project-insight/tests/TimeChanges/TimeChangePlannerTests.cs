@@ -738,4 +738,16 @@ public sealed class TimeChangePlannerTests : IDisposable
 
         Assert.Contains("Change 2", ex.Message);
     }
+
+    [Fact]
+    public async Task Time_actions_reject_pto_only_fields_and_pto_actions_reject_timeEntryId()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m);
+
+        var e1 = await Assert.ThrowsAsync<TimeChangeException>(() => PlanPto(new() { Action = "update", TimeEntryId = "te-1", PtoEntryId = "pto-1", Hours = 1m }));
+        var e2 = await Assert.ThrowsAsync<TimeChangeException>(() => PlanPto(new() { Action = "create_pto", Date = "2026-10-29", Hours = 3m, TimeCode = "PTO", TimeEntryId = "te-1" }));
+        var e3 = await Assert.ThrowsAsync<TimeChangeException>(() => PlanPto(new() { Action = "create", Date = "2026-10-29", Hours = 3m, TaskId = "t-1", TimeCode = "PTO" }));
+
+        Assert.All(new[] { e1, e2, e3 }, e => { Assert.Equal("invalid_change", e.Code); Assert.Contains("Change 1", e.Message); });
+    }
 }

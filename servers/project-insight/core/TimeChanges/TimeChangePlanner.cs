@@ -139,6 +139,8 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
     {
         var n = i + 1;
         var action = (c.Action ?? "").Trim().ToLowerInvariant();
+        if (!ChangeAction.IsPto(action) && (c.PtoEntryId is not null || c.TimeCode is not null || c.TimeCodeId is not null))
+            throw Invalid(n, $"{action} takes no ptoEntryId, timeCode or timeCodeId. Those are for create_pto, update_pto and delete_pto.");
         if (ChangeAction.IsPto(action))
             return await BuildPtoRowAsync(i, action, c, caller, resolver, clarifications, seen, isUndo, ct);
         if (action == ChangeAction.Create)
@@ -224,6 +226,8 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         List<Clarification> clarifications, HashSet<string> seen, bool isUndo, CancellationToken ct)
     {
         var n = i + 1;
+        if (c.TimeEntryId is not null)
+            throw Invalid(n, $"{action} takes no timeEntryId. Use ptoEntryId to name a PTO entry.");
         if (c.Billable is not null || c.TaskId is not null || c.Project is not null || c.Task is not null)
             throw Invalid(n, $"{action} takes no task, project or billable. PTO has a time code instead.");
 
