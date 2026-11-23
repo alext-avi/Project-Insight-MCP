@@ -87,6 +87,12 @@ public sealed class FakeGateway : ITimeEntryGateway
         return entry;
     }
 
+    /// <summary>Time codes seen only on accrual/balance records (no usage), by user id.</summary>
+    public Dictionary<string, List<PiTimeCode>> AccrualCodes { get; } = new();
+
+    public void AddAccrual(string userId, string timeCodeId, string name)
+        => (AccrualCodes.TryGetValue(userId, out var l) ? l : AccrualCodes[userId] = []).Add(new PiTimeCode(timeCodeId, name));
+
     public PiPto AddPto(string id, string userId, DateOnly date, decimal hours, string timeCodeId = "tc-1",
         string timeCodeName = "PTO", bool approved = false)
     {
@@ -191,6 +197,17 @@ public sealed class FakeGateway : ITimeEntryGateway
         await Enter();
         if (PtoListThrows) throw new TimeChangeException("pi_unavailable", "Could not read PTO in Project Insight.");
         return Pto.Where(p => p.UserId == userId).ToList();
+    }
+
+    public async Task<IReadOnlyList<PiTimeCode>> ListPtoTimeCodesAsync(string userId, CancellationToken ct)
+    {
+        await Enter();
+        if (PtoListThrows) throw new TimeChangeException("pi_unavailable", "Could not read PTO in Project Insight.");
+        return Pto.Where(p => p.UserId == userId && !string.IsNullOrWhiteSpace(p.TimeCodeName))
+            .Select(p => new PiTimeCode(p.TimeCodeId, p.TimeCodeName!))
+            .Concat(AccrualCodes.GetValueOrDefault(userId) ?? [])
+            .GroupBy(c => c.Id).Select(g => g.First())
+            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     public async Task<PiPto?> GetPtoAsync(string ptoEntryId, CancellationToken ct)

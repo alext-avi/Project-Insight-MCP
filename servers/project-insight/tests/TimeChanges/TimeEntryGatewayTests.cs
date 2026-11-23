@@ -180,6 +180,30 @@ public class TimeEntryGatewayTests
     }
 
     [Fact]
+    public async Task Search_drops_an_entry_with_a_project_but_no_task()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.OK,
+            """[{"Id":"te-9","Date":"2026-11-02T00:00:00","ActualHours":8,"Task_Id":null,"Project_Id":"p-1","User_Id":"u-1"}]"""));
+
+        Assert.Empty(await gw.SearchEntriesAsync("u-1", new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 7), default));
+    }
+
+    [Fact]
+    public async Task ListPtoTimeCodes_collects_codes_from_every_record_including_accruals()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.OK, """
+            [{"Id":"pto-1","User_Id":"u-1","Date":"2026-11-02T00:00:00","PTOHours":8,"TimeCode_Id":"tc-1","TimeCode":{"Id":"tc-1","Name":"PTO"}},
+             {"Id":"pto-2","User_Id":"u-1","Date":"2026-11-03T00:00:00","PTOHours":4,"TimeCode_Id":"tc-1","TimeCode":{"Id":"tc-1","Name":"PTO"}},
+             {"Id":"acc-1","User_Id":"u-1","Date":"2026-01-01T00:00:00","PTOAdded":8,"TimeCode_Id":"tc-7","TimeCode":{"Id":"tc-7","Name":"Floating Holiday"}},
+             {"Id":"acc-2","User_Id":"u-1","Date":"2026-01-01T00:00:00","PTOAdded":8}]
+            """));
+
+        var codes = await gw.ListPtoTimeCodesAsync("u-1", default);
+
+        Assert.Equal([new PiTimeCode("tc-7", "Floating Holiday"), new PiTimeCode("tc-1", "PTO")], codes);
+    }
+
+    [Fact]
     public async Task ListPto_maps_records_and_time_codes()
     {
         var (gw, pi) = Create(Json(HttpStatusCode.OK, PtoListJson));

@@ -21,9 +21,13 @@ Other observations:
 
 - `GET /api/user-pto/list-by-user/{userId}` returns usage records (`PTOHours` set, linked `TimeEntry_Id`) and
   balance/accrual records (`PTOAdded` set, no time entry) together, with no date filter. The draft flow only uses
-  usage records.
+  usage records for totals and fingerprints.
 - Time codes come back expanded on each record (`TimeCode: {Id, Name, IsActive, ...}`). There is no separate
-  time-code list, so a code can only be found by name once the person has used it.
+  time-code list, so a code can only be found by name once it appears on one of the person's records. Accrual
+  records also carry `TimeCode`, so time codes are collected from all records, like `list_user_pto` does, not just
+  usage records.
+- A draft planned straight after a PTO delete may still count the old linked entry (PI's day search lags), and then
+  go stale at commit. Re-plan.
 - `DateApproved` wasn't present on any usage record read here, so the `pto_approved` warning only fires on tenants
   that do return it.
 - `GET` of a time entry that no longer exists returns HTTP 500 (not 404).

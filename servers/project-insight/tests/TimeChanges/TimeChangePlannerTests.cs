@@ -582,6 +582,21 @@ public sealed class TimeChangePlannerTests : IDisposable
     }
 
     [Fact]
+    public async Task Time_code_only_on_an_accrual_record_resolves_by_name_and_id()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m, "tc-1", "PTO");
+        _pi.AddAccrual("u-1", "tc-7", "Personal Day");
+
+        var byName = (await PlanPto(new() { Action = "create_pto", Date = "2026-10-29", Hours = 3m, TimeCode = "personal" })).Draft!.Rows[0];
+        var byId = (await PlanPto(new() { Action = "create_pto", Date = "2026-10-29", Hours = 3m, TimeCodeId = "tc-7" })).Draft!.Rows[0];
+
+        Assert.Equal(("tc-7", "Personal Day"), (byName.After!.TimeCodeId, byName.After.TimeCodeName));
+        Assert.DoesNotContain(byName.Warnings, w => w.Code == WarningCode.UnknownTimeCode);
+        Assert.DoesNotContain(byId.Warnings, w => w.Code == WarningCode.UnknownTimeCode);
+        Assert.Equal("Personal Day", byId.After!.TimeCodeName);
+    }
+
+    [Fact]
     public async Task Unknown_time_code_name_asks_for_clarification()
     {
         _pi.AddPto("pto-1", "u-1", Wed, 4m, "tc-1", "PTO");

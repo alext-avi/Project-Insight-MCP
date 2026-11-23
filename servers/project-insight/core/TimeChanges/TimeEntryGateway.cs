@@ -40,6 +40,8 @@ public interface ITimeEntryGateway
     Task<PiWrite> DeleteEntryAsync(string timeEntryId, CancellationToken ct);
     /// <summary>Every PTO usage record (PTOHours above zero) for a user, time code expanded. Accrual-only and undated records are left out.</summary>
     Task<IReadOnlyList<PiPto>> ListPtoAsync(string userId, CancellationToken ct);
+    /// <summary>The time codes (distinct id and name, by name) on any of a user's PTO records, accrual and balance records included, as list_user_pto collects them.</summary>
+    Task<IReadOnlyList<PiTimeCode>> ListPtoTimeCodesAsync(string userId, CancellationToken ct);
     Task<PiPto?> GetPtoAsync(string ptoEntryId, CancellationToken ct);
     /// <summary>Creates PTO; PI makes the linked time entry itself. <see cref="PiWrite.SavedId"/> is the PTO id.</summary>
     Task<PiWrite> CreatePtoAsync(PtoWrite pto, CancellationToken ct);
@@ -226,6 +228,20 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
         return (response.Data ?? new()).Select(ToPto).OfType<PiPto>().ToList();
     }
 
+    public async Task<IReadOnlyList<PiTimeCode>> ListPtoTimeCodesAsync(string userId, CancellationToken ct)
+    {
+        var response = await api.ListUserPtoAsync(userId, PtoModelProperties, ct);
+        if (!response.Success)
+            throw Unavailable("read PTO", response.Message, response.Errors);
+        return (response.Data ?? new())
+            .Select(p => (Id: p.TimeCode?.Id ?? p.TimeCodeId, p.TimeCode?.Name))
+            .Where(c => !string.IsNullOrWhiteSpace(c.Id) && !string.IsNullOrWhiteSpace(c.Name))
+            .GroupBy(c => c.Id!)
+            .Select(g => new PiTimeCode(g.Key, g.First().Name!))
+            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     public async Task<PiPto?> GetPtoAsync(string ptoEntryId, CancellationToken ct)
     {
         var response = await api.GetUserPtoAsync(ptoEntryId, PtoModelProperties, ct);
@@ -313,10 +329,12 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
     {
         if (e.Id is null || e.UserId is null || e.Date is null)
             return null;
-        // PI links each PTO record to a time entry with no task or project (docs/PTO.md).
+        // PI links each PTO record to a time entry with no task or project (docs/PTO.md). A project with no task isn't PTO.
         if (string.IsNullOrEmpty(e.TaskId))
-            return new PiEntry(e.Id, e.UserId, DateOnly.FromDateTime(e.Date.Value), e.ActualHours ?? 0m, e.IsBillable == true,
-                e.Description, "", "", "", "", e.TimeSheetId, IsPto: true);
+            return string.IsNullOrEmpty(e.ProjectId)
+                ? new PiEntry(e.Id, e.UserId, DateOnly.FromDateTime(e.Date.Value), e.ActualHours ?? 0m, e.IsBillable == true,
+                    e.Description, "", "", "", "", e.TimeSheetId, IsPto: true)
+                : null;
         return new PiEntry(e.Id, e.UserId, DateOnly.FromDateTime(e.Date.Value), e.ActualHours ?? 0m, e.IsBillable == true,
             e.Description, e.TaskId, e.TaskRef?.Name ?? e.TaskId, e.ProjectId ?? e.ProjectRef?.Id ?? "",
             e.ProjectRef?.Name ?? e.ProjectId ?? "", e.TimeSheetId, Colour(e.ProjectRef?.Color));

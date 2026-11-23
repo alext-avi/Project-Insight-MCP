@@ -34,6 +34,7 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
     private readonly Dictionary<string, IReadOnlyList<PiNamed>> _tasks = new();
     private readonly Dictionary<string, PiUser?> _users = new();
     private readonly Dictionary<string, IReadOnlyList<PiPto>> _pto = new();
+    private readonly Dictionary<string, IReadOnlyList<PiTimeCode>> _timeCodes = new();
 
     public async Task<Resolved<PiUser>> UserAsync(int index, string? user, PiUser caller, CancellationToken ct)
     {
@@ -129,10 +130,8 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
     /// </summary>
     public async Task<Resolved<PiTimeCode>> TimeCodeAsync(int index, string userId, string? timeCodeId, string? timeCode, CancellationToken ct)
     {
-        var known = (await PtoAsync(userId, ct))
-            .GroupBy(p => p.TimeCodeId)
-            .Select(g => new PiTimeCode(g.Key, g.Select(p => p.TimeCodeName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? g.Key))
-            .ToList();
+        if (!_timeCodes.TryGetValue(userId, out var known))
+            _timeCodes[userId] = known = await pi.ListPtoTimeCodesAsync(userId, ct);
         if (!string.IsNullOrWhiteSpace(timeCodeId))
         {
             var id = timeCodeId.Trim();

@@ -97,11 +97,13 @@ Rows still apply in order through the same loop, with the same uncertain-write h
 
 | Row | Apply | Reverse (rollback) | Undo draft row |
 |---|---|---|---|
-| `create_pto` | Save PTO, no `Id`. `SavedId` = PTO id. Then read the PTO back for `TimeEntry_Id` → `LinkedTimeEntryId`. | Delete PTO `SavedId`, then clean up the linked entry (below). | `delete_pto {SavedId}` |
+| `create_pto` | Save PTO, no `Id`. `SavedId` = PTO id. ~~Then read the PTO back for `TimeEntry_Id` → `LinkedTimeEntryId`.~~ (No read-back: nothing uses it.) | Delete PTO `SavedId`. ~~Then clean up the linked entry (below).~~ | `delete_pto {SavedId}` |
 | `update_pto` | Save PTO with `Id` and the after values. | Save PTO with the before values. | `update_pto` back to the before values |
-| `delete_pto` | Delete PTO, then clean up the linked entry. | Recreate PTO from the before values. `SavedId` = new id. | `create_pto` from the before values |
+| `delete_pto` | Delete PTO. ~~Then clean up the linked entry.~~ | Recreate PTO from the before values. `SavedId` = new id. | `create_pto` from the before values |
 
-**Linked-entry cleanup:** if the live check shows that deleting a PTO entry also deletes its linked time entry, no cleanup is needed. Keep a check: after the delete, read the linked entry, and if it still exists, delete it. If the live check shows PI doesn't remove it, the cleanup is required, and a failed cleanup fails the row (and triggers rollback). The same question applies to updates: does changing a PTO entry's hours or date update its linked entry? If not, the update step must write the linked entry too. The live findings decide which of these paths is real. Whatever is found goes in `docs/PTO.md` (new file), and a code comment points to it.
+**Amended after the live check (2026-11-23):** PI deletes the linked time entry itself when a PTO is deleted, and updates it in place when a PTO is updated. The committer never reads or deletes the linked entry, because doing so straight after the PTO delete races PI: a day search still lists it, and a GET or DELETE of it returns HTTP 500. See `docs/PTO.md` row 4. The cleanup paragraph below, and the "then clean up" steps struck through above, are superseded.
+
+~~**Linked-entry cleanup:** if the live check shows that deleting a PTO entry also deletes its linked time entry, no cleanup is needed. Keep a check: after the delete, read the linked entry, and if it still exists, delete it. If the live check shows PI doesn't remove it, the cleanup is required, and a failed cleanup fails the row (and triggers rollback). The same question applies to updates: does changing a PTO entry's hours or date update its linked entry? If not, the update step must write the linked entry too. The live findings decide which of these paths is real. Whatever is found goes in `docs/PTO.md` (new file), and a code comment points to it.~~
 
 `undo_time_changes` works unchanged for callers: `PlanUndoAsync` maps PTO rows as in the table, and the undo draft gets a card and needs confirming like any other.
 
@@ -151,7 +153,7 @@ Then the done-when scenario end to end: plan 3.00h + 1.75h, card, confirm, undo,
 
 ## Tests
 
-Using the existing `FakeGateway`, extended with PTO records that auto-manage linked entries. A switch reproduces whichever delete behaviour the live check found, so both cleanup paths are tested.
+Using the existing `FakeGateway`, extended with PTO records that auto-manage linked entries. The live check found PI deletes the linked entry itself, so the fake does too (a switch can make it leave an update's linked entry in place); there is no cleanup path to test.
 
 - PTO-only draft: rows, labels, totals including existing PTO, warnings (40h, 8h, quarter hour, unknown code), and an unknown-name clarification.
 - Mixed time + PTO draft: one card, correct day and week totals, no double counting of linked entries.

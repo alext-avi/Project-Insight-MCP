@@ -401,7 +401,6 @@ public sealed class TimeChangeCommitterTests : IDisposable
         Assert.Equal(DraftStatus.Committed, receipt.Status);
         Assert.Equal(["create_pto:pto-100", "create_pto:pto-101"], _pi.Writes);
         Assert.Equal(["pto-100", "pto-101"], receipt.Rows.Select(r => r.SavedId));
-        Assert.Equal(["te-pto-pto-100", "te-pto-pto-101"], receipt.Rows.Select(r => r.LinkedTimeEntryId));
         Assert.Equal(2, _pi.Pto.Count);
         Assert.Equal(2, _pi.Entries.Count(e => e.IsPto));
     }
@@ -610,7 +609,6 @@ public sealed class TimeChangeCommitterTests : IDisposable
         Assert.Equal(DraftStatus.Committed, (await Commit(draft.Id)).Status);
     }
 
-    // The undo tests drive the planner and committer directly: the service's text rendering of PTO rows is a later task.
     private async Task<Draft> CommitPlan(ChangeInput change)
     {
         var plan = await _planner.PlanAsync("PTO", [change], default);
@@ -698,6 +696,7 @@ public sealed class TimeChangeCommitterTests : IDisposable
         public Task<PiWrite> UpdateEntryAsync(string timeEntryId, EntryWrite w, CancellationToken ct) => inner.UpdateEntryAsync(timeEntryId, w, ct);
         public Task<PiWrite> DeleteEntryAsync(string timeEntryId, CancellationToken ct) => inner.DeleteEntryAsync(timeEntryId, ct);
         public Task<IReadOnlyList<PiPto>> ListPtoAsync(string userId, CancellationToken ct) => inner.ListPtoAsync(userId, ct);
+        public Task<IReadOnlyList<PiTimeCode>> ListPtoTimeCodesAsync(string userId, CancellationToken ct) => inner.ListPtoTimeCodesAsync(userId, ct);
         public Task<PiPto?> GetPtoAsync(string ptoEntryId, CancellationToken ct) => inner.GetPtoAsync(ptoEntryId, ct);
         public Task<PiWrite> UpdatePtoAsync(string ptoEntryId, PtoWrite w, CancellationToken ct) => inner.UpdatePtoAsync(ptoEntryId, w, ct);
         public Task<PiWrite> DeletePtoAsync(string ptoEntryId, CancellationToken ct) => inner.DeletePtoAsync(ptoEntryId, ct);

@@ -62,9 +62,9 @@ public static class WarningCode
     public const string OtherPerson = "other_person";
     /// <summary>More than a month back or a week ahead: likely a wrong date or year.</summary>
     public const string FarDate = "far_date";
-    /// <summary>A person's PTO for the week comes to more than 40 hours.</summary>
+    /// <summary>A 7-day span of a person's timesheet period would total more than 40 hours (work and PTO together).</summary>
     public const string Over40HoursWeek = "over_40h_week";
-    /// <summary>A day's PTO comes to more than 8 hours.</summary>
+    /// <summary>A day with PTO would total more than 8 hours (work and PTO together).</summary>
     public const string Over8HoursPtoDay = "over_8h_day";
     /// <summary>The PTO time code id isn't one this person has used.</summary>
     public const string UnknownTimeCode = "unknown_time_code";
@@ -102,7 +102,7 @@ public sealed class ChangeInput
     [Description("Whether the time is billable. create: defaults to false.")]
     public bool? Billable { get; set; }
 
-    [Description("create only: whose time (user id or name). Defaults to the signed-in user.")]
+    [Description("create/create_pto only: whose time (user id or name). Defaults to the signed-in user.")]
     public string? User { get; set; }
 
     [Description("update_pto/delete_pto: the PTO entry id (not the time entry id it creates).")]

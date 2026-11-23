@@ -255,8 +255,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
 
     /// <summary>
     /// Creates a PTO record. PI saying yes without an id leaves nothing to reverse or undo, so that is treated as
-    /// unanswered. A failed read-back of the record's linked time entry never fails the write: without it the
-    /// row simply skips the cleanup after a later delete.
+    /// unanswered.
     /// </summary>
     private async Task<PiWrite> CreatePtoAsync(DraftRow row, EntryValues values, CancellationToken ct)
     {
@@ -265,15 +264,6 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
             return created;
         if (string.IsNullOrEmpty(created.SavedId))
             return new PiWrite(false, null, "Project Insight accepted the PTO entry but didn't say which one it created.", Uncertain: true);
-        try
-        {
-            if ((await pi.GetPtoAsync(created.SavedId, ct))?.TimeEntryId is { } linked)
-                row.LinkedTimeEntryId = linked;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // See the summary above: not worth failing the row for.
-        }
         return created;
     }
 

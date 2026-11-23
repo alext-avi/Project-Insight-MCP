@@ -76,7 +76,7 @@
                 ]
               },
               "user": {
-                "description": "create only: whose time (user id or name). Defaults to the signed-in user.",
+                "description": "create/create_pto only: whose time (user id or name). Defaults to the signed-in user.",
                 "type": [
                   "string",
                   "null"
