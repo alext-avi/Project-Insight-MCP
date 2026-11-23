@@ -26,4 +26,6 @@ Other observations:
   time-code list, so a code can only be found by name once the person has used it.
 - `DateApproved` wasn't present on any usage record read here, so the `pto_approved` warning only fires on tenants
   that do return it.
+- `GET` of a time entry that no longer exists returns HTTP 500 (not 404), so the committer checks for a leftover
+  linked entry by searching that day rather than reading it by id.
 - Editing a PTO record recalculates `PTOBalance` on later records. That's PI's own bookkeeping, not ours.

@@ -29,6 +29,9 @@ public sealed class FakeGateway : ITimeEntryGateway
     /// <summary>PI updates a PTO record's linked time entry in place. Set false to simulate it staying put.</summary>
     public bool UpdatePtoMovesLinkedEntry { get; set; } = true;
 
+    /// <summary>Live PI answers a read of a time entry that doesn't exist with HTTP 500, not 404. Set true to mirror that.</summary>
+    public bool GetMissingEntryThrows { get; set; }
+
     /// <summary>When true, ListPtoAsync throws pi_unavailable.</summary>
     public bool PtoListThrows { get; set; }
 
@@ -122,7 +125,13 @@ public sealed class FakeGateway : ITimeEntryGateway
     public async Task<PiTask?> GetTaskAsync(string taskId, CancellationToken ct) { await Enter(); return GetTask(taskId); }
 
     public async Task<PiEntry?> GetEntryAsync(string timeEntryId, CancellationToken ct)
-    { await Enter(); return Entries.FirstOrDefault(e => e.Id == timeEntryId); }
+    {
+        await Enter();
+        var entry = Entries.FirstOrDefault(e => e.Id == timeEntryId);
+        if (entry is null && GetMissingEntryThrows)
+            throw new TimeChangeException("pi_unavailable", "API returned InternalServerError");
+        return entry;
+    }
 
     public async Task<IReadOnlyList<PiEntry>> SearchEntriesAsync(string userId, DateOnly start, DateOnly end, CancellationToken ct)
     {

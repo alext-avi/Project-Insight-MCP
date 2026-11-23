@@ -455,6 +455,33 @@ public sealed class TimeChangeCommitterTests : IDisposable
     }
 
     [Fact]
+    public async Task Deleting_a_pto_commits_cleanly_when_reading_a_deleted_entry_would_fail_like_live_pi()
+    {
+        var (draft, _) = await Plan([new() { Action = "delete_pto", PtoEntryId = AddWedPto().Id }]);
+        _pi.GetMissingEntryThrows = true;
+
+        var result = await Commit(draft.Id);
+
+        Assert.Equal(DraftStatus.Committed, result.Status);
+        Assert.Equal(RowOutcome.Applied, result.Rows[0].Outcome);
+        Assert.Equal(["delete_pto:pto-1"], _pi.Writes);
+    }
+
+    [Fact]
+    public async Task Rolling_back_a_created_pto_is_clean_when_reading_a_deleted_entry_would_fail_like_live_pi()
+    {
+        var (draft, _) = await Plan([CreatePto("2026-10-26", 3m),
+            new() { Action = "create", Date = "2026-10-27", Hours = 2m, TaskId = "t-1" }]);
+        _pi.FailWrite = (op, _) => op == "create" ? "nope" : null;
+        _pi.GetMissingEntryThrows = true;
+
+        var result = await Commit(draft.Id);
+
+        Assert.Equal([RowOutcome.Reversed, RowOutcome.Rejected], result.Rows.Select(r => r.Outcome));
+        Assert.Equal(["create_pto:pto-100", "delete_pto:pto-100"], _pi.Writes);
+    }
+
+    [Fact]
     public async Task An_unanswered_pto_write_is_unknown_and_not_reversed_while_earlier_rows_are()
     {
         var (draft, _) = await Plan([new() { Action = "create", Date = "2026-10-27", Hours = 2m, TaskId = "t-1" }, CreatePto("2026-10-26", 3m)]);
