@@ -29,7 +29,10 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
     {
         if (receipt.Status != DraftStatus.Committed)
             throw new TimeChangeException("not_undoable", "Only committed changes can be undone.");
-        var changes = receipt.Rows.Where(r => r.Outcome is null or RowOutcome.Applied).Select(r => r.Action switch
+        var changes = receipt.Rows
+            .Where(r => r.Outcome is null or RowOutcome.Applied)
+            .Where(r => !(r.Action == ChangeAction.CreatePto && r.SavedId is null)) // can't be addressed, so can't be undone
+            .Select(r => r.Action switch
         {
             ChangeAction.Create => new ChangeInput { Action = ChangeAction.Delete, TimeEntryId = r.SavedId },
             ChangeAction.Update => new ChangeInput
@@ -37,6 +40,19 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                 Action = ChangeAction.Update, TimeEntryId = r.TimeEntryId, TaskId = r.Before!.TaskId,
                 Date = r.Before.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), Hours = r.Before.Hours,
                 Billable = r.Before.Billable, Description = r.Before.Description ?? ""
+            },
+            ChangeAction.CreatePto => new ChangeInput { Action = ChangeAction.DeletePto, PtoEntryId = r.SavedId },
+            ChangeAction.UpdatePto => new ChangeInput
+            {
+                Action = ChangeAction.UpdatePto, PtoEntryId = r.PtoEntryId, TimeCodeId = r.Before!.TimeCodeId,
+                Date = r.Before.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), Hours = r.Before.Hours,
+                Description = r.Before.Description ?? ""
+            },
+            ChangeAction.DeletePto => new ChangeInput
+            {
+                Action = ChangeAction.CreatePto, User = r.UserId, TimeCodeId = r.Before!.TimeCodeId,
+                Date = r.Before.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), Hours = r.Before.Hours,
+                Description = r.Before.Description
             },
             _ => new ChangeInput
             {

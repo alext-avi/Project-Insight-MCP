@@ -385,4 +385,303 @@ public sealed class TimeChangeCommitterTests : IDisposable
         Assert.Equal(u2.Id, (await _store.GetAsync("u-1", u1.Id))!.RedoneBy);
         Assert.Equal(1.0m, Entry("te-1")!.Hours);
     }
+
+    // ---- PTO rows ----
+
+    private static ChangeInput CreatePto(string date, decimal hours) =>
+        new() { Action = "create_pto", Date = date, Hours = hours, TimeCodeId = "tc-1" };
+
+    [Fact]
+    public async Task Commit_pto_only_draft_creates_pto_without_extra_time_entry()
+    {
+        var (draft, _) = await Plan([CreatePto("2026-10-26", 3m), CreatePto("2026-10-27", 1.75m)]);
+
+        var receipt = await Commit(draft.Id);
+
+        Assert.Equal(DraftStatus.Committed, receipt.Status);
+        Assert.Equal(["create_pto:pto-100", "create_pto:pto-101"], _pi.Writes);
+        Assert.Equal(["pto-100", "pto-101"], receipt.Rows.Select(r => r.SavedId));
+        Assert.Equal(["te-pto-pto-100", "te-pto-pto-101"], receipt.Rows.Select(r => r.LinkedTimeEntryId));
+        Assert.Equal(2, _pi.Pto.Count);
+        Assert.Equal(2, _pi.Entries.Count(e => e.IsPto));
+    }
+
+    [Fact]
+    public async Task Mixed_commit_failure_rolls_back_pto()
+    {
+        var (draft, _) = await Plan([CreatePto("2026-10-26", 3m),
+            new() { Action = "create", Date = "2026-10-27", Hours = 2m, TaskId = "t-1" }]);
+        _pi.FailWrite = (op, _) => op == "create" ? "nope" : null;
+
+        var result = await Commit(draft.Id);
+
+        Assert.Equal(DraftStatus.Failed, result.Status);
+        Assert.Equal([RowOutcome.Reversed, RowOutcome.Rejected], result.Rows.Select(r => r.Outcome));
+        Assert.Empty(_pi.Pto);
+        Assert.DoesNotContain(_pi.Entries, e => e.IsPto);
+    }
+
+    [Fact]
+    public async Task Rollback_cleans_linked_entry_when_pi_leaves_it()
+    {
+        var (draft, _) = await Plan([CreatePto("2026-10-26", 3m),
+            new() { Action = "create", Date = "2026-10-27", Hours = 2m, TaskId = "t-1" }]);
+        _pi.FailWrite = (op, _) => op == "create" ? "nope" : null;
+        _pi.DeletePtoRemovesLinkedEntry = false;
+
+        var result = await Commit(draft.Id);
+
+        Assert.Equal(RowOutcome.Reversed, result.Rows[0].Outcome);
+        Assert.Empty(_pi.Pto);
+        Assert.DoesNotContain(_pi.Entries, e => e.IsPto);
+        Assert.Contains("delete:te-pto-pto-100", _pi.Writes);
+    }
+
+    [Fact]
+    public async Task A_failed_cleanup_of_the_linked_entry_fails_the_row()
+    {
+        var (draft, _) = await Plan([new() { Action = "delete_pto", PtoEntryId = AddWedPto().Id }]);
+        _pi.DeletePtoRemovesLinkedEntry = false;
+        _pi.FailWrite = (op, _) => op == "delete" ? "locked" : null;
+
+        var result = await Commit(draft.Id);
+
+        Assert.Equal(DraftStatus.Failed, result.Status);
+        Assert.Equal(RowOutcome.Rejected, result.Rows[0].Outcome);
+        Assert.Contains("locked", result.Error);
+    }
+
+    [Fact]
+    public async Task Create_pto_without_a_saved_id_is_unknown_not_applied()
+    {
+        var (draft, _) = await Plan([CreatePto("2026-10-26", 3m)]);
+        var real = _pi;
+        // PI answers yes but gives no id: the record can't be reversed or undone, so it is flagged for checking.
+        var committer = new TimeChangeCommitter(new NoIdGateway(real), _store, _time);
+
+        var result = await committer.CommitAsync(Alex, draft.Id, CommitChannel.Agent, null, default);
+
+        Assert.Equal(DraftStatus.Failed, result.Status);
+        Assert.True(result.OutcomeUnknown);
+        Assert.Equal(RowOutcome.Unknown, result.Rows[0].Outcome);
+    }
+
+    private PiPto AddWedPto() => _pi.AddPto("pto-1", "u-1", TimeChangePlannerTests.Wed, 4m);
+
+    [Fact]
+    public async Task Update_pto_commit_sends_every_field_and_reverse_restores_before()
+    {
+        AddWedPto();
+        var (draft, _) = await Plan([new() { Action = "update_pto", PtoEntryId = "pto-1", Hours = 2m },
+            new() { Action = "create", Date = "2026-10-27", Hours = 2m, TaskId = "t-1" }]);
+        _pi.FailWrite = (op, _) => op == "create" ? "nope" : null;
+
+        var result = await Commit(draft.Id);
+
+        Assert.Equal([RowOutcome.Reversed, RowOutcome.Rejected], result.Rows.Select(r => r.Outcome));
+        Assert.Equal(["update_pto:pto-1", "update_pto:pto-1"], _pi.Writes);
+        Assert.Equal(4m, _pi.Pto.Single().Hours);
+        Assert.Equal(4m, Entry("te-pto-pto-1")!.Hours);
+    }
+
+    [Fact]
+    public async Task Rollback_of_a_deleted_pto_recreates_it_and_records_the_new_id()
+    {
+        AddWedPto();
+        var (draft, _) = await Plan([new() { Action = "delete_pto", PtoEntryId = "pto-1" },
+            new() { Action = "create", Date = "2026-10-27", Hours = 2m, TaskId = "t-1" }]);
+        _pi.FailWrite = (op, _) => op == "create" ? "nope" : null;
+
+        var result = await Commit(draft.Id);
+
+        Assert.Equal(RowOutcome.Reversed, result.Rows[0].Outcome);
+        var pto = Assert.Single(_pi.Pto);
+        Assert.Equal(pto.Id, result.Rows[0].SavedId);
+        Assert.Equal(4m, pto.Hours);
+    }
+
+    [Fact]
+    public async Task Stale_when_pto_changes_on_affected_day()
+    {
+        _pi.AddPto("pto-1", "u-1", TimeChangePlannerTests.Wed, 2m);
+        var (draft, _) = await Plan([new() { Action = "create", Date = "2026-10-28", Hours = 1m, TaskId = "t-1" }]);
+        _pi.Pto[0] = _pi.Pto[0] with { Hours = 3m };
+        var i = _pi.Entries.FindIndex(e => e.Id == "te-pto-pto-1");
+        _pi.Entries[i] = _pi.Entries[i] with { Hours = 3m };
+
+        var result = await Commit(draft.Id);
+
+        Assert.Equal(DraftStatus.Stale, result.Status);
+        Assert.Contains(result.StaleDays, d => d.Contains("Wed 28 Oct"));
+        Assert.Empty(_pi.Writes);
+    }
+
+    [Fact]
+    public async Task Unchanged_pto_on_affected_day_is_not_stale()
+    {
+        _pi.AddPto("pto-1", "u-1", TimeChangePlannerTests.Wed, 2m);
+        var (draft, _) = await Plan([new() { Action = "create", Date = "2026-10-28", Hours = 1m, TaskId = "t-1" }]);
+
+        Assert.Equal(DraftStatus.Committed, (await Commit(draft.Id)).Status);
+    }
+
+    [Fact]
+    public async Task Stale_check_skips_pto_for_unread_people()
+    {
+        _pi.PtoListThrows = true;
+        var (draft, _) = await Plan([new() { Action = "create", Date = "2026-10-27", Hours = 1m, TaskId = "t-1" }]);
+        Assert.Equal(["u-1"], draft.PtoUnreadUsers);
+        _pi.PtoListThrows = false;
+        var calls = _pi.ListPtoCalls;
+
+        var result = await Commit(draft.Id);
+
+        Assert.Equal(DraftStatus.Committed, result.Status);
+        Assert.Equal(calls, _pi.ListPtoCalls);
+    }
+
+    [Fact]
+    public async Task Stored_2_1_0_draft_still_commits()
+    {
+        // A 2.1.0 draft: no kind, ptoEntryId, linkedTimeEntryId, ptoApproved, timeCodeId, timeCodeName, ptoUnreadUsers, ptoDelta or isPto.
+        const string json = """
+        {
+          "id": "d_vyhsj9w8a5", "status": "draft", "intent": "Log Tuesday",
+          "proposedBy": "u-1", "proposedByName": "Alex Example",
+          "proposedAt": "2026-10-27T09:00:00+00:00", "expiresAt": "2026-10-28T09:00:00+00:00",
+          "statusChangedAt": "2026-10-27T09:00:00+00:00", "updatedAt": "2026-10-27T09:00:00+00:00",
+          "committedAt": null, "channel": null, "undoOf": null, "undoOfCommittedAt": null,
+          "revertedBy": null, "redoneBy": null,
+          "confirmTokenHash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "confirmTokenUsed": false,
+          "rows": [
+            { "index": 0, "action": "create", "userId": "u-1", "userName": "Alex Example",
+              "timeEntryId": null, "savedId": null, "before": null,
+              "after": { "taskId": "t-1", "taskName": "Development", "projectId": "p-1", "projectName": "Acme Portal",
+                         "projectColor": null, "date": "2026-10-27", "hours": 4, "billable": true, "description": "Order sync" },
+              "warnings": [], "outcome": null, "error": null }
+          ],
+          "weeks": [
+            { "userId": "u-1", "userName": "Alex Example", "avatar": null, "isCaller": true,
+              "start": "2026-10-26", "end": "2026-11-01", "timesheetId": null, "timesheetUrl": null,
+              "submitted": false, "approved": false, "locked": false, "totalBefore": 16.5, "totalAfter": 20.5,
+              "days": [
+                { "date": "2026-10-27", "totalBefore": 2.5, "totalAfter": 6.5, "hasChanges": true, "rowIndexes": [0],
+                  "context": [
+                    { "timeEntryId": "te-3", "projectName": "Internal", "projectColor": null, "taskName": "Email & admin",
+                      "hours": 0.5, "billable": false, "description": null },
+                    { "timeEntryId": "te-4", "projectName": "Acme Portal", "projectColor": null, "taskName": "Development",
+                      "hours": 2.0, "billable": true, "description": "API integration" }
+                  ] }
+              ] }
+          ],
+          "dayFingerprints": { "u-1|2026-10-27": "5821536CB72A2C65ACA75174DCED2848893C0B30196DEED92397A8C300DB4455" },
+          "totals": { "netHours": 4, "billableDelta": 4, "nonBillableDelta": 0, "changes": 1, "days": 1, "people": 1, "warnings": 0 },
+          "error": null, "outcomeUnknown": false, "staleDays": []
+        }
+        """;
+        var dir = Path.Combine(_dir.Root, "u-1");
+        Directory.CreateDirectory(dir);
+        await File.WriteAllTextAsync(Path.Combine(dir, "d_vyhsj9w8a5.json"), json);
+
+        var result = await Commit("d_vyhsj9w8a5");
+
+        Assert.Equal(DraftStatus.Committed, result.Status);
+        Assert.Equal(["create:te-100"], _pi.Writes);
+    }
+
+    // The undo tests drive the planner and committer directly: the service's text rendering of PTO rows is a later task.
+    private async Task<Draft> CommitPlan(ChangeInput change)
+    {
+        var plan = await _planner.PlanAsync("PTO", [change], default);
+        return await Commit(plan.Draft!.Id);
+    }
+
+    private async Task<Draft> UndoAndCommit(Draft receipt)
+    {
+        var undo = await _planner.PlanUndoAsync(receipt, default);
+        Assert.NotNull(undo.Draft);
+        var result = await Commit(undo.Draft!.Id);
+        Assert.Equal(DraftStatus.Committed, result.Status);
+        return result;
+    }
+
+    [Fact]
+    public async Task Undo_of_created_pto_deletes_it_and_its_linked_entry()
+    {
+        var receipt = await CommitPlan(CreatePto("2026-10-26", 3m));
+        Assert.Single(_pi.Pto);
+
+        await UndoAndCommit(receipt);
+
+        Assert.Empty(_pi.Pto);
+        Assert.DoesNotContain(_pi.Entries, e => e.IsPto);
+    }
+
+    [Fact]
+    public async Task Undo_of_updated_pto_restores_before_values()
+    {
+        AddWedPto();
+        var receipt = await CommitPlan(new() { Action = "update_pto", PtoEntryId = "pto-1", Hours = 2m, Date = "2026-10-29" });
+        Assert.Equal((new DateOnly(2026, 10, 29), 2m), (_pi.Pto[0].Date, _pi.Pto[0].Hours));
+
+        await UndoAndCommit(receipt);
+
+        Assert.Equal((TimeChangePlannerTests.Wed, 4m, "tc-1"), (_pi.Pto[0].Date, _pi.Pto[0].Hours, _pi.Pto[0].TimeCodeId));
+    }
+
+    [Fact]
+    public async Task Undo_of_deleted_pto_recreates_it_and_the_redo_deletes_the_new_id()
+    {
+        AddWedPto();
+        var receipt = await CommitPlan(new() { Action = "delete_pto", PtoEntryId = "pto-1" });
+        Assert.Empty(_pi.Pto);
+
+        var undo = await UndoAndCommit(receipt);
+
+        var recreated = Assert.Single(_pi.Pto);
+        Assert.NotEqual("pto-1", recreated.Id);
+        Assert.Equal((TimeChangePlannerTests.Wed, 4m, "u-1"), (recreated.Date, recreated.Hours, recreated.UserId));
+
+        await UndoAndCommit(undo);
+
+        Assert.Empty(_pi.Pto);
+        Assert.Contains($"delete_pto:{recreated.Id}", _pi.Writes);
+    }
+
+    [Fact]
+    public async Task Undo_after_pto_deleted_in_pi_clarifies()
+    {
+        var receipt = await CommitPlan(CreatePto("2026-10-26", 3m));
+        _pi.Pto.Clear();
+
+        var undo = await _planner.PlanUndoAsync(receipt, default);
+
+        Assert.Null(undo.Draft);
+        Assert.Contains(undo.Clarifications!, c => c.Field == "ptoEntryId");
+    }
+
+    /// <summary>Wraps a gateway so CreatePtoAsync reports success without an id.</summary>
+    private sealed class NoIdGateway(FakeGateway inner) : ITimeEntryGateway
+    {
+        public Task<PiWrite> CreatePtoAsync(PtoWrite w, CancellationToken ct) => Task.FromResult(new PiWrite(true, null, null));
+        public Task<PiUser> GetCurrentUserAsync(CancellationToken ct) => inner.GetCurrentUserAsync(ct);
+        public Task<PiUser?> GetUserAsync(string userId, CancellationToken ct) => inner.GetUserAsync(userId, ct);
+        public Task<IReadOnlyList<PiUser>> FindUsersAsync(string name, CancellationToken ct) => inner.FindUsersAsync(name, ct);
+        public Task<IReadOnlyList<PiNamed>> ListOpenProjectsAsync(CancellationToken ct) => inner.ListOpenProjectsAsync(ct);
+        public Task<IReadOnlyList<PiNamed>> ListTasksAsync(string projectId, CancellationToken ct) => inner.ListTasksAsync(projectId, ct);
+        public Task<PiTask?> GetTaskAsync(string taskId, CancellationToken ct) => inner.GetTaskAsync(taskId, ct);
+        public Task<PiEntry?> GetEntryAsync(string timeEntryId, CancellationToken ct) => inner.GetEntryAsync(timeEntryId, ct);
+        public Task<IReadOnlyList<PiEntry>> SearchEntriesAsync(string userId, DateOnly start, DateOnly end, CancellationToken ct) => inner.SearchEntriesAsync(userId, start, end, ct);
+        public Task<IReadOnlyList<PiTimeSheet>> SearchTimeSheetsAsync(string userId, DateOnly start, DateOnly end, CancellationToken ct) => inner.SearchTimeSheetsAsync(userId, start, end, ct);
+        public Task<PiWrite> CreateEntryAsync(EntryWrite w, CancellationToken ct) => inner.CreateEntryAsync(w, ct);
+        public Task<PiWrite> UpdateEntryAsync(string timeEntryId, EntryWrite w, CancellationToken ct) => inner.UpdateEntryAsync(timeEntryId, w, ct);
+        public Task<PiWrite> DeleteEntryAsync(string timeEntryId, CancellationToken ct) => inner.DeleteEntryAsync(timeEntryId, ct);
+        public Task<IReadOnlyList<PiPto>> ListPtoAsync(string userId, CancellationToken ct) => inner.ListPtoAsync(userId, ct);
+        public Task<PiPto?> GetPtoAsync(string ptoEntryId, CancellationToken ct) => inner.GetPtoAsync(ptoEntryId, ct);
+        public Task<PiWrite> UpdatePtoAsync(string ptoEntryId, PtoWrite w, CancellationToken ct) => inner.UpdatePtoAsync(ptoEntryId, w, ct);
+        public Task<PiWrite> DeletePtoAsync(string ptoEntryId, CancellationToken ct) => inner.DeletePtoAsync(ptoEntryId, ct);
+        public Task<IReadOnlyDictionary<string, PiLook>> GetUserLooksAsync(IReadOnlyCollection<string> userIds, CancellationToken ct) => inner.GetUserLooksAsync(userIds, ct);
+        public Task<string?> GetPhotoAsync(string photoUrl, CancellationToken ct) => inner.GetPhotoAsync(photoUrl, ct);
+    }
 }

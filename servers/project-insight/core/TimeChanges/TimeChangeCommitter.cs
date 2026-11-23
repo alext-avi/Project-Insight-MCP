@@ -82,7 +82,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
             if (result.Success)
             {
                 row.Outcome = RowOutcome.Applied;
-                if (row.Action == ChangeAction.Create)
+                if (row.Action is ChangeAction.Create or ChangeAction.CreatePto)
                     row.SavedId = result.SavedId;
                 applied.Add(row);
                 continue;
@@ -102,7 +102,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
                 done.Outcome = reversed.Success ? RowOutcome.Reversed : RowOutcome.ReverseFailed;
                 if (!reversed.Success)
                     done.Error = reversed.Error;
-                else if (done.Action == ChangeAction.Delete)
+                else if (done.Action is ChangeAction.Delete or ChangeAction.DeletePto)
                     done.SavedId = reversed.SavedId; // recreated under a new id
             }
             var error = unknown
@@ -188,6 +188,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
     {
         var stale = new List<string>();
         var today = Weeks.Today(time);
+        var ptoByUser = new Dictionary<string, IReadOnlyList<PiPto>>();
         foreach (var week in draft.Weeks)
         {
             var days = draft.DayFingerprints.Keys
@@ -200,9 +201,17 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
                 continue;
             var entries = await pi.SearchEntriesAsync(week.UserId, week.Start, week.End, ct);
             var sheets = await pi.SearchTimeSheetsAsync(week.UserId, week.Start, week.End, ct);
+            // The plan left PTO out of the fingerprint for people whose PTO it couldn't read, so do the same here.
+            IReadOnlyList<PiPto>? pto = null;
+            if (draft.PtoUnreadUsers?.Contains(week.UserId) != true)
+            {
+                if (!ptoByUser.TryGetValue(week.UserId, out pto))
+                    ptoByUser[week.UserId] = pto = await pi.ListPtoAsync(week.UserId, ct);
+            }
             foreach (var (key, date) in days)
             {
-                var now = Fingerprint.Compute(entries.Where(e => e.Date == date), Weeks.Covering(sheets, date));
+                var now = Fingerprint.Compute(entries.Where(e => e.Date == date), Weeks.Covering(sheets, date),
+                    pto?.Where(p => p.Date == date));
                 if (now != draft.DayFingerprints[key])
                     stale.Add(Weeks.DayLabel(week.IsCaller ? "You" : week.UserName, date, today));
             }
@@ -214,15 +223,59 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
     {
         ChangeAction.Create => pi.CreateEntryAsync(Write(draft, row, row.After!), ct),
         ChangeAction.Update => pi.UpdateEntryAsync(row.TimeEntryId!, Write(draft, row, row.After!), ct),
-        _ => pi.DeleteEntryAsync(row.TimeEntryId!, ct)
+        ChangeAction.Delete => pi.DeleteEntryAsync(row.TimeEntryId!, ct),
+        ChangeAction.CreatePto => CreatePtoAsync(row, row.After!, ct),
+        ChangeAction.UpdatePto => pi.UpdatePtoAsync(row.PtoEntryId!, PtoWrite(row, row.After!), ct),
+        _ => DeletePtoAndCleanUpAsync(row.PtoEntryId!, row.LinkedTimeEntryId, ct)
     };
 
     private Task<PiWrite> ReverseAsync(Draft draft, DraftRow row, CancellationToken ct) => row.Action switch
     {
         ChangeAction.Create => pi.DeleteEntryAsync(row.SavedId!, ct),
         ChangeAction.Update => pi.UpdateEntryAsync(row.TimeEntryId!, Write(draft, row, row.Before!), ct),
-        _ => pi.CreateEntryAsync(Write(draft, row, row.Before!), ct)
+        ChangeAction.Delete => pi.CreateEntryAsync(Write(draft, row, row.Before!), ct),
+        ChangeAction.CreatePto => DeletePtoAndCleanUpAsync(row.SavedId!, row.LinkedTimeEntryId, ct),
+        ChangeAction.UpdatePto => pi.UpdatePtoAsync(row.PtoEntryId!, PtoWrite(row, row.Before!), ct),
+        _ => CreatePtoAsync(row, row.Before!, ct)
     };
+
+    private static PtoWrite PtoWrite(DraftRow row, EntryValues v) => new(row.UserId, v.Date, v.Hours, v.TimeCodeId!, v.Description);
+
+    /// <summary>
+    /// Creates a PTO record. PI saying yes without an id leaves nothing to reverse or undo, so that is treated as
+    /// unanswered. A failed read-back of the record's linked time entry never fails the write: without it the
+    /// row simply skips the cleanup after a later delete.
+    /// </summary>
+    private async Task<PiWrite> CreatePtoAsync(DraftRow row, EntryValues values, CancellationToken ct)
+    {
+        var created = await pi.CreatePtoAsync(PtoWrite(row, values), ct);
+        if (!created.Success)
+            return created;
+        if (string.IsNullOrEmpty(created.SavedId))
+            return new PiWrite(false, null, "Project Insight accepted the PTO entry but didn't say which one it created.", Uncertain: true);
+        try
+        {
+            if ((await pi.GetPtoAsync(created.SavedId, ct))?.TimeEntryId is { } linked)
+                row.LinkedTimeEntryId = linked;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // See the summary above: not worth failing the row for.
+        }
+        return created;
+    }
+
+    /// <summary>
+    /// Deletes a PTO record, which PI answers by deleting its linked time entry too. If the entry is still
+    /// there, it is deleted here so no orphan hours are left on the day; a failure to do that fails the step.
+    /// </summary>
+    private async Task<PiWrite> DeletePtoAndCleanUpAsync(string ptoEntryId, string? linkedEntryId, CancellationToken ct)
+    {
+        var deleted = await pi.DeletePtoAsync(ptoEntryId, ct);
+        if (!deleted.Success || linkedEntryId is null)
+            return deleted;
+        return await pi.GetEntryAsync(linkedEntryId, ct) is null ? deleted : await pi.DeleteEntryAsync(linkedEntryId, ct);
+    }
 
     private static EntryWrite Write(Draft draft, DraftRow row, EntryValues v)
         => new(row.UserId, v.TaskId, v.Date, v.Hours, v.Billable, v.Description,
