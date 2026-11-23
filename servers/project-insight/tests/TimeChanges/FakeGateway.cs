@@ -32,6 +32,9 @@ public sealed class FakeGateway : ITimeEntryGateway
     /// <summary>When true, ListPtoAsync throws pi_unavailable.</summary>
     public bool PtoListThrows { get; set; }
 
+    /// <summary>How many times ListPtoAsync was called.</summary>
+    public int ListPtoCalls { get; private set; }
+
     /// <summary>Project colours by project id; projects not listed have none.</summary>
     public Dictionary<string, string> ProjectColors { get; } = new();
 
@@ -187,6 +190,7 @@ public sealed class FakeGateway : ITimeEntryGateway
 
     public async Task<IReadOnlyList<PiPto>> ListPtoAsync(string userId, CancellationToken ct)
     {
+        ListPtoCalls++;
         await Enter();
         if (PtoListThrows) throw new TimeChangeException("pi_unavailable", "Could not read PTO in Project Insight.");
         return Pto.Where(p => p.UserId == userId).ToList();

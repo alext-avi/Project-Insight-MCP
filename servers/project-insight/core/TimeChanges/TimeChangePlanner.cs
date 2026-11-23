@@ -66,6 +66,8 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         public required DateOnly End { get; init; }
         public PiTimeSheet? Sheet { get; init; }
         public required IReadOnlyList<PiEntry> Entries { get; init; }
+        /// <summary>The person's PTO records dated in this week. Empty when their PTO list couldn't be read.</summary>
+        public IReadOnlyList<PiPto> Pto { get; init; } = [];
         public bool Contains(string userId, DateOnly date) => User.Id == userId && Start <= date && date <= End;
     }
 
@@ -100,7 +102,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         for (var i = 0; i < rows.Count; i++)
             rows[i].Index = i;
 
-        var weeks = await LoadWeeksAsync(rows, ct);
+        var (weeks, ptoUnread) = await LoadWeeksAsync(rows, resolver, ct);
         var now = time.GetUtcNow();
         var token = DraftIds.NewConfirmToken();
         var draft = new Draft
@@ -116,7 +118,8 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             UndoOf = undoOf,
             UndoOfCommittedAt = undoOfCommittedAt,
             ConfirmTokenHash = DraftIds.Hash(token),
-            Rows = rows
+            Rows = rows,
+            PtoUnreadUsers = ptoUnread.Count > 0 ? ptoUnread.Order(StringComparer.Ordinal).ToList() : null
         };
         BuildViews(draft, weeks, caller, Weeks.Today(time));
         await AddAvatarsAsync(draft, ct);
@@ -354,9 +357,12 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
     /// <summary>The longest period <see cref="Weeks.PeriodLike"/> makes up (two weeks).</summary>
     private const int MaxPeriodDays = 14;
 
-    private async Task<List<WeekData>> LoadWeeksAsync(List<DraftRow> rows, CancellationToken ct)
+    private async Task<(List<WeekData> Weeks, HashSet<string> PtoUnread)> LoadWeeksAsync(List<DraftRow> rows, TimeChangeResolver resolver, CancellationToken ct)
     {
         var weeks = new List<WeekData>();
+        var ptoUnread = new HashSet<string>();
+        var ptoByUser = new Dictionary<string, IReadOnlyList<PiPto>>();
+        var usersWithPtoRows = rows.Where(r => r.Kind == RowKind.Pto).Select(r => r.UserId).ToHashSet();
         var touched = rows
             .SelectMany(r => new[] { r.Before?.Date, r.After?.Date }.OfType<DateOnly>().Select(d => (r.UserId, r.UserName, Date: d)))
             .Distinct()
@@ -375,6 +381,21 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                 sheets = await pi.SearchTimeSheetsAsync(userId, dates.Min().AddDays(-PeriodLookbackDays), dates.Max().AddDays(MaxPeriodDays - 1), ct);
                 sheetsByUser[userId] = sheets;
             }
+            if (!ptoByUser.TryGetValue(userId, out var pto))
+            {
+                try
+                {
+                    pto = await resolver.PtoAsync(userId, ct);
+                }
+                catch (TimeChangeException e) when (e.Code == "pi_unavailable" && !usersWithPtoRows.Contains(userId))
+                {
+                    // Someone may edit another person's time without being allowed to read their PTO.
+                    // A time-only draft still works, with their PTO shown as plain PTO and left out of the fingerprint.
+                    pto = [];
+                    ptoUnread.Add(userId);
+                }
+                ptoByUser[userId] = pto;
+            }
             // A date a real timesheet covers belongs in that timesheet's week, never a made-up one.
             var sheet = Weeks.Covering(sheets, date);
             if (weeks.Any(w => w.Contains(userId, date) && (sheet is null || w.Sheet == sheet)))
@@ -383,16 +404,18 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             weeks.Add(new WeekData
             {
                 User = new PiUser(userId, userName), Start = start, End = end, Sheet = sheet,
-                Entries = await pi.SearchEntriesAsync(userId, start, end, ct)
+                Entries = await pi.SearchEntriesAsync(userId, start, end, ct),
+                Pto = pto.Where(p => start <= p.Date && p.Date <= end).ToList()
             });
         }
-        return weeks;
+        return (weeks, ptoUnread);
     }
 
     private static void BuildViews(Draft draft, List<WeekData> weeks, PiUser caller, DateOnly today)
     {
         var rows = draft.Rows;
-        var touchedIds = rows.Select(r => r.TimeEntryId).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // A PTO row's linked time entry is shown through the row, not as greyed context.
+        var touchedIds = rows.SelectMany(r => new[] { r.TimeEntryId, r.LinkedTimeEntryId }).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var w in weeks.OrderBy(w => w.User.Id == caller.Id ? 0 : 1).ThenBy(w => w.User.Name).ThenBy(w => w.Start))
         {
             var view = new WeekView
@@ -417,14 +440,10 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                 {
                     Date = date, TotalBefore = before, TotalAfter = after, HasChanges = here.Count > 0,
                     RowIndexes = here.Select(r => r.Index).ToList(),
-                    Context = existing.Where(e => !touchedIds.Contains(e.Id)).Select(e => new ContextEntry
-                    {
-                        TimeEntryId = e.Id, ProjectName = e.ProjectName, ProjectColor = e.ProjectColor, TaskName = e.TaskName,
-                        Hours = e.Hours, Billable = e.Billable, Description = e.Description
-                    }).ToList()
+                    Context = existing.Where(e => !touchedIds.Contains(e.Id)).Select(e => ToContext(e, w.Pto)).ToList()
                 });
                 if (here.Count > 0)
-                    draft.DayFingerprints[Weeks.DayKey(w.User.Id, date)] = Fingerprint.Compute(existing, w.Sheet);
+                    draft.DayFingerprints[Weeks.DayKey(w.User.Id, date)] = Fingerprint.Compute(existing, w.Sheet, w.Pto.Where(p => p.Date == date));
             }
             view.TotalBefore = view.Days.Sum(d => d.TotalBefore);
             view.TotalAfter = view.Days.Sum(d => d.TotalAfter);
@@ -443,8 +462,26 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             Changes = rows.Count,
             Days = draft.DayFingerprints.Count,
             People = rows.Select(r => r.UserId).Distinct().Count(),
-            Warnings = rows.Sum(r => r.Warnings.Count)
+            Warnings = rows.Sum(r => r.Warnings.Count),
+            PtoDelta = rows.Where(r => r.Kind == RowKind.Pto).Sum(r => (r.After?.Hours ?? 0m) - (r.Before?.Hours ?? 0m))
         };
+    }
+
+    /// <summary>An existing entry as greyed context. PTO's linked entries read as PTO · time code, not as a task.</summary>
+    private static ContextEntry ToContext(PiEntry e, IReadOnlyList<PiPto> weekPto)
+    {
+        var context = new ContextEntry
+        {
+            TimeEntryId = e.Id, ProjectName = e.ProjectName, ProjectColor = e.ProjectColor, TaskName = e.TaskName,
+            Hours = e.Hours, Billable = e.Billable, Description = e.Description
+        };
+        var pto = weekPto.FirstOrDefault(p => string.Equals(p.TimeEntryId, e.Id, StringComparison.OrdinalIgnoreCase));
+        if (pto is not null || e.IsPto)
+        {
+            context.IsPto = true;
+            context.TimeCodeName = pto is null ? null : string.IsNullOrWhiteSpace(pto.TimeCodeName) ? pto.TimeCodeId : pto.TimeCodeName;
+        }
+        return context;
     }
 
     /// <summary>A row dated further back or ahead than this is flagged as a likely wrong date or year.</summary>
@@ -470,8 +507,15 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                     Warn(row, WarningCode.Over12Hours, $"Day goes over 12h ({Weeks.FormatHours(day.TotalAfter)}h)");
                 if (after.Hours * 4 != decimal.Truncate(after.Hours * 4))
                     Warn(row, WarningCode.NotQuarterHour, $"Not a whole quarter-hour ({Weeks.FormatHours(after.Hours)}h)");
+                if (row.Kind == RowKind.Pto && day.TotalAfter > 8m)
+                    Warn(row, WarningCode.Over8HoursPtoDay, $"PTO day goes over 8h ({Weeks.FormatHours(day.TotalAfter)}h)");
             }
-            if (row.Action == ChangeAction.Create && IsLikelyDuplicate(row, draft.Rows, week.Entries))
+            if (WeekHoursOver40(draft.Weeks.First(v => v.UserId == row.UserId && v.Start == week.Start), date) is { } weekHours)
+                Warn(row, WarningCode.Over40HoursWeek, $"Week goes over 40h ({Weeks.FormatHours(weekHours)}h)");
+            if (row.PtoApproved == true)
+                Warn(row, WarningCode.PtoApproved,
+                    "This PTO was already approved. PI may refuse the change or clear the approval. Undoing a delete recreates the PTO unapproved.");
+            if (row.Action is ChangeAction.Create or ChangeAction.CreatePto && IsLikelyDuplicate(row, draft.Rows, week))
                 Warn(row, WarningCode.LikelyDuplicate, "Looks like a duplicate of an entry already on this day");
             if (row.UserId != caller.Id)
                 Warn(row, WarningCode.OtherPerson, $"Changes {row.UserName}'s time");
@@ -488,7 +532,31 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         }
     }
 
-    private static bool IsLikelyDuplicate(DraftRow row, List<DraftRow> rows, IReadOnlyList<PiEntry> weekEntries)
+    /// <summary>
+    /// The after-total of the 7-day span (counted from the period's start) holding <paramref name="date"/>
+    /// when it's more than 40h, else null. A span cut short by the period's end is checked over the days it has.
+    /// </summary>
+    private static decimal? WeekHoursOver40(WeekView view, DateOnly date)
+    {
+        var chunkStart = view.Start.AddDays((date.DayNumber - view.Start.DayNumber) / 7 * 7);
+        var total = view.Days.Where(d => d.Date >= chunkStart && d.Date < chunkStart.AddDays(7)).Sum(d => d.TotalAfter);
+        return total > 40m ? total : null;
+    }
+
+    private static bool IsLikelyDuplicate(DraftRow row, List<DraftRow> rows, WeekData week)
+        => row.Kind == RowKind.Pto ? IsLikelyDuplicatePto(row, rows, week) : IsLikelyDuplicateTime(row, rows, week.Entries);
+
+    /// <summary>Same person, date and time code as an existing PTO record (not one being deleted) or an earlier create_pto row.</summary>
+    private static bool IsLikelyDuplicatePto(DraftRow row, List<DraftRow> rows, WeekData week)
+    {
+        var a = row.After!;
+        var deleted = rows.Where(r => r.Action == ChangeAction.DeletePto).Select(r => r.PtoEntryId).ToHashSet();
+        return week.Pto.Any(p => p.Date == a.Date && p.TimeCodeId == a.TimeCodeId && !deleted.Contains(p.Id)) ||
+               rows.Any(r => r.Index < row.Index && r.Action == ChangeAction.CreatePto && r.UserId == row.UserId &&
+                             r.After!.Date == a.Date && r.After.TimeCodeId == a.TimeCodeId);
+    }
+
+    private static bool IsLikelyDuplicateTime(DraftRow row, List<DraftRow> rows, IReadOnlyList<PiEntry> weekEntries)
     {
         var a = row.After!;
         var deleted = rows.Where(r => r.Action == ChangeAction.Delete).Select(r => r.TimeEntryId).ToHashSet();

@@ -181,6 +181,12 @@ public sealed class ContextEntry
     public required decimal Hours { get; set; }
     public bool Billable { get; set; }
     public string? Description { get; set; }
+    /// <summary>True for an existing PTO entry (shown as PTO · time code); null for time context.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? IsPto { get; set; }
+    /// <summary>PTO context only. Null when the person's PTO list couldn't be read.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TimeCodeName { get; set; }
 }
 
 public sealed class DayView
@@ -230,6 +236,8 @@ public sealed class DraftTotals
     public int Days { get; set; }
     public int People { get; set; }
     public int Warnings { get; set; }
+    /// <summary>Net hours the PTO rows add (or remove).</summary>
+    public decimal PtoDelta { get; set; }
 }
 
 /// <summary>A draft, and after commit its receipt (same record and id).</summary>
@@ -270,6 +278,9 @@ public sealed class Draft
     /// </summary>
     public bool OutcomeUnknown { get; set; }
     public List<string> StaleDays { get; set; } = new();
+    /// <summary>Users whose PTO list couldn't be read at plan time (their draft has no PTO rows). Null when none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? PtoUnreadUsers { get; set; }
 }
 
 /// <summary>Why a change couldn't be planned, with candidates when a name matched several records.</summary>

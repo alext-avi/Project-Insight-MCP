@@ -750,4 +750,271 @@ public sealed class TimeChangePlannerTests : IDisposable
 
         Assert.All(new[] { e1, e2, e3 }, e => { Assert.Equal("invalid_change", e.Code); Assert.Contains("Change 1", e.Message); });
     }
+
+    // ---- PTO in views, totals, fingerprints and warnings ----
+
+    private static DayView Day(Draft d, DateOnly date, string userId = "u-1") => d.Weeks.First(w => w.UserId == userId).Days.Single(x => x.Date == date);
+
+    private static ChangeInput CreatePto(string date, decimal hours) => new() { Action = "create_pto", Date = date, Hours = hours, TimeCodeId = "tc-1" };
+
+    private static ChangeInput CreateTime(string date, decimal hours) => new() { Action = "create", Date = date, Hours = hours, TaskId = "t-1" };
+
+    [Fact]
+    public async Task Pto_only_draft_totals_include_existing_and_proposed_pto()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m);
+
+        var draft = (await PlanPto(CreatePto("2026-10-26", 3m), CreatePto("2026-10-27", 1.75m))).Draft!;
+
+        Assert.Equal((6m, 9m), (Day(draft, Mon).TotalBefore, Day(draft, Mon).TotalAfter));
+        Assert.Equal((2.5m, 4.25m), (Day(draft, Tue).TotalBefore, Day(draft, Tue).TotalAfter));
+        Assert.Equal((12m, 12m), (Day(draft, Wed).TotalBefore, Day(draft, Wed).TotalAfter));
+        var week = draft.Weeks.Single();
+        Assert.Equal((20.5m, 25.25m), (week.TotalBefore, week.TotalAfter));
+        var pto = Assert.Single(Day(draft, Wed).Context, c => c.IsPto == true);
+        Assert.Equal(("PTO", "te-pto-pto-1"), (pto.TimeCodeName, pto.TimeEntryId));
+        Assert.Equal((4.75m, 4.75m), (draft.Totals.PtoDelta, draft.Totals.NonBillableDelta));
+        Assert.All(Day(draft, Mon).Context, c => Assert.Null(c.IsPto));
+    }
+
+    [Fact]
+    public async Task Mixed_draft_counts_linked_entry_once()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m);
+
+        var draft = (await _planner.PlanAsync("Mixed",
+            [CreateTime("2026-10-26", 2m), new() { Action = "update_pto", PtoEntryId = "pto-1", Hours = 2m }], default)).Draft!;
+
+        Assert.Equal(10m, Day(draft, Wed).TotalAfter);
+        Assert.Equal(12m, Day(draft, Wed).TotalBefore);
+        Assert.Equal(["te-5"], Day(draft, Wed).Context.Select(c => c.TimeEntryId));
+        Assert.Equal(-2m, draft.Totals.PtoDelta);
+    }
+
+    [Fact]
+    public async Task Swap_pto_for_work_nets_zero()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m);
+
+        var draft = (await _planner.PlanAsync("Swap",
+            [new() { Action = "delete_pto", PtoEntryId = "pto-1" }, CreateTime("2026-10-28", 4m)], default)).Draft!;
+
+        Assert.Equal((12m, 12m), (Day(draft, Wed).TotalBefore, Day(draft, Wed).TotalAfter));
+        Assert.DoesNotContain(Day(draft, Wed).Context, c => c.IsPto == true);
+    }
+
+    [Fact]
+    public async Task Update_pto_into_next_period_shows_both_weeks()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m);
+
+        var draft = (await PlanPto(new() { Action = "update_pto", PtoEntryId = "pto-1", Date = "2026-11-04" })).Draft!;
+
+        Assert.Equal(2, draft.Weeks.Count);
+        var (first, second) = (draft.Weeks[0], draft.Weeks[1]);
+        Assert.Equal(-4m, first.TotalAfter - first.TotalBefore);
+        Assert.Equal(4m, second.TotalAfter - second.TotalBefore);
+        Assert.Equal(0m, draft.Totals.PtoDelta);
+    }
+
+    private static bool Over40(DraftRow r) => r.Warnings.Any(w => w.Code == "over_40h_week");
+
+    [Fact]
+    public async Task Over_40h_week_warns_time_and_pto_rows()
+    {
+        // 16.5 on file, plus 8 + 8 + 8.5 = 41.
+        var draft = (await _planner.PlanAsync("Big week",
+            [CreateTime("2026-10-29", 8m), CreatePto("2026-10-30", 8m), CreateTime("2026-10-27", 8.5m)], default)).Draft!;
+
+        Assert.All(draft.Rows, r => Assert.True(Over40(r)));
+    }
+
+    [Fact]
+    public async Task Exactly_40h_does_not_warn()
+    {
+        var draft = (await _planner.PlanAsync("Exactly", [CreateTime("2026-10-29", 8m), CreateTime("2026-10-30", 8m), CreateTime("2026-10-27", 7.5m)], default)).Draft!;
+
+        Assert.All(draft.Rows, r => Assert.False(Over40(r)));
+    }
+
+    [Fact]
+    public async Task Over_40h_is_per_7_day_chunk_in_two_week_period()
+    {
+        _pi.Sheets["u-1"] = [new PiTimeSheet("ts-1", Mon, new DateOnly(2026, 11, 8), false, false, false, null)];
+        _pi.Add("te-20", "u-1", new DateOnly(2026, 10, 29), 9m);
+        _pi.Add("te-21", "u-1", new DateOnly(2026, 10, 30), 9m); // week one: 16.5 + 18 = 34.5
+        foreach (var (d, h) in new[] { (2, 8m), (3, 8m), (4, 8m), (5, 8m), (6, 3m) })
+            _pi.Add($"te-3{d}", "u-1", new DateOnly(2026, 11, d), h); // week two: 35
+
+        var draft = (await _planner.PlanAsync("Two weeks",
+            [new() { Action = "update", TimeEntryId = "te-1", Hours = 2m }, CreateTime("2026-11-02", 1m)], default)).Draft!;
+
+        var week = draft.Weeks.Single();
+        Assert.Equal((Mon, new DateOnly(2026, 11, 8)), (week.Start, week.End));
+        Assert.True(week.TotalAfter > 40m);
+        Assert.All(draft.Rows, r => Assert.False(Over40(r)));
+    }
+
+    [Fact]
+    public async Task Over_40h_warns_only_rows_in_the_heavy_chunk_of_a_two_week_period()
+    {
+        _pi.Sheets["u-1"] = [new PiTimeSheet("ts-1", Mon, new DateOnly(2026, 11, 8), false, false, false, null)];
+        foreach (var (d, h) in new[] { (2, 8m), (3, 8m), (4, 8m), (5, 8m), (6, 8m) })
+            _pi.Add($"te-3{d}", "u-1", new DateOnly(2026, 11, d), h); // week two: 40
+
+        var draft = (await _planner.PlanAsync("Heavy second week",
+            [CreateTime("2026-10-27", 1m), CreateTime("2026-11-03", 1m)], default)).Draft!;
+
+        Assert.False(Over40(draft.Rows[0]));
+        Assert.True(Over40(draft.Rows[1]));
+    }
+
+    [Fact]
+    public async Task Over_8h_day_warns_only_pto_rows()
+    {
+        var pto = (await PlanPto(CreatePto("2026-10-26", 3m))).Draft!;
+        var time = (await _planner.PlanAsync("Time", [CreateTime("2026-10-26", 3m)], default)).Draft!;
+
+        Assert.Contains(pto.Rows[0].Warnings, w => w.Code == "over_8h_day");
+        Assert.DoesNotContain(time.Rows[0].Warnings, w => w.Code == "over_8h_day");
+    }
+
+    [Fact]
+    public async Task Over_8h_day_needs_more_than_8()
+    {
+        var draft = (await PlanPto(CreatePto("2026-10-27", 5.5m))).Draft!; // Tue 2.5 + 5.5 = 8
+
+        Assert.DoesNotContain(draft.Rows[0].Warnings, w => w.Code == "over_8h_day");
+    }
+
+    [Fact]
+    public async Task Pto_not_quarter_hour_warns_once()
+    {
+        var draft = (await PlanPto(CreatePto("2026-10-27", 1.3m))).Draft!;
+
+        Assert.Single(draft.Rows[0].Warnings, w => w.Code == "not_quarter_hour");
+    }
+
+    [Fact]
+    public async Task Pto_list_unreadable_for_time_only_person_is_skipped()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m);
+        _pi.PtoListThrows = true;
+
+        var draft = (await _planner.PlanAsync("Time", [CreateTime("2026-10-27", 1m)], default)).Draft!;
+
+        Assert.Equal(["u-1"], draft.PtoUnreadUsers);
+        var ctx = Assert.Single(Day(draft, Wed).Context, c => c.IsPto == true);
+        Assert.Null(ctx.TimeCodeName);
+        Assert.Equal(12m, Day(draft, Wed).TotalBefore);
+        // The fingerprint keeps the shape the commit will compute without PTO.
+        Assert.Equal(Fingerprint.Compute(_pi.Entries.Where(e => e.Date == Tue), null), draft.DayFingerprints[Weeks.DayKey("u-1", Tue)]);
+    }
+
+    [Fact]
+    public async Task Readable_pto_leaves_no_unread_users()
+    {
+        var draft = (await _planner.PlanAsync("Time", [CreateTime("2026-10-27", 1m)], default)).Draft!;
+
+        Assert.Null(draft.PtoUnreadUsers);
+    }
+
+    [Fact]
+    public async Task Pto_list_unreadable_with_pto_rows_fails()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m);
+        _pi.PtoListThrows = true;
+
+        var ex = await Assert.ThrowsAsync<TimeChangeException>(() => PlanPto(CreatePto("2026-10-27", 1m)));
+        Assert.Equal("pi_unavailable", ex.Code);
+        var ex2 = await Assert.ThrowsAsync<TimeChangeException>(() => PlanPto(new() { Action = "delete_pto", PtoEntryId = "pto-1" }));
+        Assert.Equal("pi_unavailable", ex2.Code);
+    }
+
+    [Fact]
+    public async Task Each_users_pto_list_is_read_once_per_plan()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m);
+
+        await _planner.PlanAsync("Mixed", [CreatePto("2026-10-26", 1m), CreateTime("2026-10-27", 1m), new() { Action = "update_pto", PtoEntryId = "pto-1", Hours = 3m }], default);
+
+        Assert.Equal(1, _pi.ListPtoCalls);
+    }
+
+    [Theory]
+    [InlineData("update_pto")]
+    [InlineData("delete_pto")]
+    public async Task Approved_pto_update_or_delete_warns(string action)
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m, approved: true);
+
+        var row = (await PlanPto(new() { Action = action, PtoEntryId = "pto-1", Hours = action == "update_pto" ? 2m : null })).Draft!.Rows[0];
+
+        var w = Assert.Single(row.Warnings, w => w.Code == "pto_approved");
+        Assert.Contains("unapproved", w.Message);
+    }
+
+    [Fact]
+    public async Task Unapproved_pto_has_no_approved_warning()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m);
+
+        var row = (await PlanPto(new() { Action = "update_pto", PtoEntryId = "pto-1", Hours = 2m })).Draft!.Rows[0];
+
+        Assert.DoesNotContain(row.Warnings, w => w.Code == "pto_approved");
+    }
+
+    [Fact]
+    public async Task A_day_with_pto_fingerprints_with_the_pto()
+    {
+        var pto = _pi.AddPto("pto-1", "u-1", Wed, 4m);
+
+        var draft = (await _planner.PlanAsync("Time", [CreateTime("2026-10-28", 1m)], default)).Draft!;
+
+        Assert.Equal(Fingerprint.Compute(_pi.Entries.Where(e => e.Date == Wed), null, [pto]), draft.DayFingerprints[Weeks.DayKey("u-1", Wed)]);
+        Assert.NotEqual(Fingerprint.Compute(_pi.Entries.Where(e => e.Date == Wed), null), draft.DayFingerprints[Weeks.DayKey("u-1", Wed)]);
+    }
+
+    [Fact]
+    public async Task Create_pto_duplicating_an_existing_pto_warns()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m, "tc-1");
+        _pi.AddPto("pto-2", "u-1", Mon, 4m, "tc-2", "Floating");
+
+        var draft = (await PlanPto(CreatePto("2026-10-28", 2m), new() { Action = "create_pto", Date = "2026-10-28", Hours = 1m, TimeCodeId = "tc-2" })).Draft!;
+
+        Assert.Contains(draft.Rows[0].Warnings, w => w.Code == "likely_duplicate");
+        Assert.DoesNotContain(draft.Rows[1].Warnings, w => w.Code == "likely_duplicate");
+    }
+
+    [Fact]
+    public async Task Create_pto_duplicating_an_earlier_row_warns()
+    {
+        _pi.AddPto("pto-1", "u-1", Mon, 4m);
+
+        var draft = (await PlanPto(CreatePto("2026-10-27", 2m), CreatePto("2026-10-27", 1m))).Draft!;
+
+        Assert.DoesNotContain(draft.Rows[0].Warnings, w => w.Code == "likely_duplicate");
+        Assert.Contains(draft.Rows[1].Warnings, w => w.Code == "likely_duplicate");
+    }
+
+    [Fact]
+    public async Task Create_pto_over_a_pto_being_deleted_is_not_a_duplicate()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m);
+
+        var draft = (await PlanPto(new() { Action = "delete_pto", PtoEntryId = "pto-1" }, CreatePto("2026-10-28", 3m))).Draft!;
+
+        Assert.DoesNotContain(draft.Rows[1].Warnings, w => w.Code == "likely_duplicate");
+    }
+
+    [Fact]
+    public async Task A_time_create_is_not_a_duplicate_of_pto_hours()
+    {
+        _pi.AddPto("pto-1", "u-1", Mon, 4m);
+
+        var draft = (await _planner.PlanAsync("Time", [CreateTime("2026-10-26", 4m)], default)).Draft!;
+
+        Assert.DoesNotContain(draft.Rows[0].Warnings, w => w.Code == "likely_duplicate");
+    }
 }

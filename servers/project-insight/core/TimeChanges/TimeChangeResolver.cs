@@ -33,7 +33,7 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
     private IReadOnlyList<PiNamed>? _projects;
     private readonly Dictionary<string, IReadOnlyList<PiNamed>> _tasks = new();
     private readonly Dictionary<string, PiUser?> _users = new();
-    private readonly Dictionary<string, IReadOnlyList<PiTimeCode>> _timeCodes = new();
+    private readonly Dictionary<string, IReadOnlyList<PiPto>> _pto = new();
 
     public async Task<Resolved<PiUser>> UserAsync(int index, string? user, PiUser caller, CancellationToken ct)
     {
@@ -114,6 +114,14 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
         return new(new PiTask(t.Match.Id, t.Match.Name, p.Match.Id, p.Match.Name), null);
     }
 
+    /// <summary>A person's PTO list, read once per plan. A failed read isn't cached, so it throws to every caller.</summary>
+    public async Task<IReadOnlyList<PiPto>> PtoAsync(string userId, CancellationToken ct)
+    {
+        if (!_pto.TryGetValue(userId, out var pto))
+            _pto[userId] = pto = await pi.ListPtoAsync(userId, ct);
+        return pto;
+    }
+
     /// <summary>
     /// A PTO time code: the id as given (flagged unknown when this person has never used it), else an exact
     /// name, else a unique partial name. PI has no time-code list, so the known codes are the ones on this
@@ -121,14 +129,10 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
     /// </summary>
     public async Task<Resolved<PiTimeCode>> TimeCodeAsync(int index, string userId, string? timeCodeId, string? timeCode, CancellationToken ct)
     {
-        if (!_timeCodes.TryGetValue(userId, out var known))
-        {
-            var pto = await pi.ListPtoAsync(userId, ct);
-            _timeCodes[userId] = known = pto
-                .GroupBy(p => p.TimeCodeId)
-                .Select(g => new PiTimeCode(g.Key, g.Select(p => p.TimeCodeName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? g.Key))
-                .ToList();
-        }
+        var known = (await PtoAsync(userId, ct))
+            .GroupBy(p => p.TimeCodeId)
+            .Select(g => new PiTimeCode(g.Key, g.Select(p => p.TimeCodeName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? g.Key))
+            .ToList();
         if (!string.IsNullOrWhiteSpace(timeCodeId))
         {
             var id = timeCodeId.Trim();
