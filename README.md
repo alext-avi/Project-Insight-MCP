@@ -6,14 +6,14 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for [P
 
 ## What you can do
 
-Ask your assistant things like *"show my active projects"*, *"log 3 hours to the Acme redesign task yesterday"*, *"submit my timesheet"*, or *"who's assigned to project X?"*. Tools span:
+Ask your assistant things like *"show my active projects"*, *"log 3 hours to the Acme redesign task yesterday"*, *"submit my timesheet"*, *"book 3h PTO Monday and 1.75h Tuesday"*, or *"who's assigned to project X?"*. Tools span:
 
 - **Projects** — search, retrieve, status
 - **Tasks** — list, detail, assignments
-- **Time entries** — create, update, delete, filter by date / user / task
+- **Time entries** — create, update, delete, filter by date / user / task; draft changes for review on a card, confirm, and undo within 24 hours
 - **Timesheets** — view, submit, approve, reject
 - **Resources** — project & task assignments (add, update, remove)
-- **Users & PTO** — directory lookups and paid-time-off management
+- **Users & PTO** — directory lookups and paid-time-off management; PTO changes can be drafted, confirmed and undone within 24 hours too
 
 Token-efficient field selection (`minimal` / `summary` / `standard` / `full`, or a custom field list) keeps responses small.
 
@@ -77,6 +77,7 @@ Project-Insight-MCP/
 - [**Server guide**](./servers/project-insight/README.md) — install, auth, and the full tool list
 - [Authentication](./servers/project-insight/docs/AUTHENTICATION.md)
 - [Connecting to the remote server](./docs/REMOTE.md)
+- [PTO through time-change drafts](./docs/PTO.md)
 - [Deployment & infrastructure](./bicep/README.md)
 
 ## Contributing

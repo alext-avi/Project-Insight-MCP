@@ -49,6 +49,13 @@ agree, or let them press Confirm on the card. A stale result means the affected 
 Project Insight since planning: read them again and re-plan. `undo_time_changes` drafts the reverse
 of a commit for 24 hours.
 
+PTO goes through the same flow. Add `create_pto {date, hours, timeCode name or timeCodeId,
+description?, user?}`, `update_pto {ptoEntryId plus only the fields to change}` or `delete_pto {ptoEntryId}`
+to `changes`, and prefer that over the direct `*_pto_entry` tools, which write immediately with no review or
+undo. PTO creates its own linked time entry, so never add a time entry for the same time off. Time-code names
+resolve against the person's own PTO history: an unknown name returns a clarification, an unknown id returns a
+warning. See [PTO.md](PTO.md) for details.
+
 ## 🚀 Getting Started
 
 ### Prerequisites

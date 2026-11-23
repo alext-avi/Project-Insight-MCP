@@ -1126,7 +1126,7 @@
   },
   {
     "name": "create_pto_entry",
-    "description": "Create a new PTO (Paid Time Off) entry. This records time off for a user on a specific date. IMPORTANT: Creating a PTO entry automatically generates a linked non-billable time entry (no project/task) \u2014 do NOT also create a time entry manually. Required fields: userId, date, ptoHours (must be \u003E 0), and timeCodeId. To discover available timeCodeId values, call list_user_pto first \u2014 the response includes the available time codes with their names and IDs.",
+    "description": "Writes to Project Insight immediately, with no review or undo. Prefer plan_time_changes with a create_pto/update_pto/delete_pto change. Create a new PTO (Paid Time Off) entry. This records time off for a user on a specific date. IMPORTANT: Creating a PTO entry automatically generates a linked non-billable time entry (no project/task) \u2014 do NOT also create a time entry manually. Required fields: userId, date, ptoHours (must be \u003E 0), and timeCodeId. To discover available timeCodeId values, call list_user_pto first \u2014 the response includes the available time codes with their names and IDs.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1161,7 +1161,7 @@
   },
   {
     "name": "update_pto_entry",
-    "description": "Update an existing PTO entry. Provide the ptoEntryId of the entry to update along with any fields to change. The linked time entry is automatically updated to match. Only include fields you want to change.",
+    "description": "Writes to Project Insight immediately, with no review or undo. Prefer plan_time_changes with a create_pto/update_pto/delete_pto change. Update an existing PTO entry. Provide the ptoEntryId of the entry to update along with any fields to change. The linked time entry is automatically updated to match. Only include fields you want to change.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1193,7 +1193,7 @@
   },
   {
     "name": "delete_pto_entry",
-    "description": "Delete a PTO entry. IMPORTANT: This also automatically deletes the linked time entry \u2014 do NOT separately delete the time entry. Use get_pto_entry or list_user_pto to find the PTO entry ID.",
+    "description": "Writes to Project Insight immediately, with no review or undo. Prefer plan_time_changes with a create_pto/update_pto/delete_pto change. Delete a PTO entry. IMPORTANT: This also automatically deletes the linked time entry \u2014 do NOT separately delete the time entry. Use get_pto_entry or list_user_pto to find the PTO entry ID.",
     "inputSchema": {
       "type": "object",
       "properties": {
