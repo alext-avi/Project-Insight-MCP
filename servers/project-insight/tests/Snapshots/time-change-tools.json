@@ -547,6 +547,18 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "isPto": {
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
+                              },
+                              "timeCodeName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -595,6 +607,9 @@
                 },
                 "warnings": {
                   "type": "integer"
+                },
+                "ptoDelta": {
+                  "type": "number"
                 }
               }
             },
@@ -1146,6 +1161,18 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "isPto": {
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
+                              },
+                              "timeCodeName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -1194,6 +1221,9 @@
                 },
                 "warnings": {
                   "type": "integer"
+                },
+                "ptoDelta": {
+                  "type": "number"
                 }
               }
             },
@@ -1750,6 +1780,18 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "isPto": {
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
+                              },
+                              "timeCodeName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -1798,6 +1840,9 @@
                 },
                 "warnings": {
                   "type": "integer"
+                },
+                "ptoDelta": {
+                  "type": "number"
                 }
               }
             },
@@ -2349,6 +2394,18 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "isPto": {
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
+                              },
+                              "timeCodeName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -2397,6 +2454,9 @@
                 },
                 "warnings": {
                   "type": "integer"
+                },
+                "ptoDelta": {
+                  "type": "number"
                 }
               }
             },
@@ -2949,6 +3009,18 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "isPto": {
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
+                              },
+                              "timeCodeName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -2997,6 +3069,9 @@
                 },
                 "warnings": {
                   "type": "integer"
+                },
+                "ptoDelta": {
+                  "type": "number"
                 }
               }
             },
@@ -3549,6 +3624,18 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "isPto": {
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
+                              },
+                              "timeCodeName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -3597,6 +3684,9 @@
                 },
                 "warnings": {
                   "type": "integer"
+                },
+                "ptoDelta": {
+                  "type": "number"
                 }
               }
             },
