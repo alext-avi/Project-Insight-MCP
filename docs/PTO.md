@@ -30,3 +30,19 @@ Other observations:
 - `GET /api/user-pto/{id}` of a deleted PTO returns success with an empty record (no date or hours), which the
   gateway treats as not found, so undo planning of a PTO that's already gone asks for clarification.
 - Editing a PTO record recalculates `PTOBalance` on later records. That's PI's own bookkeeping, not ours.
+
+## End-to-end check, 2026-11-23
+
+Run against a real tenant through the 2.2.0 stdio server, on two empty weekdays about nine weeks ahead:
+
+1. `plan_time_changes` with `create_pto` 3.00h (Mon) and 1.75h (Tue), time code given by name. The draft showed both rows
+   as `PTO · PTO`, day totals 0 → 3 and 0 → 1.75, and the week 0 → 4.75.
+2. `commit_time_changes`: two PTO records and exactly two linked time entries in PI (no extra time entry).
+3. A draft adding PTO to a day that already had PTO showed the existing PTO as context, counted it in the day and
+   week totals, resolved a partial time-code name, and raised `over_8h_day`. It was cancelled.
+4. `undo_time_changes`, then a commit of the undo draft: no PTO and no time entries left on either day.
+5. A read-only draft in a real, filled week showed the week total from work and PTO together (40.0 → 40.25) with
+   `over_40h_week` and `over_8h_day`. It was cancelled.
+
+The first runs of step 4 exposed the race described in row 4 above. The committer was changed to leave the linked
+entry to PI, and the rerun was clean.
