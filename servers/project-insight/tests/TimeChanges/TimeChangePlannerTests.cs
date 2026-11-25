@@ -1107,6 +1107,37 @@ public sealed class TimeChangePlannerTests : IDisposable
     }
 
     [Fact]
+    public async Task Create_pto_where_an_update_moves_a_pto_off_the_day_is_not_a_duplicate()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m, "tc-1", "PTO");
+
+        var draft = (await PlanPto(new() { Action = "update_pto", PtoEntryId = "pto-1", Date = "2026-10-29" }, CreatePto("2026-10-28", 2m))).Draft!;
+
+        Assert.DoesNotContain(draft.Rows[1].Warnings, w => w.Code == "likely_duplicate");
+    }
+
+    [Fact]
+    public async Task Create_pto_where_an_update_changes_a_ptos_code_is_not_a_duplicate()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m, "tc-1", "PTO");
+        _pi.AddPto("pto-2", "u-1", Mon, 4m, "tc-2", "Floating");
+
+        var draft = (await PlanPto(new() { Action = "update_pto", PtoEntryId = "pto-1", TimeCodeId = "tc-2" }, CreatePto("2026-10-28", 2m))).Draft!;
+
+        Assert.DoesNotContain(draft.Rows[1].Warnings, w => w.Code == "likely_duplicate");
+    }
+
+    [Fact]
+    public async Task Create_pto_where_an_update_only_changes_hours_is_still_a_duplicate()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m, "tc-1", "PTO");
+
+        var draft = (await PlanPto(new() { Action = "update_pto", PtoEntryId = "pto-1", Hours = 2m }, CreatePto("2026-10-28", 2m))).Draft!;
+
+        Assert.Contains(draft.Rows[1].Warnings, w => w.Code == "likely_duplicate");
+    }
+
+    [Fact]
     public async Task A_time_create_is_not_a_duplicate_of_pto_hours()
     {
         _pi.AddPto("pto-1", "u-1", Mon, 4m);

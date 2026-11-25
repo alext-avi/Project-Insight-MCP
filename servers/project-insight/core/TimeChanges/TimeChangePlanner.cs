@@ -575,12 +575,18 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
     private static bool IsLikelyDuplicate(DraftRow row, List<DraftRow> rows, WeekData week)
         => row.Kind == RowKind.Pto ? IsLikelyDuplicatePto(row, rows, week) : IsLikelyDuplicateTime(row, rows, week.Entries);
 
-    /// <summary>Same person, date and time code as an existing PTO record (not one being deleted) or an earlier create_pto row.</summary>
+    /// <summary>
+    /// Same person, date and time code as an existing PTO record or an earlier create_pto row. A record this draft
+    /// deletes, or moves off that date or to another code, doesn't count.
+    /// </summary>
     private static bool IsLikelyDuplicatePto(DraftRow row, List<DraftRow> rows, WeekData week)
     {
         var a = row.After!;
-        var deleted = rows.Where(r => r.Action == ChangeAction.DeletePto).Select(r => r.PtoEntryId).ToHashSet();
-        return week.Pto.Any(p => p.Date == a.Date && TimeChangeResolver.SameId(p.TimeCodeId, a.TimeCodeId) && !deleted.Contains(p.Id)) ||
+        var goingAway = rows
+            .Where(r => r.Action == ChangeAction.DeletePto ||
+                        r.Action == ChangeAction.UpdatePto && (r.After!.Date != r.Before!.Date || !TimeChangeResolver.SameId(r.After.TimeCodeId, r.Before.TimeCodeId)))
+            .Select(r => r.PtoEntryId).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return week.Pto.Any(p => p.Date == a.Date && TimeChangeResolver.SameId(p.TimeCodeId, a.TimeCodeId) && !goingAway.Contains(p.Id)) ||
                rows.Any(r => r.Index < row.Index && r.Action == ChangeAction.CreatePto && r.UserId == row.UserId &&
                              r.After!.Date == a.Date && TimeChangeResolver.SameId(r.After.TimeCodeId, a.TimeCodeId));
     }
