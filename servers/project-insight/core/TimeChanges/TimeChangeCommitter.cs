@@ -189,6 +189,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
         var stale = new List<string>();
         var today = Weeks.Today(time);
         var ptoByUser = new Dictionary<string, IReadOnlyList<PiPto>>();
+        var legacy = draft.FingerprintVersion is null;
         foreach (var week in draft.Weeks)
         {
             var days = draft.DayFingerprints.Keys
@@ -201,9 +202,12 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
                 continue;
             var entries = await pi.SearchEntriesAsync(week.UserId, week.Start, week.End, ct);
             var sheets = await pi.SearchTimeSheetsAsync(week.UserId, week.Start, week.End, ct);
+            // A 2.1.0 draft fingerprinted work entries only: it never saw PTO records or PTO-linked entries.
+            if (legacy)
+                entries = entries.Where(e => !e.IsPto).ToList();
             // The plan left PTO out of the fingerprint for people whose PTO it couldn't read, so do the same here.
             IReadOnlyList<PiPto>? pto = null;
-            if (draft.PtoUnreadUsers?.Contains(week.UserId) != true && !ptoByUser.TryGetValue(week.UserId, out pto))
+            if (!legacy && draft.PtoUnreadUsers?.Contains(week.UserId) != true && !ptoByUser.TryGetValue(week.UserId, out pto))
             {
                 try
                 {
@@ -211,9 +215,9 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
                 }
                 catch (TimeChangeException e) when (e.Code == "pi_unavailable" && !draft.Rows.Any(r => r.Kind == RowKind.Pto && r.UserId == week.UserId))
                 {
-                    // A draft stored before PTO existed doesn't say whose PTO couldn't be read. With no PTO rows for
-                    // this person, fall back to no PTO in the fingerprint: a day without PTO hashes as it always did,
-                    // and a day with PTO then mismatches, which fails safe as stale.
+                    // PTO was readable at plan time but isn't now. With no PTO rows for this person, fall back to no
+                    // PTO in the fingerprint: a day without PTO hashes as it did, and a day with PTO then mismatches,
+                    // which fails safe as stale.
                     ptoByUser[week.UserId] = [];
                     pto = null;
                 }

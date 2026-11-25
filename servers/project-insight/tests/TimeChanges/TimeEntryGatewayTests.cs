@@ -180,6 +180,18 @@ public class TimeEntryGatewayTests
     }
 
     [Fact]
+    public async Task Search_keeps_an_entry_with_an_empty_task_id_as_an_ordinary_entry_as_2_1_0_did()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.OK,
+            """[{"Id":"te-9","Date":"2026-11-02T00:00:00","ActualHours":8,"IsBillable":false,"Task_Id":"","User_Id":"u-1"}]"""));
+
+        var e = Assert.Single(await gw.SearchEntriesAsync("u-1", new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 7), default));
+
+        Assert.False(e.IsPto);
+        Assert.Equal("", e.TaskId);
+    }
+
+    [Fact]
     public async Task Search_drops_an_entry_with_a_project_but_no_task()
     {
         var (gw, _) = Create(Json(HttpStatusCode.OK,

@@ -278,6 +278,15 @@ public sealed class Draft
     /// </summary>
     public bool OutcomeUnknown { get; set; }
     public List<string> StaleDays { get; set; } = new();
+    /// <summary>The fingerprint version every new draft is planned with.</summary>
+    public const int CurrentFingerprintVersion = 2;
+
+    /// <summary>
+    /// How <see cref="DayFingerprints"/> were computed. Null is 2.1.0: work entries only, no PTO records and no
+    /// PTO-linked entries. <see cref="CurrentFingerprintVersion"/> adds both.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? FingerprintVersion { get; set; }
     /// <summary>Users whose PTO list couldn't be read at plan time (their draft has no PTO rows). Null when none.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? PtoUnreadUsers { get; set; }

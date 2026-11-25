@@ -147,6 +147,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             UndoOfCommittedAt = undoOfCommittedAt,
             ConfirmTokenHash = DraftIds.Hash(token),
             Rows = rows,
+            FingerprintVersion = Draft.CurrentFingerprintVersion,
             PtoUnreadUsers = ptoUnread.Count > 0 ? ptoUnread.Order(StringComparer.Ordinal).ToList() : null
         };
         BuildViews(draft, weeks, caller, Weeks.Today(time));

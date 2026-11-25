@@ -330,7 +330,8 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
         if (e.Id is null || e.UserId is null || e.Date is null)
             return null;
         // PI links each PTO record to a time entry with no task or project (docs/PTO.md). A project with no task isn't PTO.
-        if (string.IsNullOrEmpty(e.TaskId))
+        // Only a missing task counts: an empty task id stays an ordinary entry, as in 2.1.0, so 2.1.0 fingerprints still match.
+        if (e.TaskId is null)
             return string.IsNullOrEmpty(e.ProjectId)
                 ? new PiEntry(e.Id, e.UserId, DateOnly.FromDateTime(e.Date.Value), e.ActualHours ?? 0m, e.IsBillable == true,
                     e.Description, "", "", "", "", e.TimeSheetId, IsPto: true)

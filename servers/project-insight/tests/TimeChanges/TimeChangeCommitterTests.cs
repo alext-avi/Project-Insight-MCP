@@ -563,11 +563,9 @@ public sealed class TimeChangeCommitterTests : IDisposable
         Assert.Equal(calls, _pi.ListPtoCalls);
     }
 
-    [Fact]
-    public async Task Stored_2_1_0_draft_still_commits()
-    {
-        // A 2.1.0 draft: no kind, ptoEntryId, linkedTimeEntryId, ptoApproved, timeCodeId, timeCodeName, ptoUnreadUsers, ptoDelta or isPto.
-        const string json = """
+    // A 2.1.0 draft: no kind, ptoEntryId, linkedTimeEntryId, ptoApproved, timeCodeId, timeCodeName, ptoUnreadUsers, ptoDelta,
+    // isPto or fingerprintVersion. It creates 4h on Tue 27 Oct, fingerprinted over te-3 and te-4.
+    private const string Draft210Json = """
         {
           "id": "d_vyhsj9w8a5", "status": "draft", "intent": "Log Tuesday",
           "proposedBy": "u-1", "proposedByName": "Alex Example",
@@ -603,21 +601,74 @@ public sealed class TimeChangeCommitterTests : IDisposable
           "error": null, "outcomeUnknown": false, "staleDays": []
         }
         """;
+
+    private async Task<string> Store210Draft()
+    {
         var dir = Path.Combine(_dir.Root, "u-1");
         Directory.CreateDirectory(dir);
-        await File.WriteAllTextAsync(Path.Combine(dir, "d_vyhsj9w8a5.json"), json);
+        await File.WriteAllTextAsync(Path.Combine(dir, "d_vyhsj9w8a5.json"), Draft210Json);
+        return "d_vyhsj9w8a5";
+    }
 
-        var result = await Commit("d_vyhsj9w8a5");
+    [Fact]
+    public async Task Stored_2_1_0_draft_still_commits()
+    {
+        var result = await Commit(await Store210Draft());
 
         Assert.Equal(DraftStatus.Committed, result.Status);
         Assert.Equal(["create:te-100"], _pi.Writes);
     }
 
     [Fact]
+    public async Task Stored_2_1_0_draft_on_a_day_with_pto_still_commits_without_reading_pto()
+    {
+        // 2.1.0 never saw PTO or its linked entry, so they can't have been in its fingerprint.
+        _pi.AddPto("pto-1", "u-1", TimeChangePlannerTests.Tue, 3m);
+        var id = await Store210Draft();
+
+        var result = await Commit(id);
+
+        Assert.Equal(DraftStatus.Committed, result.Status);
+        Assert.Equal(["create:te-100"], _pi.Writes);
+        Assert.Equal(0, _pi.ListPtoCalls);
+    }
+
+    [Fact]
+    public async Task Stored_2_1_0_draft_still_goes_stale_when_a_work_entry_on_its_day_changes()
+    {
+        _pi.AddPto("pto-1", "u-1", TimeChangePlannerTests.Tue, 3m);
+        var id = await Store210Draft();
+        var i = _pi.Entries.FindIndex(e => e.Id == "te-3");
+        _pi.Entries[i] = _pi.Entries[i] with { Hours = 1m };
+
+        Assert.Equal(DraftStatus.Stale, (await Commit(id)).Status);
+    }
+
+    [Fact]
+    public async Task New_drafts_record_the_fingerprint_version_and_a_new_draft_on_a_pto_day_still_sees_pto_changes()
+    {
+        _pi.AddPto("pto-1", "u-1", TimeChangePlannerTests.Tue, 3m);
+        var (draft, _) = await Plan([new() { Action = "create", Date = "2026-10-27", Hours = 1m, TaskId = "t-1" }]);
+        Assert.Equal(Draft.CurrentFingerprintVersion, draft.FingerprintVersion);
+        _pi.Pto[0] = _pi.Pto[0] with { Description = "Dentist" };
+
+        Assert.Equal(DraftStatus.Stale, (await Commit(draft.Id)).Status);
+    }
+
+    [Fact]
     public async Task Stored_2_1_0_draft_still_commits_when_the_pto_list_cant_be_read()
     {
         var (draft, _) = await Plan([new() { Action = "create", Date = "2026-10-27", Hours = 1m, TaskId = "t-1" }]);
-        await _store.TryTransitionAsync("u-1", draft.Id, DraftStatus.Draft, d => d.PtoUnreadUsers = null);
+        await _store.TryTransitionAsync("u-1", draft.Id, DraftStatus.Draft, d => { d.PtoUnreadUsers = null; d.FingerprintVersion = null; });
+        _pi.PtoListThrows = true;
+
+        Assert.Equal(DraftStatus.Committed, (await Commit(draft.Id)).Status);
+    }
+
+    [Fact]
+    public async Task A_draft_on_a_day_without_pto_commits_when_the_pto_list_cant_be_read_at_commit()
+    {
+        var (draft, _) = await Plan([new() { Action = "create", Date = "2026-10-27", Hours = 1m, TaskId = "t-1" }]);
         _pi.PtoListThrows = true;
 
         Assert.Equal(DraftStatus.Committed, (await Commit(draft.Id)).Status);
