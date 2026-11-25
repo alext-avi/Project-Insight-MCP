@@ -762,6 +762,29 @@ public sealed class TimeChangeCommitterTests : IDisposable
         Assert.Equal(DraftStatus.Committed, (await Commit(draft.Id)).Status);
     }
 
+    [Fact]
+    public async Task A_pto_read_failure_at_commit_on_a_day_with_pto_hands_the_draft_back_instead_of_marking_it_stale()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 2m);
+        var (draft, token) = await Plan([new() { Action = "create", Date = "2026-10-28", Hours = 1m, TaskId = "t-1" }]);
+        Assert.Null(draft.PtoUnreadUsers);
+        _pi.PtoListThrows = true; // PI's PTO endpoint blips; nothing in PI changed
+
+        var ex = await Assert.ThrowsAsync<TimeChangeException>(() =>
+            _committer.CommitAsync(Alex, draft.Id, CommitChannel.ConfirmedInChat, token, default));
+
+        Assert.Equal("pi_unavailable", ex.Code);
+        Assert.Empty(_pi.Writes);
+        var reloaded = await _committer.LoadAsync(Alex, draft.Id, default);
+        Assert.Equal(DraftStatus.Draft, reloaded.Status);
+        Assert.False(reloaded.ConfirmTokenUsed);
+
+        _pi.PtoListThrows = false;
+        var receipt = await _committer.CommitAsync(Alex, draft.Id, CommitChannel.ConfirmedInChat, token, default);
+        Assert.Equal(DraftStatus.Committed, receipt.Status);
+        Assert.Single(_pi.Writes);
+    }
+
     private async Task<Draft> CommitPlan(ChangeInput change)
     {
         var plan = await _planner.PlanAsync("PTO", [change], default);

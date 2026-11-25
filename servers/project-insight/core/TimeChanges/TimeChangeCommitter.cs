@@ -189,6 +189,8 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
         var stale = new List<string>();
         var today = Weeks.Today(time);
         var ptoByUser = new Dictionary<string, IReadOnlyList<PiPto>>();
+        // People whose PTO was readable at plan time but not now, with what the failed read said.
+        var unreadNow = new Dictionary<string, string>();
         var legacy = draft.FingerprintVersion is null;
         foreach (var week in draft.Weeks)
         {
@@ -218,18 +220,23 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
                     // A cancelled request reads as a failed one; it's a cancellation, never a reason to check without PTO.
                     ct.ThrowIfCancellationRequested();
                     // PTO was readable at plan time but isn't now. With no PTO rows for this person, fall back to no
-                    // PTO in the fingerprint: a day without PTO hashes as it did, and a day with PTO then mismatches,
-                    // which fails safe as stale.
+                    // PTO in the fingerprint: a day without PTO hashes as it did, so it can still be checked.
                     ptoByUser[week.UserId] = [];
                     pto = null;
+                    unreadNow[week.UserId] = e.Message;
                 }
             }
             foreach (var (key, date) in days)
             {
                 var now = Fingerprint.Compute(entries.Where(e => e.Date == date), Weeks.Covering(sheets, date),
                     pto?.Where(p => p.Date == date));
-                if (now != draft.DayFingerprints[key])
-                    stale.Add(Weeks.DayLabel(week.IsCaller ? "You" : week.UserName, date, today));
+                if (now == draft.DayFingerprints[key])
+                    continue;
+                // Without this person's PTO, a mismatch may only be the PTO left out, not a change in PI. Stale is
+                // final, so don't guess: report PTO as unreadable, which hands the draft back to commit later.
+                if (unreadNow.TryGetValue(week.UserId, out var unread))
+                    throw new TimeChangeException("pi_unavailable", unread);
+                stale.Add(Weeks.DayLabel(week.IsCaller ? "You" : week.UserName, date, today));
             }
         }
         return stale;
