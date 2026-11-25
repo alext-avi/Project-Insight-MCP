@@ -1107,7 +1107,7 @@ public sealed class TimeChangePlannerTests : IDisposable
 
         await _planner.PlanAsync("Mixed", [CreatePto("2026-10-26", 1m), CreateTime("2026-10-27", 1m), new() { Action = "update_pto", PtoEntryId = "pto-1", Hours = 3m }], default);
 
-        Assert.Equal(1, _pi.ListPtoCalls);
+        Assert.Equal(1, _pi.PtoReads);
     }
 
     [Theory]

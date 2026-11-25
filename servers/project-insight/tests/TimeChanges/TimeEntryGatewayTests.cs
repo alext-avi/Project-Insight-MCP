@@ -201,7 +201,7 @@ public class TimeEntryGatewayTests
     }
 
     [Fact]
-    public async Task ListPtoTimeCodes_collects_codes_from_every_record_including_accruals()
+    public async Task ReadPto_collects_codes_from_every_record_including_accruals()
     {
         var (gw, _) = Create(Json(HttpStatusCode.OK, """
             [{"Id":"pto-1","User_Id":"u-1","Date":"2026-11-02T00:00:00","PTOHours":8,"TimeCode_Id":"tc-1","TimeCode":{"Id":"tc-1","Name":"PTO"}},
@@ -210,33 +210,33 @@ public class TimeEntryGatewayTests
              {"Id":"acc-2","User_Id":"u-1","Date":"2026-01-01T00:00:00","PTOAdded":8}]
             """));
 
-        var codes = await gw.ListPtoTimeCodesAsync("u-1", default);
+        var codes = (await gw.ReadPtoAsync("u-1", default)).TimeCodes;
 
         Assert.Equal([new PiTimeCode("tc-7", "Floating Holiday"), new PiTimeCode("tc-1", "PTO")], codes);
     }
 
     [Fact]
-    public async Task ListPtoTimeCodes_reads_whether_each_code_is_active()
+    public async Task ReadPto_reads_whether_each_code_is_active()
     {
         var (gw, _) = Create(Json(HttpStatusCode.OK, """
             [{"Id":"pto-1","User_Id":"u-1","Date":"2026-11-02T00:00:00","PTOHours":8,"TimeCode_Id":"tc-old","TimeCode":{"Id":"tc-old","Name":"PTO","IsActive":false}},
              {"Id":"pto-2","User_Id":"u-1","Date":"2026-11-03T00:00:00","PTOHours":4,"TimeCode_Id":"tc-new","TimeCode":{"Id":"tc-new","Name":"PTO","IsActive":true}}]
             """));
 
-        var codes = await gw.ListPtoTimeCodesAsync("u-1", default);
+        var codes = (await gw.ReadPtoAsync("u-1", default)).TimeCodes;
 
         Assert.Equal([("tc-new", true), ("tc-old", false)], codes.OrderBy(c => c.Id, StringComparer.Ordinal).Select(c => (c.Id, c.IsActive)));
     }
 
     [Fact]
-    public async Task ListPto_maps_records_and_time_codes()
+    public async Task ReadPto_maps_records_and_time_codes_from_one_call()
     {
         var (gw, pi) = Create(Json(HttpStatusCode.OK, PtoListJson));
 
-        var pto = Assert.Single(await gw.ListPtoAsync("u-1", default));
+        var pto = Assert.Single((await gw.ReadPtoAsync("u-1", default)).Records);
 
         Assert.Equal(new PiPto("pto-1", "u-1", new DateOnly(2026, 11, 2), 8m, "tc-1", "PTO", "Trip", "te-9", false), pto);
-        Assert.Contains("/api/user-pto/list-by-user/u-1", pi.Requests[0].Uri.PathAndQuery);
+        Assert.Contains("/api/user-pto/list-by-user/u-1", Assert.Single(pi.Requests).Uri.PathAndQuery);
     }
 
     [Fact]

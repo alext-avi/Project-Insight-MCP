@@ -26,11 +26,11 @@ public sealed class FakeGateway : ITimeEntryGateway
     /// <summary>PI updates a PTO record's linked time entry in place. Set false to simulate it staying put.</summary>
     public bool UpdatePtoMovesLinkedEntry { get; set; } = true;
 
-    /// <summary>When true, ListPtoAsync throws pi_unavailable.</summary>
+    /// <summary>When true, ReadPtoAsync throws pi_unavailable.</summary>
     public bool PtoListThrows { get; set; }
 
-    /// <summary>How many times ListPtoAsync was called.</summary>
-    public int ListPtoCalls { get; private set; }
+    /// <summary>How many times a user's PTO list was read from PI (each read is one list_user_pto API call).</summary>
+    public int PtoReads { get; private set; }
 
     /// <summary>Project colours by project id; projects not listed have none.</summary>
     public Dictionary<string, string> ProjectColors { get; } = new();
@@ -197,28 +197,22 @@ public sealed class FakeGateway : ITimeEntryGateway
         return new PiWrite(true, null, null);
     }
 
-    /// <summary>When set, ListPtoAsync cancels it first: the request is cancelled while PTO is being read.</summary>
+    /// <summary>When set, ReadPtoAsync cancels it first: the request is cancelled while PTO is being read.</summary>
     public CancellationTokenSource? CancelDuringPtoList { get; set; }
 
-    public async Task<IReadOnlyList<PiPto>> ListPtoAsync(string userId, CancellationToken ct)
+    public async Task<PiPtoList> ReadPtoAsync(string userId, CancellationToken ct)
     {
-        ListPtoCalls++;
+        PtoReads++;
         await Enter();
         CancelDuringPtoList?.Cancel();
         // As the real gateway: the API service turns a cancelled request into a failed one, so it reads as unavailable.
         if (PtoListThrows || ct.IsCancellationRequested) throw new TimeChangeException("pi_unavailable", "Could not read PTO in Project Insight.");
-        return Pto.Where(p => p.UserId == userId).ToList();
-    }
-
-    public async Task<IReadOnlyList<PiTimeCode>> ListPtoTimeCodesAsync(string userId, CancellationToken ct)
-    {
-        await Enter();
-        if (PtoListThrows) throw new TimeChangeException("pi_unavailable", "Could not read PTO in Project Insight.");
-        return Pto.Where(p => p.UserId == userId && !string.IsNullOrWhiteSpace(p.TimeCodeName))
+        var codes = Pto.Where(p => p.UserId == userId && !string.IsNullOrWhiteSpace(p.TimeCodeName))
             .Select(p => new PiTimeCode(p.TimeCodeId, p.TimeCodeName!))
             .Concat(AccrualCodes.GetValueOrDefault(userId) ?? [])
             .GroupBy(c => c.Id).Select(g => g.First() with { IsActive = !InactiveCodes.Contains(g.Key) })
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        return new PiPtoList(Pto.Where(p => p.UserId == userId).ToList(), codes);
     }
 
     public async Task<PiPto?> GetPtoAsync(string ptoEntryId, CancellationToken ct)

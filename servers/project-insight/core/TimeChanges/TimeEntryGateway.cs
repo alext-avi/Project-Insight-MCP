@@ -16,6 +16,8 @@ public sealed record PiTimeSheet(string Id, DateOnly Start, DateOnly End, bool S
 public sealed record PiTimeCode(string Id, string Name, bool IsActive = true);
 public sealed record PiPto(string Id, string UserId, DateOnly Date, decimal Hours, string TimeCodeId, string? TimeCodeName,
     string? Description, string? TimeEntryId, bool Approved);
+/// <summary>One read of a user's PTO list: its usage records, and the time codes on any of its records.</summary>
+public sealed record PiPtoList(IReadOnlyList<PiPto> Records, IReadOnlyList<PiTimeCode> TimeCodes);
 public sealed record PtoWrite(string UserId, DateOnly Date, decimal Hours, string TimeCodeId, string? Description);
 public sealed record EntryWrite(string UserId, string TaskId, DateOnly Date, decimal Hours, bool Billable, string? Description, string? TimeSheetId);
 /// <summary>
@@ -39,10 +41,13 @@ public interface ITimeEntryGateway
     Task<PiWrite> CreateEntryAsync(EntryWrite entry, CancellationToken ct);
     Task<PiWrite> UpdateEntryAsync(string timeEntryId, EntryWrite values, CancellationToken ct);
     Task<PiWrite> DeleteEntryAsync(string timeEntryId, CancellationToken ct);
-    /// <summary>Every PTO usage record (PTOHours above zero) for a user, time code expanded. Accrual-only and undated records are left out.</summary>
-    Task<IReadOnlyList<PiPto>> ListPtoAsync(string userId, CancellationToken ct);
-    /// <summary>The time codes (distinct id and name, by name) on any of a user's PTO records, accrual and balance records included, as list_user_pto collects them.</summary>
-    Task<IReadOnlyList<PiTimeCode>> ListPtoTimeCodesAsync(string userId, CancellationToken ct);
+    /// <summary>
+    /// A user's PTO list, read once. <see cref="PiPtoList.Records"/>: every usage record (PTOHours above zero), time code
+    /// expanded; accrual-only and undated records are left out. <see cref="PiPtoList.TimeCodes"/>: the time codes
+    /// (distinct id and name, by name) on any of the records, accrual and balance records included, as list_user_pto
+    /// collects them.
+    /// </summary>
+    Task<PiPtoList> ReadPtoAsync(string userId, CancellationToken ct);
     Task<PiPto?> GetPtoAsync(string ptoEntryId, CancellationToken ct);
     /// <summary>Creates PTO; PI makes the linked time entry itself. <see cref="PiWrite.SavedId"/> is the PTO id.</summary>
     Task<PiWrite> CreatePtoAsync(PtoWrite pto, CancellationToken ct);
@@ -221,26 +226,20 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
     private const string PtoModelProperties =
         "Id,User_Id,Date,PTOHours,PTOAdded,PTOBalance,TimeCode_Id,TimeCode,TimeEntry_Id,Description,DateApproved,UserApproved_Id,CreatedDateTimeUTC,UpdatedDateTimeUTC;TimeCode:Id,Name,IsActive";
 
-    public async Task<IReadOnlyList<PiPto>> ListPtoAsync(string userId, CancellationToken ct)
+    public async Task<PiPtoList> ReadPtoAsync(string userId, CancellationToken ct)
     {
         var response = await api.ListUserPtoAsync(userId, PtoModelProperties, ct);
         if (!response.Success)
             throw Unavailable("read PTO", response.Message, response.Errors);
-        return (response.Data ?? new()).Select(ToPto).OfType<PiPto>().ToList();
-    }
-
-    public async Task<IReadOnlyList<PiTimeCode>> ListPtoTimeCodesAsync(string userId, CancellationToken ct)
-    {
-        var response = await api.ListUserPtoAsync(userId, PtoModelProperties, ct);
-        if (!response.Success)
-            throw Unavailable("read PTO", response.Message, response.Errors);
-        return (response.Data ?? new())
+        var all = response.Data ?? new();
+        var codes = all
             .Select(p => (Id: p.TimeCode?.Id ?? p.TimeCodeId, p.TimeCode?.Name, p.TimeCode?.IsActive))
             .Where(c => !string.IsNullOrWhiteSpace(c.Id) && !string.IsNullOrWhiteSpace(c.Name))
             .GroupBy(c => c.Id!)
             .Select(g => new PiTimeCode(g.Key, g.First().Name!, g.First().IsActive != false))
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        return new PiPtoList(all.Select(ToPto).OfType<PiPto>().ToList(), codes);
     }
 
     public async Task<PiPto?> GetPtoAsync(string ptoEntryId, CancellationToken ct)

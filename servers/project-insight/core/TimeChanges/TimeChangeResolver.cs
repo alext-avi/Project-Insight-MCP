@@ -33,8 +33,7 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
     private IReadOnlyList<PiNamed>? _projects;
     private readonly Dictionary<string, IReadOnlyList<PiNamed>> _tasks = new();
     private readonly Dictionary<string, PiUser?> _users = new();
-    private readonly Dictionary<string, IReadOnlyList<PiPto>> _pto = new();
-    private readonly Dictionary<string, IReadOnlyList<PiTimeCode>> _timeCodes = new();
+    private readonly Dictionary<string, PiPtoList> _pto = new();
 
     public async Task<Resolved<PiUser>> UserAsync(int index, string? user, PiUser caller, CancellationToken ct)
     {
@@ -115,12 +114,19 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
         return new(new PiTask(t.Match.Id, t.Match.Name, p.Match.Id, p.Match.Name), null);
     }
 
-    /// <summary>A person's PTO list, read once per plan. A failed read isn't cached, so it throws to every caller.</summary>
+    /// <summary>A person's PTO records, from their PTO list read once per plan.</summary>
     public async Task<IReadOnlyList<PiPto>> PtoAsync(string userId, CancellationToken ct)
+        => (await PtoListAsync(userId, ct)).Records;
+
+    /// <summary>
+    /// A person's PTO list, read once per plan for both their records and their time codes. A failed read isn't
+    /// cached, so it throws to every caller.
+    /// </summary>
+    private async Task<PiPtoList> PtoListAsync(string userId, CancellationToken ct)
     {
-        if (!_pto.TryGetValue(userId, out var pto))
-            _pto[userId] = pto = await pi.ListPtoAsync(userId, ct);
-        return pto;
+        if (!_pto.TryGetValue(userId, out var list))
+            _pto[userId] = list = await pi.ReadPtoAsync(userId, ct);
+        return list;
     }
 
     /// <summary>
@@ -133,8 +139,7 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
     public async Task<Resolved<PiTimeCode>> TimeCodeAsync(int index, string userId, string? timeCodeId, string? timeCode,
         PiTimeCode? restored, CancellationToken ct)
     {
-        if (!_timeCodes.TryGetValue(userId, out var known))
-            _timeCodes[userId] = known = await pi.ListPtoTimeCodesAsync(userId, ct);
+        var known = (await PtoListAsync(userId, ct)).TimeCodes;
         if (!string.IsNullOrWhiteSpace(timeCodeId))
         {
             var id = timeCodeId.Trim();

@@ -643,12 +643,12 @@ public sealed class TimeChangeCommitterTests : IDisposable
         var (draft, _) = await Plan([new() { Action = "create", Date = "2026-10-27", Hours = 1m, TaskId = "t-1" }]);
         Assert.Equal(["u-1"], draft.PtoUnreadUsers);
         _pi.PtoListThrows = false;
-        var calls = _pi.ListPtoCalls;
+        var calls = _pi.PtoReads;
 
         var result = await Commit(draft.Id);
 
         Assert.Equal(DraftStatus.Committed, result.Status);
-        Assert.Equal(calls, _pi.ListPtoCalls);
+        Assert.Equal(calls, _pi.PtoReads);
     }
 
     // A 2.1.0 draft: no kind, ptoEntryId, linkedTimeEntryId, ptoApproved, timeCodeId, timeCodeName, ptoUnreadUsers, ptoDelta,
@@ -718,7 +718,7 @@ public sealed class TimeChangeCommitterTests : IDisposable
 
         Assert.Equal(DraftStatus.Committed, result.Status);
         Assert.Equal(["create:te-100"], _pi.Writes);
-        Assert.Equal(0, _pi.ListPtoCalls);
+        Assert.Equal(0, _pi.PtoReads);
     }
 
     [Fact]
@@ -902,8 +902,7 @@ public sealed class TimeChangeCommitterTests : IDisposable
         public Task<PiWrite> CreateEntryAsync(EntryWrite w, CancellationToken ct) => inner.CreateEntryAsync(w, ct);
         public Task<PiWrite> UpdateEntryAsync(string timeEntryId, EntryWrite w, CancellationToken ct) => inner.UpdateEntryAsync(timeEntryId, w, ct);
         public Task<PiWrite> DeleteEntryAsync(string timeEntryId, CancellationToken ct) => inner.DeleteEntryAsync(timeEntryId, ct);
-        public Task<IReadOnlyList<PiPto>> ListPtoAsync(string userId, CancellationToken ct) => inner.ListPtoAsync(userId, ct);
-        public Task<IReadOnlyList<PiTimeCode>> ListPtoTimeCodesAsync(string userId, CancellationToken ct) => inner.ListPtoTimeCodesAsync(userId, ct);
+        public Task<PiPtoList> ReadPtoAsync(string userId, CancellationToken ct) => inner.ReadPtoAsync(userId, ct);
         public Task<PiPto?> GetPtoAsync(string ptoEntryId, CancellationToken ct) => inner.GetPtoAsync(ptoEntryId, ct);
         public Task<PiWrite> UpdatePtoAsync(string ptoEntryId, PtoWrite w, CancellationToken ct) => inner.UpdatePtoAsync(ptoEntryId, w, ct);
         public Task<PiWrite> DeletePtoAsync(string ptoEntryId, CancellationToken ct) => inner.DeletePtoAsync(ptoEntryId, ct);

@@ -213,7 +213,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
             {
                 try
                 {
-                    ptoByUser[week.UserId] = pto = await pi.ListPtoAsync(week.UserId, ct);
+                    ptoByUser[week.UserId] = pto = (await pi.ReadPtoAsync(week.UserId, ct)).Records;
                 }
                 catch (TimeChangeException e) when (e.Code == "pi_unavailable" && !draft.Rows.Any(r => r.Kind == RowKind.Pto && r.UserId == week.UserId))
                 {
