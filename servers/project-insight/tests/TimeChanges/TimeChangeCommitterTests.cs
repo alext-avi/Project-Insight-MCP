@@ -786,6 +786,48 @@ public sealed class TimeChangeCommitterTests : IDisposable
         Assert.Single(_pi.Writes);
     }
 
+    /// <summary>Changes PTO record <paramref name="id"/>'s hours in PI, and its linked entry's, as an edit in PI would.</summary>
+    private void SetPtoHours(string id, decimal hours)
+    {
+        var i = _pi.Pto.FindIndex(p => p.Id == id);
+        _pi.Pto[i] = _pi.Pto[i] with { Hours = hours };
+        var j = _pi.Entries.FindIndex(e => e.Id == _pi.Pto[i].TimeEntryId);
+        _pi.Entries[j] = _pi.Entries[j] with { Hours = hours };
+    }
+
+    [Theory]
+    [InlineData("update_pto")]
+    [InlineData("delete_pto")]
+    public async Task A_pto_changed_between_the_record_read_and_the_list_read_is_planned_from_the_list(string action)
+    {
+        // The row's before and the day's fingerprint must describe the same PTO state, or a commit can't tell the
+        // row's before is out of date.
+        _pi.AddPto("pto-1", "u-1", TimeChangePlannerTests.Wed, 4m);
+        _pi.AfterGetPto = id => { SetPtoHours(id, 6m); _pi.AfterGetPto = null; };
+
+        var draft = (await _planner.PlanAsync("PTO", [action == "update_pto"
+            ? new() { Action = action, PtoEntryId = "pto-1", Hours = 2m }
+            : new() { Action = action, PtoEntryId = "pto-1" }], default)).Draft!;
+
+        Assert.Equal(6m, draft.Rows[0].Before!.Hours);
+        var receipt = await Commit(draft.Id);
+        Assert.Equal(DraftStatus.Committed, receipt.Status);
+        // Undo puts back what PI really had.
+        await UndoAndCommit(receipt);
+        Assert.Equal(6m, Assert.Single(_pi.Pto).Hours);
+    }
+
+    [Fact]
+    public async Task A_pto_changed_in_pi_after_planning_still_makes_the_draft_stale()
+    {
+        _pi.AddPto("pto-1", "u-1", TimeChangePlannerTests.Wed, 4m);
+        var draft = (await _planner.PlanAsync("PTO", [new() { Action = "update_pto", PtoEntryId = "pto-1", Hours = 2m }], default)).Draft!;
+        SetPtoHours("pto-1", 6m);
+
+        Assert.Equal(DraftStatus.Stale, (await Commit(draft.Id)).Status);
+        Assert.Empty(_pi.Writes);
+    }
+
     private async Task<Draft> CommitPlan(ChangeInput change)
     {
         var plan = await _planner.PlanAsync("PTO", [change], default);

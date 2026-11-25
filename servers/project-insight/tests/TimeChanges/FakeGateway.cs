@@ -215,8 +215,16 @@ public sealed class FakeGateway : ITimeEntryGateway
         return new PiPtoList(Pto.Where(p => p.UserId == userId).ToList(), codes);
     }
 
+    /// <summary>Invoked after each GetPtoAsync with the id read, so a test can change PI between two reads.</summary>
+    public Action<string>? AfterGetPto { get; set; }
+
     public async Task<PiPto?> GetPtoAsync(string ptoEntryId, CancellationToken ct)
-    { await Enter(); return Pto.FirstOrDefault(p => p.Id == ptoEntryId); }
+    {
+        await Enter();
+        var pto = Pto.FirstOrDefault(p => p.Id == ptoEntryId);
+        AfterGetPto?.Invoke(ptoEntryId);
+        return pto;
+    }
 
     public async Task<PiWrite> CreatePtoAsync(PtoWrite w, CancellationToken ct)
     {

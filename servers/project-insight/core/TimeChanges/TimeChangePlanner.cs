@@ -312,6 +312,13 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             clarifications.Add(new Clarification { ChangeIndex = i, Field = "ptoEntryId", Query = id, Message = $"No PTO entry with id {id}." });
             return null;
         }
+        // The day's fingerprint comes from the owner's PTO list (read once per plan), so the row's before comes from
+        // that same read: if PI changed the record between the two reads, the draft still describes one state, and a
+        // later change still makes the commit stale. A record the list doesn't have yet keeps the direct read; the
+        // fingerprint then lacks it, so the commit goes stale rather than act on a mismatch. A person with PTO rows
+        // needs their list anyway, so an unreadable list fails the plan here as it would in LoadWeeksAsync.
+        if ((await resolver.PtoAsync(pto.UserId, ct)).FirstOrDefault(p => TimeChangeResolver.SameId(p.Id, pto.Id)) is { } listed)
+            pto = listed;
         var owner = pto.UserId == caller.Id
             ? caller
             : await resolver.UserByIdAsync(pto.UserId, ct) ?? new PiUser(pto.UserId, pto.UserId);
