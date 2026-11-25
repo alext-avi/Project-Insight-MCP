@@ -6,7 +6,8 @@ namespace ProjectInsightMCP.TimeChanges;
 
 /// <summary>
 /// PI time entries have no "last updated" field, so staleness is detected by hashing everything
-/// a draft depends on for one person-day: the day's entries plus the timesheet's status flags.
+/// a draft depends on for one person-day: the day's entries, the timesheet's status flags and the day's PTO records
+/// (approval included, since the card warns about approved PTO).
 /// </summary>
 public static class Fingerprint
 {
@@ -32,7 +33,8 @@ public static class Fingerprint
             sb.Append("\npto|").Append(p.Id).Append('|')
               .Append(p.TimeCodeId).Append('|')
               .Append(p.Hours.ToString("0.####", CultureInfo.InvariantCulture)).Append('|')
-              .Append(p.Description ?? "");
+              .Append(p.Description ?? "").Append('|')
+              .Append(p.Approved ? '1' : '0');
         }
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())));
     }

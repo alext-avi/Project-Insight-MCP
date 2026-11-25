@@ -59,13 +59,14 @@ public class FingerprintTests
     public void Pto_change_changes_hash()
     {
         PiEntry[] entries = [Entry("a")];
-        PiPto Pto(decimal hours = 4m, string code = "tc-1", string? desc = null) => new("p-1", "u-1", Day, hours, code, "PTO", desc, "te-pto", false);
+        PiPto Pto(decimal hours = 4m, string code = "tc-1", string? desc = null, bool approved = false) => new("p-1", "u-1", Day, hours, code, "PTO", desc, "te-pto", approved);
         var baseline = Fingerprint.Compute(entries, null, [Pto()]);
 
         Assert.NotEqual(Fingerprint.Compute(entries, null), baseline);
         Assert.NotEqual(baseline, Fingerprint.Compute(entries, null, [Pto(hours: 3m)]));
         Assert.NotEqual(baseline, Fingerprint.Compute(entries, null, [Pto(code: "tc-2")]));
         Assert.NotEqual(baseline, Fingerprint.Compute(entries, null, [Pto(desc: "trip")]));
+        Assert.NotEqual(baseline, Fingerprint.Compute(entries, null, [Pto(approved: true)]));
         Assert.Equal(baseline, Fingerprint.Compute(entries, null, [Pto()]));
     }
 

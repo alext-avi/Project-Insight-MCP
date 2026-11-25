@@ -526,6 +526,20 @@ public sealed class TimeChangeCommitterTests : IDisposable
     }
 
     [Fact]
+    public async Task Stale_when_the_pto_being_deleted_is_approved_after_planning()
+    {
+        AddWedPto();
+        var (draft, _) = await Plan([new() { Action = "delete_pto", PtoEntryId = "pto-1" }]);
+        Assert.Null(draft.Rows[0].PtoApproved); // planned without the approval warning
+        _pi.Pto[0] = _pi.Pto[0] with { Approved = true };
+
+        var result = await Commit(draft.Id);
+
+        Assert.Equal(DraftStatus.Stale, result.Status);
+        Assert.Empty(_pi.Writes);
+    }
+
+    [Fact]
     public async Task Unchanged_pto_on_affected_day_is_not_stale()
     {
         _pi.AddPto("pto-1", "u-1", TimeChangePlannerTests.Wed, 2m);
