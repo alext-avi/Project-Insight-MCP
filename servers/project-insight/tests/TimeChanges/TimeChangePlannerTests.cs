@@ -1008,6 +1008,29 @@ public sealed class TimeChangePlannerTests : IDisposable
         Assert.Contains("delete_pto takes only ptoEntryId", ex.Message);
     }
 
+    [Theory]
+    [InlineData("update_pto", "")]
+    [InlineData("update_pto", " ")]
+    [InlineData("delete_pto", "")]
+    [InlineData("delete_pto", " ")]
+    [InlineData("update", "")]
+    [InlineData("update", " ")]
+    public async Task An_empty_user_reads_as_no_user_on_updates_and_deletes(string action, string user)
+    {
+        // As for a time update: a blank user is no user, so it can't be a request to change whose entry it is.
+        _pi.AddPto("pto-1", "u-1", Wed, 4m);
+        var change = action switch
+        {
+            "update_pto" => new ChangeInput { Action = action, PtoEntryId = "pto-1", Hours = 2m, User = user },
+            "delete_pto" => new ChangeInput { Action = action, PtoEntryId = "pto-1", User = user },
+            _ => new ChangeInput { Action = action, TimeEntryId = "te-5", Hours = 2m, User = user }
+        };
+
+        var draft = (await PlanPto(change)).Draft!;
+
+        Assert.Equal(action, Assert.Single(draft.Rows).Action);
+    }
+
     // ---- PTO in views, totals, fingerprints and warnings ----
 
     private static DayView Day(Draft d, DateOnly date, string userId = "u-1") => d.Weeks.First(w => w.UserId == userId).Days.Single(x => x.Date == date);

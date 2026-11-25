@@ -268,8 +268,10 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             throw Invalid(n, $"{action} takes no task, project or billable. PTO has a time code instead.");
         if (action == ChangeAction.CreatePto && c.PtoEntryId is not null)
             throw Invalid(n, "create_pto takes no ptoEntryId. Project Insight gives the new PTO entry its id; use update_pto to change an existing one.");
+        // A blank user is no user, as on updates.
         if (action == ChangeAction.DeletePto &&
-            (c.Date is not null || c.Hours is not null || c.Description is not null || c.TimeCode is not null || c.TimeCodeId is not null || c.User is not null))
+            (c.Date is not null || c.Hours is not null || c.Description is not null || c.TimeCode is not null || c.TimeCodeId is not null ||
+             !string.IsNullOrWhiteSpace(c.User)))
             throw Invalid(n, "delete_pto takes only ptoEntryId.");
 
         if (action == ChangeAction.CreatePto)
