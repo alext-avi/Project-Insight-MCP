@@ -682,6 +682,37 @@ public sealed class TimeChangeCommitterTests : IDisposable
     }
 
     [Fact]
+    public async Task Undo_of_a_deleted_pto_whose_code_is_on_no_other_record_keeps_the_codes_name()
+    {
+        AddWedPto();
+        _pi.AddPto("pto-2", "u-1", TimeChangePlannerTests.Mon, 4m, "tc-2", "Bereavement");
+        var receipt = await CommitPlan(new() { Action = "delete_pto", PtoEntryId = "pto-2" });
+        Assert.Equal(DraftStatus.Committed, receipt.Status);
+
+        var undo = (await _planner.PlanUndoAsync(receipt, default)).Draft!;
+
+        var row = undo.Rows.Single();
+        Assert.Equal(("tc-2", "Bereavement"), (row.After!.TimeCodeId, row.After.TimeCodeName));
+        Assert.DoesNotContain(row.Warnings, w => w.Code == WarningCode.UnknownTimeCode);
+        Assert.Contains("PTO · Bereavement", TimeChangeText.For(new TimeChangesView { Kind = "draft", Draft = DraftView.From(undo, Drafts.T0) }, TimeChangePlannerTests.Wed));
+    }
+
+    [Fact]
+    public async Task Undo_of_a_pto_code_change_keeps_the_old_codes_name()
+    {
+        _pi.AddPto("pto-1", "u-1", TimeChangePlannerTests.Wed, 4m, "tc-2", "Bereavement");
+        _pi.AddPto("pto-2", "u-1", TimeChangePlannerTests.Mon, 4m, "tc-1", "PTO");
+        var receipt = await CommitPlan(new() { Action = "update_pto", PtoEntryId = "pto-1", TimeCodeId = "tc-1" });
+        Assert.Equal(DraftStatus.Committed, receipt.Status);
+        Assert.DoesNotContain(_pi.Pto, p => p.TimeCodeId == "tc-2");
+
+        var row = (await _planner.PlanUndoAsync(receipt, default)).Draft!.Rows.Single();
+
+        Assert.Equal(("tc-2", "Bereavement"), (row.After!.TimeCodeId, row.After.TimeCodeName));
+        Assert.DoesNotContain(row.Warnings, w => w.Code == WarningCode.UnknownTimeCode);
+    }
+
+    [Fact]
     public async Task Undo_after_pto_deleted_in_pi_clarifies()
     {
         var receipt = await CommitPlan(CreatePto("2026-10-26", 3m));

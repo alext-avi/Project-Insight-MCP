@@ -22,16 +22,25 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
     public static readonly TimeSpan Lifetime = TimeSpan.FromHours(24);
 
     public Task<PlanResult> PlanAsync(string intent, IReadOnlyList<ChangeInput>? changes, CancellationToken ct)
-        => PlanCoreAsync(intent, changes, undoOf: null, undoOfCommittedAt: null, ct);
+        => PlanCoreAsync(intent, changes, undoOf: null, undoOfCommittedAt: null, restoredCodes: null, ct);
 
     /// <summary>A new draft that reverses a committed receipt's rows.</summary>
     public Task<PlanResult> PlanUndoAsync(Draft receipt, CancellationToken ct)
     {
         if (receipt.Status != DraftStatus.Committed)
             throw new TimeChangeException("not_undoable", "Only committed changes can be undone.");
-        var changes = receipt.Rows
+        var undone = receipt.Rows
             .Where(r => r.Outcome is null or RowOutcome.Applied)
             .Where(r => !(r.Action == ChangeAction.CreatePto && r.SavedId is null)) // can't be addressed, so can't be undone
+            .ToList();
+        // The code a PTO update or delete restores may be on none of the person's PTO records any more, so the
+        // resolver couldn't name it. The receipt still knows its name.
+        var restoredCodes = undone
+            .Select(r => r.Action is ChangeAction.UpdatePto or ChangeAction.DeletePto && r.Before?.TimeCodeId is { } id
+                ? new PiTimeCode(id, r.Before.TimeCodeName ?? id)
+                : null)
+            .ToList();
+        var changes = undone
             .Select(r => r.Action switch
         {
             ChangeAction.Create => new ChangeInput { Action = ChangeAction.Delete, TimeEntryId = r.SavedId },
@@ -65,7 +74,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         // Labels go by kind, never stacking: X → "Undo: X" → "Redo: X" → "Undo: X".
         var isRedo = receipt.UndoOf is not null && receipt.Intent.StartsWith(UndoPrefix, StringComparison.Ordinal);
         var intent = (isRedo ? RedoPrefix : UndoPrefix) + WithoutUndoPrefix(receipt.Intent);
-        return PlanCoreAsync(intent, changes, receipt.Id, receipt.CommittedAt, ct);
+        return PlanCoreAsync(intent, changes, receipt.Id, receipt.CommittedAt, restoredCodes, ct);
     }
 
     private const string UndoPrefix = "Undo: ", RedoPrefix = "Redo: ";
@@ -87,7 +96,10 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         public bool Contains(string userId, DateOnly date) => User.Id == userId && Start <= date && date <= End;
     }
 
-    private async Task<PlanResult> PlanCoreAsync(string intent, IReadOnlyList<ChangeInput>? changes, string? undoOf, DateTimeOffset? undoOfCommittedAt, CancellationToken ct)
+    /// <param name="restoredCodes">Undo only, one per change: the PTO time code (id and name) the change puts back,
+    /// taken from the receipt, so it's named and not flagged unknown when no PTO record uses it any more.</param>
+    private async Task<PlanResult> PlanCoreAsync(string intent, IReadOnlyList<ChangeInput>? changes, string? undoOf, DateTimeOffset? undoOfCommittedAt,
+        IReadOnlyList<PiTimeCode?>? restoredCodes, CancellationToken ct)
     {
         intent = (intent ?? "").Trim();
         if (intent.Length == 0)
@@ -107,7 +119,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         var rows = new List<DraftRow>();
         for (var i = 0; i < changes.Count; i++)
         {
-            if (await BuildRowAsync(i, changes[i], caller, resolver, clarifications, seen, isUndo: undoOf is not null, ct) is { } row)
+            if (await BuildRowAsync(i, changes[i], caller, resolver, clarifications, seen, isUndo: undoOf is not null, restoredCodes?[i], ct) is { } row)
                 rows.Add(row);
         }
 
@@ -154,14 +166,14 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
     }
 
     private async Task<DraftRow?> BuildRowAsync(int i, ChangeInput c, PiUser caller, TimeChangeResolver resolver,
-        List<Clarification> clarifications, HashSet<string> seen, bool isUndo, CancellationToken ct)
+        List<Clarification> clarifications, HashSet<string> seen, bool isUndo, PiTimeCode? restoredCode, CancellationToken ct)
     {
         var n = i + 1;
         var action = (c.Action ?? "").Trim().ToLowerInvariant();
         if (!ChangeAction.IsPto(action) && (c.PtoEntryId is not null || c.TimeCode is not null || c.TimeCodeId is not null))
             throw Invalid(n, $"{action} takes no ptoEntryId, timeCode or timeCodeId. Those are for create_pto, update_pto and delete_pto.");
         if (ChangeAction.IsPto(action))
-            return await BuildPtoRowAsync(i, action, c, caller, resolver, clarifications, seen, isUndo, ct);
+            return await BuildPtoRowAsync(i, action, c, caller, resolver, clarifications, seen, isUndo, restoredCode, ct);
         if (action == ChangeAction.Create)
         {
             var date = ParseDate(n, c.Date);
@@ -242,7 +254,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
     }
 
     private async Task<DraftRow?> BuildPtoRowAsync(int i, string action, ChangeInput c, PiUser caller, TimeChangeResolver resolver,
-        List<Clarification> clarifications, HashSet<string> seen, bool isUndo, CancellationToken ct)
+        List<Clarification> clarifications, HashSet<string> seen, bool isUndo, PiTimeCode? restoredCode, CancellationToken ct)
     {
         var n = i + 1;
         if (c.TimeEntryId is not null)
@@ -260,7 +272,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                 clarifications.Add(uc);
                 return null;
             }
-            var code = await resolver.TimeCodeAsync(i, user.Value!.Id, c.TimeCodeId, c.TimeCode, ct);
+            var code = await resolver.TimeCodeAsync(i, user.Value!.Id, c.TimeCodeId, c.TimeCode, restoredCode, ct);
             if (code.Clarification is { } cc)
             {
                 clarifications.Add(cc);
@@ -308,7 +320,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         string? unknownCode = null;
         if (c.TimeCodeId is not null || c.TimeCode is not null)
         {
-            var code = await resolver.TimeCodeAsync(i, owner.Id, c.TimeCodeId, c.TimeCode, ct);
+            var code = await resolver.TimeCodeAsync(i, owner.Id, c.TimeCodeId, c.TimeCode, restoredCode, ct);
             if (code.Clarification is { } cc)
             {
                 clarifications.Add(cc);

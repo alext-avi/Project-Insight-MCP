@@ -128,16 +128,21 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
     /// name, else a unique partial name. PI has no time-code list, so the known codes are the ones on this
     /// person's PTO records.
     /// </summary>
-    public async Task<Resolved<PiTimeCode>> TimeCodeAsync(int index, string userId, string? timeCodeId, string? timeCode, CancellationToken ct)
+    /// <param name="restored">Undo only: the code (with the name a receipt recorded) the change puts back. An id
+    /// matching it that's on none of this person's records is taken with that name, not flagged unknown.</param>
+    public async Task<Resolved<PiTimeCode>> TimeCodeAsync(int index, string userId, string? timeCodeId, string? timeCode,
+        PiTimeCode? restored, CancellationToken ct)
     {
         if (!_timeCodes.TryGetValue(userId, out var known))
             _timeCodes[userId] = known = await pi.ListPtoTimeCodesAsync(userId, ct);
         if (!string.IsNullOrWhiteSpace(timeCodeId))
         {
             var id = timeCodeId.Trim();
-            return known.FirstOrDefault(c => c.Id == id) is { } byId
-                ? new(byId, null)
-                : new(new PiTimeCode(id, id), null, Unknown: true);
+            if (known.FirstOrDefault(c => c.Id == id) is { } byId)
+                return new(byId, null);
+            if (restored is not null && restored.Id == id)
+                return new(restored, null);
+            return new(new PiTimeCode(id, id), null, Unknown: true);
         }
         var candidates = known.Select(c => new Candidate { Id = c.Id, Name = c.Name }).ToList();
         if (string.IsNullOrWhiteSpace(timeCode))
