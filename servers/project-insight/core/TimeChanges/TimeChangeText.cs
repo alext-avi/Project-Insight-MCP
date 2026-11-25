@@ -116,7 +116,7 @@ public static class TimeChangeText
             ChangeAction.Delete => $"−{Weeks.FormatHours(r.Before!.Hours)}h",
             _ => $"{Weeks.FormatHours(r.Before!.Hours)}h → {Weeks.FormatHours(r.After!.Hours)}h"
         };
-        var what = pto ? $"PTO · {v.TimeCodeName ?? "time off"}" : $"{v.ProjectName} › {v.TaskName}";
+        var what = pto ? PtoLabel(v.TimeCodeName) : $"{v.ProjectName} › {v.TaskName}";
         var line = new StringBuilder(
             $"{r.Index + 1}. {r.Action} · {who} · {Weeks.ShortDate(v.Date, today)} · {what} · {hours}");
         if (v.Billable && !pto) line.Append(" (billable)");
@@ -126,7 +126,7 @@ public static class TimeChangeText
             if (b.Date != a.Date) line.Append($"; moved from {Weeks.ShortDate(b.Date, today)}");
             if (pto)
             {
-                if (!TimeChangeResolver.SameId(b.TimeCodeId, a.TimeCodeId)) line.Append($"; was PTO · {b.TimeCodeName ?? "time off"}");
+                if (!TimeChangeResolver.SameId(b.TimeCodeId, a.TimeCodeId)) line.Append($"; was {PtoLabel(b.TimeCodeName)}");
             }
             else if (b.TaskId != a.TaskId) line.Append($"; was {b.ProjectName} › {b.TaskName}");
         }
@@ -136,6 +136,9 @@ public static class TimeChangeText
                         $"{(r.Error is null ? "" : ": " + r.Error)}]");
         return line.ToString();
     }
+
+    /// <summary>"PTO · Vacation", or just "PTO" without a time code name, as on the card.</summary>
+    private static string PtoLabel(string? timeCodeName) => string.IsNullOrWhiteSpace(timeCodeName) ? "PTO" : $"PTO · {timeCodeName}";
 
     private static string Count(int n, string one, string many) => $"{n} {(n == 1 ? one : many)}";
 

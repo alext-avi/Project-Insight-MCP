@@ -99,6 +99,28 @@ public sealed class TimeChangeServiceTests : IDisposable
     }
 
     [Fact]
+    public void A_pto_row_without_a_time_code_name_reads_as_just_pto()
+    {
+        static EntryValues Values(string code, decimal hours) => new() { TimeCodeId = code, Date = new DateOnly(2026, 10, 26), Hours = hours, TaskId = "", ProjectId = "", ProjectName = "", TaskName = "" };
+        var pto = new DraftRow
+        {
+            Index = 0, Action = ChangeAction.UpdatePto, Kind = RowKind.Pto, UserId = "u-1", UserName = "Alex",
+            Before = Values("tc-9", 2m), After = Values("tc-1", 3m)
+        };
+        var view = new DraftView
+        {
+            Id = "d-1", Status = DraftStatus.Draft, Intent = "x", ProposedByName = "Alex", ProposedAt = Drafts.T0, ExpiresAt = Drafts.T0.AddHours(1), Rows = [pto],
+            Weeks = [new WeekView { UserId = "u-1", UserName = "Alex", IsCaller = true, Start = new DateOnly(2026, 10, 25), End = new DateOnly(2026, 10, 31) }],
+            Totals = new DraftTotals { Changes = 1, Days = 1, People = 1, NetHours = 1m, PtoDelta = 1m },
+        };
+
+        var text = TimeChangeText.For(new TimeChangesView { Kind = "draft", Draft = view }, new DateOnly(2026, 10, 27));
+
+        Assert.Contains("1. update_pto · You · Mon 26 Oct · PTO · 2h → 3h; was PTO", text);
+        Assert.DoesNotContain("time off", text);
+    }
+
+    [Fact]
     public async Task Text_shows_the_year_of_a_date_outside_this_year()
     {
         var r = await _service.PlanAsync("Log", [new() { Action = "create", Date = "2025-10-27", Hours = 1m, TaskId = "t-5" }], default);

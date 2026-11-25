@@ -477,8 +477,9 @@
   // PI's ids are GUIDs, which can come back in either case; the server treats them as the same id.
   function sameId(a, b) { return String(a || "").toLowerCase() === String(b || "").toLowerCase(); }
 
-  // PTO entries are labelled by their time code and carry no project swatch or billable tag.
-  function ptoLabel(timeCodeName) { return "PTO · " + (timeCodeName || "time off"); }
+  // PTO entries are labelled by their time code and carry no project swatch or billable tag. Without a code (the
+  // person's PTO list couldn't be read) the label is just PTO.
+  function ptoLabel(timeCodeName) { return timeCodeName ? "PTO · " + timeCodeName : "PTO"; }
   const PTO_BASE = { create_pto: "create", update_pto: "update", delete_pto: "delete" };
 
   function contextRow(c) {
