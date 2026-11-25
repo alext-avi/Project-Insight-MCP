@@ -162,16 +162,16 @@ public class ProjectInsightApiService
                 requestBody["companyDefault_Id"] = request.CompanyId;
 
             if (request.StartDateFrom.HasValue)
-                requestBody["startDateFrom"] = request.StartDateFrom.Value.ToString("yyyy-MM-dd");
+                requestBody["startDateFrom"] = request.StartDateFrom.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
             if (request.StartDateTo.HasValue)
-                requestBody["startDateTo"] = request.StartDateTo.Value.ToString("yyyy-MM-dd");
+                requestBody["startDateTo"] = request.StartDateTo.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
             if (request.EndDateFrom.HasValue)
-                requestBody["endDateFrom"] = request.EndDateFrom.Value.ToString("yyyy-MM-dd");
+                requestBody["endDateFrom"] = request.EndDateFrom.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
             if (request.EndDateTo.HasValue)
-                requestBody["endDateTo"] = request.EndDateTo.Value.ToString("yyyy-MM-dd");
+                requestBody["endDateTo"] = request.EndDateTo.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
             var json = JsonSerializer.Serialize(requestBody, JsonOptions);
             var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
@@ -687,16 +687,16 @@ public class ProjectInsightApiService
             parameters.Add($"companyDefault_Id={Uri.EscapeDataString(request.CompanyId)}");
 
         if (request.StartDateFrom.HasValue)
-            parameters.Add($"startDateFrom={request.StartDateFrom.Value:yyyy-MM-dd}");
+            parameters.Add($"startDateFrom={request.StartDateFrom.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
 
         if (request.StartDateTo.HasValue)
-            parameters.Add($"startDateTo={request.StartDateTo.Value:yyyy-MM-dd}");
+            parameters.Add($"startDateTo={request.StartDateTo.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
 
         if (request.EndDateFrom.HasValue)
-            parameters.Add($"endDateFrom={request.EndDateFrom.Value:yyyy-MM-dd}");
+            parameters.Add($"endDateFrom={request.EndDateFrom.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
 
         if (request.EndDateTo.HasValue)
-            parameters.Add($"endDateTo={request.EndDateTo.Value:yyyy-MM-dd}");
+            parameters.Add($"endDateTo={request.EndDateTo.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
 
         if (!string.IsNullOrEmpty(request.ModelProperties))
             parameters.Add($"modelProperties={Uri.EscapeDataString(request.ModelProperties)}");
