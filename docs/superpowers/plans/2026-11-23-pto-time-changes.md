@@ -204,6 +204,7 @@ git commit -m "docs: record how PI's PTO API treats linked time entries"
     - `update_pto` → `UpdatePtoAsync`, plus the linked-entry update only if `docs/PTO.md` says PI doesn't do it.
     - `delete_pto` → `DeletePtoAsync`, then cleanup.
   - Cleanup after any PTO delete: if `GetEntryAsync(linkedId)` still returns the entry, `DeleteEntryAsync(linkedId)`. A cleanup failure fails the row.
+  - **Amended after the live check (2026-11-23):** the read-back and the cleanup above were removed. PI deletes a PTO's linked time entry itself when the PTO is deleted, and updates it in place when the PTO is updated, so the committer only writes the PTO and never reads or deletes the linked entry (doing so straight after the delete races PI: a day search still lists it, and a GET or DELETE of it returns HTTP 500). The "then clean up" steps for `delete_pto` and the `create_pto` reverse, and the `create_pto` read-back of `LinkedTimeEntryId`, are superseded. See `docs/PTO.md` row 4 and the spec's matching amendment.
   - Reverse:
     - `create_pto` → delete PTO and clean up.
     - `update_pto` → `UpdatePtoAsync` with the before values.
