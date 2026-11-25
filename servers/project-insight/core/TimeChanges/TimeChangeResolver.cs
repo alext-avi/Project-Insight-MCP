@@ -145,23 +145,30 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
                 return new(restored, null);
             return new(new PiTimeCode(id, id), null, Unknown: true);
         }
-        var candidates = known.Select(c => new Candidate { Id = c.Id, Name = c.Name }).ToList();
         if (string.IsNullOrWhiteSpace(timeCode))
-            return new(null, Clarify(index, "timeCode", "", "Give timeCode or timeCodeId.", candidates));
+            return new(null, Clarify(index, "timeCode", "", "Give timeCode or timeCodeId.", CodeCandidates(known)));
 
+        // An exact name wins, else a partial one. Among several matches, the only active one wins: PI keeps old,
+        // inactive codes on past records, often under the same name as their replacement.
         var query = timeCode.Trim();
         var exact = known.Where(c => string.Equals(c.Name.Trim(), query, StringComparison.OrdinalIgnoreCase)).ToList();
-        if (exact.Count == 1)
-            return new(exact[0], null);
-        var partial = exact.Count > 1 ? exact : known.Where(c => c.Name.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
-        if (partial.Count == 1)
-            return new(partial[0], null);
+        var matches = exact.Count > 0 ? exact : known.Where(c => c.Name.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (matches.Count == 1)
+            return new(matches[0], null);
+        if (matches.Count(c => c.IsActive) == 1)
+            return new(matches.Single(c => c.IsActive), null);
+        if (matches.Count == 0)
+            return new(null, Clarify(index, "timeCode", query, $"No PTO time code matches \"{query}\".", CodeCandidates(known)));
+        var sameName = matches.Select(c => c.Name.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1;
         return new(null, Clarify(index, "timeCode", query,
-            partial.Count == 0
-                ? $"No PTO time code matches \"{query}\"."
-                : $"{partial.Count} PTO time codes match \"{query}\". Use the exact name or a timeCodeId.",
-            candidates));
+            sameName
+                ? $"{matches.Count} PTO time codes are named \"{matches[0].Name.Trim()}\". Use the timeCodeId of the one you mean."
+                : $"{matches.Count} PTO time codes match \"{query}\". Use the exact name or a timeCodeId.",
+            CodeCandidates(matches)));
     }
+
+    private static IEnumerable<Candidate> CodeCandidates(IEnumerable<PiTimeCode> codes)
+        => codes.Select(c => new Candidate { Id = c.Id, Name = c.IsActive ? c.Name : c.Name + " (inactive)" });
 
     /// <summary>Whether two PI ids (GUIDs) are the same, ignoring case.</summary>
     public static bool SameId(string? a, string? b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);

@@ -12,7 +12,8 @@ public sealed record PiEntry(string Id, string UserId, DateOnly Date, decimal Ho
 /// <summary>How PI draws a user: initials on their colours, or their photo (a site-relative path) when they have one.</summary>
 public sealed record PiLook(string? Initials, string? Background, string? Foreground, string? PhotoUrl);
 public sealed record PiTimeSheet(string Id, DateOnly Start, DateOnly End, bool Submitted, bool Approved, bool Locked, string? Url);
-public sealed record PiTimeCode(string Id, string Name);
+/// <param name="IsActive">False when PI marks the code inactive (an old code kept for past records).</param>
+public sealed record PiTimeCode(string Id, string Name, bool IsActive = true);
 public sealed record PiPto(string Id, string UserId, DateOnly Date, decimal Hours, string TimeCodeId, string? TimeCodeName,
     string? Description, string? TimeEntryId, bool Approved);
 public sealed record PtoWrite(string UserId, DateOnly Date, decimal Hours, string TimeCodeId, string? Description);
@@ -234,10 +235,10 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
         if (!response.Success)
             throw Unavailable("read PTO", response.Message, response.Errors);
         return (response.Data ?? new())
-            .Select(p => (Id: p.TimeCode?.Id ?? p.TimeCodeId, p.TimeCode?.Name))
+            .Select(p => (Id: p.TimeCode?.Id ?? p.TimeCodeId, p.TimeCode?.Name, p.TimeCode?.IsActive))
             .Where(c => !string.IsNullOrWhiteSpace(c.Id) && !string.IsNullOrWhiteSpace(c.Name))
             .GroupBy(c => c.Id!)
-            .Select(g => new PiTimeCode(g.Key, g.First().Name!))
+            .Select(g => new PiTimeCode(g.Key, g.First().Name!, g.First().IsActive != false))
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }

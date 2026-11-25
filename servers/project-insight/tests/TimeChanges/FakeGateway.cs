@@ -93,6 +93,9 @@ public sealed class FakeGateway : ITimeEntryGateway
     public void AddAccrual(string userId, string timeCodeId, string name)
         => (AccrualCodes.TryGetValue(userId, out var l) ? l : AccrualCodes[userId] = []).Add(new PiTimeCode(timeCodeId, name));
 
+    /// <summary>Time code ids PI marks inactive.</summary>
+    public HashSet<string> InactiveCodes { get; } = new();
+
     public PiPto AddPto(string id, string userId, DateOnly date, decimal hours, string timeCodeId = "tc-1",
         string timeCodeName = "PTO", bool approved = false)
     {
@@ -206,7 +209,7 @@ public sealed class FakeGateway : ITimeEntryGateway
         return Pto.Where(p => p.UserId == userId && !string.IsNullOrWhiteSpace(p.TimeCodeName))
             .Select(p => new PiTimeCode(p.TimeCodeId, p.TimeCodeName!))
             .Concat(AccrualCodes.GetValueOrDefault(userId) ?? [])
-            .GroupBy(c => c.Id).Select(g => g.First())
+            .GroupBy(c => c.Id).Select(g => g.First() with { IsActive = !InactiveCodes.Contains(g.Key) })
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 

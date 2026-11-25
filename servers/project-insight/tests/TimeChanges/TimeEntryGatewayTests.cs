@@ -216,6 +216,19 @@ public class TimeEntryGatewayTests
     }
 
     [Fact]
+    public async Task ListPtoTimeCodes_reads_whether_each_code_is_active()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.OK, """
+            [{"Id":"pto-1","User_Id":"u-1","Date":"2026-11-02T00:00:00","PTOHours":8,"TimeCode_Id":"tc-old","TimeCode":{"Id":"tc-old","Name":"PTO","IsActive":false}},
+             {"Id":"pto-2","User_Id":"u-1","Date":"2026-11-03T00:00:00","PTOHours":4,"TimeCode_Id":"tc-new","TimeCode":{"Id":"tc-new","Name":"PTO","IsActive":true}}]
+            """));
+
+        var codes = await gw.ListPtoTimeCodesAsync("u-1", default);
+
+        Assert.Equal([("tc-new", true), ("tc-old", false)], codes.OrderBy(c => c.Id, StringComparer.Ordinal).Select(c => (c.Id, c.IsActive)));
+    }
+
+    [Fact]
     public async Task ListPto_maps_records_and_time_codes()
     {
         var (gw, pi) = Create(Json(HttpStatusCode.OK, PtoListJson));

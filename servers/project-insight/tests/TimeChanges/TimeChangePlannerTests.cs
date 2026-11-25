@@ -633,6 +633,58 @@ public sealed class TimeChangePlannerTests : IDisposable
     }
 
     [Fact]
+    public async Task Of_two_codes_with_the_same_name_the_only_active_one_is_used()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m, "tc-old", "PTO");
+        _pi.AddPto("pto-2", "u-1", Mon, 4m, "tc-new", "PTO");
+        _pi.InactiveCodes.Add("tc-old");
+
+        var row = (await PlanPto(new() { Action = "create_pto", Date = "2026-10-29", Hours = 3m, TimeCode = "PTO" })).Draft!.Rows[0];
+
+        Assert.Equal("tc-new", row.After!.TimeCodeId);
+    }
+
+    [Fact]
+    public async Task Of_several_partial_matches_the_only_active_one_is_used()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m, "tc-1", "Floating Holiday");
+        _pi.AddPto("pto-2", "u-1", Mon, 4m, "tc-2", "Floating Holiday 2025");
+        _pi.InactiveCodes.Add("tc-2");
+
+        var row = (await PlanPto(new() { Action = "create_pto", Date = "2026-10-29", Hours = 3m, TimeCode = "float" })).Draft!.Rows[0];
+
+        Assert.Equal("tc-1", row.After!.TimeCodeId);
+    }
+
+    [Fact]
+    public async Task Two_active_codes_with_the_same_name_ask_for_a_time_code_id()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m, "tc-old", "PTO");
+        _pi.AddPto("pto-2", "u-1", Mon, 4m, "tc-new", "PTO");
+        _pi.AddPto("pto-3", "u-1", Tue, 4m, "tc-3", "Floating Holiday");
+
+        var result = await PlanPto(new() { Action = "create_pto", Date = "2026-10-29", Hours = 3m, TimeCode = "PTO" });
+
+        Assert.Null(result.Draft);
+        var c = Assert.Single(result.Clarifications);
+        Assert.DoesNotContain("exact name", c.Message);
+        Assert.Contains("timeCodeId", c.Message);
+        Assert.Equal(["tc-new", "tc-old"], c.Candidates.Select(x => x.Id).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task Inactive_candidates_are_marked()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m, "tc-old", "PTO");
+        _pi.AddPto("pto-2", "u-1", Mon, 4m, "tc-older", "PTO");
+        _pi.InactiveCodes.UnionWith(["tc-old", "tc-older"]);
+
+        var c = Assert.Single((await PlanPto(new() { Action = "create_pto", Date = "2026-10-29", Hours = 3m, TimeCode = "PTO" })).Clarifications);
+
+        Assert.All(c.Candidates, x => Assert.Equal("PTO (inactive)", x.Name));
+    }
+
+    [Fact]
     public async Task A_time_code_id_matches_whatever_its_case()
     {
         _pi.AddPto("pto-1", "u-1", Wed, 4m, "tc-1", "PTO");
