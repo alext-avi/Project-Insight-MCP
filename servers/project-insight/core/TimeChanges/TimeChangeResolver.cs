@@ -34,6 +34,7 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
     private readonly Dictionary<string, IReadOnlyList<PiNamed>> _tasks = new();
     private readonly Dictionary<string, PiUser?> _users = new();
     private readonly Dictionary<string, PiPtoList> _pto = new();
+    private readonly Dictionary<string, TimeChangeException> _ptoFailed = new();
 
     public async Task<Resolved<PiUser>> UserAsync(int index, string? user, PiUser caller, CancellationToken ct)
     {
@@ -119,14 +120,25 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
         => (await PtoListAsync(userId, ct)).Records;
 
     /// <summary>
-    /// A person's PTO list, read once per plan for both their records and their time codes. A failed read isn't
-    /// cached, so it throws to every caller.
+    /// A person's PTO list, read once per plan for both their records and their time codes. A failed read is
+    /// remembered too, so every later caller gets the same failure without another read (each failing read can take
+    /// PI's whole timeout). A cancelled read is a cancellation, not a failure, so it isn't remembered.
     /// </summary>
     private async Task<PiPtoList> PtoListAsync(string userId, CancellationToken ct)
     {
-        if (!_pto.TryGetValue(userId, out var list))
-            _pto[userId] = list = await pi.ReadPtoAsync(userId, ct);
-        return list;
+        if (_pto.TryGetValue(userId, out var list))
+            return list;
+        if (_ptoFailed.TryGetValue(userId, out var failed))
+            throw new TimeChangeException(failed.Code, failed.Message);
+        try
+        {
+            return _pto[userId] = await pi.ReadPtoAsync(userId, ct);
+        }
+        catch (TimeChangeException e) when (!ct.IsCancellationRequested)
+        {
+            _ptoFailed[userId] = e;
+            throw;
+        }
     }
 
     /// <summary>

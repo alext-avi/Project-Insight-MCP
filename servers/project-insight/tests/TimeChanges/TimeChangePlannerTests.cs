@@ -904,6 +904,38 @@ public sealed class TimeChangePlannerTests : IDisposable
         Assert.Contains("delete_pto", ex2.Message);
     }
 
+    [Fact]
+    public async Task Unreadable_pto_is_read_once_per_plan_not_once_per_time_row()
+    {
+        // Each read that fails can take PI's whole timeout, so a failed read stands for the rest of the plan.
+        _pi.PtoListThrows = true;
+
+        var draft = (await _planner.PlanAsync("Tidy",
+        [
+            new() { Action = "delete", TimeEntryId = "te-1" },
+            new() { Action = "delete", TimeEntryId = "te-2" },
+            new() { Action = "update", TimeEntryId = "te-3", Hours = 1m },
+        ], default)).Draft!;
+
+        Assert.Equal(["u-1"], draft.PtoUnreadUsers);
+        Assert.Equal(1, _pi.PtoReads);
+    }
+
+    [Fact]
+    public async Task A_pto_read_cancelled_by_the_caller_is_not_remembered_as_unreadable()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m);
+        var resolver = new TimeChangeResolver(_pi);
+        using var cts = new CancellationTokenSource();
+        _pi.CancelDuringPtoList = cts;
+
+        await Assert.ThrowsAnyAsync<Exception>(() => resolver.PtoAsync("u-1", cts.Token));
+        _pi.CancelDuringPtoList = null;
+
+        Assert.Single(await resolver.PtoAsync("u-1", default));
+        Assert.Equal(2, _pi.PtoReads);
+    }
+
     [Theory]
     [InlineData("update")]
     [InlineData("delete")]
