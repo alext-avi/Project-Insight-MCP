@@ -744,13 +744,14 @@ public sealed class TimeChangeCommitterTests : IDisposable
     }
 
     [Fact]
-    public async Task Stored_2_1_0_draft_still_commits_when_the_pto_list_cant_be_read()
+    public async Task Stored_2_1_0_draft_commits_without_reading_the_pto_list()
     {
         var (draft, _) = await Plan([new() { Action = "create", Date = "2026-10-27", Hours = 1m, TaskId = "t-1" }]);
         await _store.TryTransitionAsync("u-1", draft.Id, DraftStatus.Draft, d => { d.PtoUnreadUsers = null; d.FingerprintVersion = null; });
-        _pi.PtoListThrows = true;
+        var reads = _pi.PtoReads;
 
         Assert.Equal(DraftStatus.Committed, (await Commit(draft.Id)).Status);
+        Assert.Equal(reads, _pi.PtoReads); // 2.1.0 never fingerprinted PTO, so its stale check never reads it
     }
 
     [Fact]
