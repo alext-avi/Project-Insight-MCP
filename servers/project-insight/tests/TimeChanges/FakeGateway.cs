@@ -194,11 +194,16 @@ public sealed class FakeGateway : ITimeEntryGateway
         return new PiWrite(true, null, null);
     }
 
+    /// <summary>When set, ListPtoAsync cancels it first: the request is cancelled while PTO is being read.</summary>
+    public CancellationTokenSource? CancelDuringPtoList { get; set; }
+
     public async Task<IReadOnlyList<PiPto>> ListPtoAsync(string userId, CancellationToken ct)
     {
         ListPtoCalls++;
         await Enter();
-        if (PtoListThrows) throw new TimeChangeException("pi_unavailable", "Could not read PTO in Project Insight.");
+        CancelDuringPtoList?.Cancel();
+        // As the real gateway: the API service turns a cancelled request into a failed one, so it reads as unavailable.
+        if (PtoListThrows || ct.IsCancellationRequested) throw new TimeChangeException("pi_unavailable", "Could not read PTO in Project Insight.");
         return Pto.Where(p => p.UserId == userId).ToList();
     }
 

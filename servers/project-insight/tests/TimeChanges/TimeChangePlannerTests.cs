@@ -1069,6 +1069,18 @@ public sealed class TimeChangePlannerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_plan_cancelled_while_reading_pto_is_cancelled_not_planned_without_pto()
+    {
+        using var cts = new CancellationTokenSource();
+        _pi.CancelDuringPtoList = cts;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            _planner.PlanAsync("Time", [CreateTime("2026-10-27", 1m)], cts.Token));
+
+        Assert.Empty(_pi.SearchEntriesCalls);
+    }
+
+    [Fact]
     public async Task Readable_pto_leaves_no_unread_users()
     {
         var draft = (await _planner.PlanAsync("Time", [CreateTime("2026-10-27", 1m)], default)).Draft!;

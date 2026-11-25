@@ -575,6 +575,19 @@ public sealed class TimeChangeCommitterTests : IDisposable
     }
 
     [Fact]
+    public async Task A_commit_cancelled_while_reading_pto_is_cancelled_and_the_draft_handed_back()
+    {
+        var (draft, _) = await Plan([new() { Action = "create", Date = "2026-10-27", Hours = 1m, TaskId = "t-1" }]);
+        using var cts = new CancellationTokenSource();
+        _pi.CancelDuringPtoList = cts;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => _committer.CommitAsync(Alex, draft.Id, CommitChannel.Agent, null, cts.Token));
+
+        Assert.Empty(_pi.Writes);
+        Assert.Equal(DraftStatus.Draft, (await _store.GetAsync("u-1", draft.Id))!.Status);
+    }
+
+    [Fact]
     public async Task Stale_check_skips_pto_for_unread_people()
     {
         _pi.PtoListThrows = true;

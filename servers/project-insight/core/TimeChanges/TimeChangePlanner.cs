@@ -423,6 +423,8 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                 }
                 catch (TimeChangeException e) when (e.Code == "pi_unavailable" && !usersWithPtoRows.Contains(userId))
                 {
+                    // A cancelled request reads as a failed one; it's a cancellation, never a reason to plan without PTO.
+                    ct.ThrowIfCancellationRequested();
                     // Someone may edit another person's time without being allowed to read their PTO.
                     // A time-only draft still works, with their PTO shown as plain PTO and left out of the fingerprint.
                     pto = [];

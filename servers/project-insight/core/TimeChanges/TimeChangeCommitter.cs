@@ -215,6 +215,8 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
                 }
                 catch (TimeChangeException e) when (e.Code == "pi_unavailable" && !draft.Rows.Any(r => r.Kind == RowKind.Pto && r.UserId == week.UserId))
                 {
+                    // A cancelled request reads as a failed one; it's a cancellation, never a reason to check without PTO.
+                    ct.ThrowIfCancellationRequested();
                     // PTO was readable at plan time but isn't now. With no PTO rows for this person, fall back to no
                     // PTO in the fingerprint: a day without PTO hashes as it did, and a day with PTO then mismatches,
                     // which fails safe as stale.
