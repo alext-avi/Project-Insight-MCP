@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text.Json.Serialization;
 
 namespace ProjectInsightMCP.TimeChanges;
 
@@ -18,6 +19,19 @@ public static class ChangeAction
     public const string Create = "create";
     public const string Update = "update";
     public const string Delete = "delete";
+    public const string CreatePto = "create_pto";
+    public const string UpdatePto = "update_pto";
+    public const string DeletePto = "delete_pto";
+
+    /// <summary>The one place that says whether an action works on a PTO entry rather than a time entry.</summary>
+    public static bool IsPto(string? action) => action is CreatePto or UpdatePto or DeletePto;
+}
+
+/// <summary>What a draft row changes. A row stored before PTO existed has no kind, which means time.</summary>
+public static class RowKind
+{
+    public const string Time = "time";
+    public const string Pto = "pto";
 }
 
 public static class RowOutcome
@@ -48,21 +62,35 @@ public static class WarningCode
     public const string OtherPerson = "other_person";
     /// <summary>More than a month back or a week ahead: likely a wrong date or year.</summary>
     public const string FarDate = "far_date";
+    /// <summary>A 7-day span of a person's timesheet period would total more than 40 hours (work and PTO together).</summary>
+    public const string Over40HoursWeek = "over_40h_week";
+    /// <summary>A day with PTO would total more than 8 hours (work and PTO together).</summary>
+    public const string Over8HoursPtoDay = "over_8h_day";
+    /// <summary>The PTO time code id isn't one this person has used.</summary>
+    public const string UnknownTimeCode = "unknown_time_code";
+    /// <summary>The PTO time code is one PI marks inactive (an old code kept for past records).</summary>
+    public const string InactiveTimeCode = "inactive_time_code";
+    /// <summary>A rollback or undo recreates a PTO that was approved. PI recreates it unapproved, so it needs approving again.</summary>
+    public const string PtoRecreatedUnapproved = "pto_recreated_unapproved";
+    /// <summary>A PTO's linked time entry has other hours than the PTO (edited in PI); commit and undo go by the PTO's.</summary>
+    public const string LinkedEntryDiffers = "linked_entry_differs";
+    /// <summary>The PTO being changed or deleted was already approved.</summary>
+    public const string PtoApproved = "pto_approved";
 }
 
 /// <summary>One requested change, as the agent sends it to plan_time_changes.</summary>
 public sealed class ChangeInput
 {
-    [Description("create, update or delete.")]
+    [Description("create, update or delete for time entries; create_pto, update_pto or delete_pto for PTO.")]
     public string Action { get; set; } = "";
 
     [Description("update/delete: the time entry id (GUID).")]
     public string? TimeEntryId { get; set; }
 
-    [Description("create: required. update: new date. Format yyyy-MM-dd.")]
+    [Description("create/create_pto: required. update/update_pto: new date. Format yyyy-MM-dd.")]
     public string? Date { get; set; }
 
-    [Description("create: required. update: new hours. Use 0.25 increments.")]
+    [Description("create/create_pto: required. update/update_pto: new hours. Use 0.25 increments.")]
     public decimal? Hours { get; set; }
 
     [Description("Task id (GUID). Or give project and task names instead.")]
@@ -80,8 +108,17 @@ public sealed class ChangeInput
     [Description("Whether the time is billable. create: defaults to false.")]
     public bool? Billable { get; set; }
 
-    [Description("create only: whose time (user id or name). Defaults to the signed-in user.")]
+    [Description("create/create_pto only: whose time (user id or name). Defaults to the signed-in user.")]
     public string? User { get; set; }
+
+    [Description("update_pto/delete_pto: the PTO entry id (not the time entry id it creates).")]
+    public string? PtoEntryId { get; set; }
+
+    [Description("PTO only: the time code name, such as PTO. An exact name wins, else a unique partial match; among several, the only active one. Or give timeCodeId.")]
+    public string? TimeCode { get; set; }
+
+    [Description("PTO only: the time code id. Use instead of timeCode when known.")]
+    public string? TimeCodeId { get; set; }
 }
 
 /// <summary>A time entry's reviewable fields. Hours only: never rates or monetary totals.</summary>
@@ -97,6 +134,11 @@ public sealed class EntryValues
     public required decimal Hours { get; set; }
     public bool Billable { get; set; }
     public string? Description { get; set; }
+    /// <summary>PTO rows only; time rows leave these null.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TimeCodeId { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TimeCodeName { get; set; }
 
     public EntryValues Clone() => (EntryValues)MemberwiseClone();
 }
@@ -114,6 +156,25 @@ public sealed class DraftRow
     public required string UserId { get; set; }
     public required string UserName { get; set; }
     public string? TimeEntryId { get; set; }
+    /// <summary><see cref="RowKind"/>; null (drafts stored before PTO) means time.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Kind { get; set; }
+    /// <summary>PTO rows: the PTO entry being updated or deleted.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PtoEntryId { get; set; }
+    /// <summary>PTO update/delete rows: the time entry PI keeps for that PTO, so the card can leave it out of the day's context.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LinkedTimeEntryId { get; set; }
+    /// <summary>True when the PTO being updated or deleted was already approved; otherwise null.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? PtoApproved { get; set; }
+    /// <summary>
+    /// PTO update/delete rows: the hours the day total counted for this row's before, its linked entry's, when they
+    /// differ from the PTO record's (the entry was edited in PI), or 0 when PI's search didn't list the entry. Null when
+    /// they're the same.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public decimal? CountedBeforeHours { get; set; }
     /// <summary>Id PI gave a created entry, or the new id of a deleted entry recreated during rollback.</summary>
     public string? SavedId { get; set; }
     public EntryValues? Before { get; set; }
@@ -133,6 +194,12 @@ public sealed class ContextEntry
     public required decimal Hours { get; set; }
     public bool Billable { get; set; }
     public string? Description { get; set; }
+    /// <summary>True for an existing PTO entry (shown as PTO · time code); null for time context.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? IsPto { get; set; }
+    /// <summary>PTO context only. Null when the person's PTO list couldn't be read.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TimeCodeName { get; set; }
 }
 
 public sealed class DayView
@@ -182,6 +249,8 @@ public sealed class DraftTotals
     public int Days { get; set; }
     public int People { get; set; }
     public int Warnings { get; set; }
+    /// <summary>Net hours the PTO rows add (or remove).</summary>
+    public decimal PtoDelta { get; set; }
 }
 
 /// <summary>A draft, and after commit its receipt (same record and id).</summary>
@@ -222,6 +291,18 @@ public sealed class Draft
     /// </summary>
     public bool OutcomeUnknown { get; set; }
     public List<string> StaleDays { get; set; } = new();
+    /// <summary>The fingerprint version every new draft is planned with.</summary>
+    public const int CurrentFingerprintVersion = 2;
+
+    /// <summary>
+    /// How <see cref="DayFingerprints"/> were computed. Null is 2.1.0: work entries only, no PTO records and no
+    /// PTO-linked entries. <see cref="CurrentFingerprintVersion"/> adds both.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? FingerprintVersion { get; set; }
+    /// <summary>Users whose PTO list couldn't be read at plan time (their draft has no PTO rows). Null when none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? PtoUnreadUsers { get; set; }
 }
 
 /// <summary>Why a change couldn't be planned, with candidates when a name matched several records.</summary>

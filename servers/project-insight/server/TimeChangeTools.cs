@@ -33,20 +33,24 @@ internal static class TimeChangeTools
     private static readonly string[] ModelAndApp = [McpUiToolVisibility.Model, McpUiToolVisibility.App];
 
     private const string PlanDescription =
-        "Draft changes to Project Insight time entries for the user to review. Writes nothing to Project Insight: " +
+        "Draft changes to Project Insight time entries and PTO for the user to review. Writes nothing to Project Insight: " +
         "returns a draft (shown to the user as a review card where supported), or a clarification when a name is " +
         "ambiguous. Each change is one of: create {date, hours, taskId or project + task names, description?, billable?, user?}, " +
-        "update {timeEntryId plus only the fields to change}, delete {timeEntryId}. After planning, summarize the draft " +
+        "update {timeEntryId plus only the fields to change}, delete {timeEntryId}, " +
+        "create_pto {date, hours, timeCode name or timeCodeId, description?, user?}, " +
+        "update_pto {ptoEntryId plus only the fields to change}, delete_pto {ptoEntryId}. " +
+        "Prefer this over create_pto_entry/update_pto_entry/delete_pto_entry. PTO creates its own linked time entry; " +
+        "never add a time entry for PTO. After planning, summarize the draft " +
         "and ask the user to confirm; only commit when they agree.";
 
     private const string CommitDescription =
         "Apply a draft from plan_time_changes or undo_time_changes to Project Insight, all or nothing. Only call this " +
         "after the user has agreed to the draft. Refused if the affected days changed in Project Insight since the draft " +
-        "was made (draft again) or if the draft expired (24 hours).";
+        "was made (draft again) or if the draft expired (24 hours). Includes PTO rows.";
 
     private const string UndoDescription =
         "Draft the reverse of a committed draft (pass its id as receiptId). Returns a new draft that must be confirmed " +
-        "or committed like any other. Available for 24 hours after commit.";
+        "or committed like any other. Available for 24 hours after commit. Includes PTO rows.";
 
     public static IReadOnlyList<McpServerTool> Create() =>
     [
@@ -82,7 +86,7 @@ internal static class TimeChangeTools
             UriTemplate = CardUri,
             Name = "time-changes",
             Title = "Time changes review card",
-            Description = "Review card for Project Insight time-entry drafts.",
+            Description = "Review card for Project Insight time-entry and PTO drafts.",
             MimeType = McpApps.HtmlMimeType
         });
 

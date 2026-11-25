@@ -154,4 +154,27 @@ public sealed class FileDraftStoreTests : IDisposable
 
         Assert.Empty(Directory.GetFiles(Path.Combine(_root, "u-1"), "*.tmp"));
     }
+
+    [Fact]
+    public async Task A_time_only_draft_is_stored_without_the_pto_fields_and_a_2_1_0_draft_still_loads()
+    {
+        var draft = Drafts.New();
+        draft.Rows.Add(new DraftRow
+        {
+            Index = 0, Action = "create", UserId = "u-1", UserName = "Alex Example",
+            After = new EntryValues { TaskId = "t-1", TaskName = "Dev", ProjectId = "p-1", ProjectName = "Acme", Date = new DateOnly(2026, 10, 27), Hours = 1m }
+        });
+        await Store().CreateAsync(draft);
+
+        var path = Path.Combine(_root, "u-1", draft.Id + ".json");
+        var json = await File.ReadAllTextAsync(path);
+        foreach (var field in new[] { "kind", "ptoEntryId", "linkedTimeEntryId", "ptoApproved", "timeCodeId", "timeCodeName" })
+            Assert.DoesNotContain($"\"{field}\"", json);
+
+        // The stored file has exactly the 2.1.0 shape, so it also proves such a draft loads.
+        var read = await Store().GetAsync("u-1", draft.Id);
+        var row = Assert.Single(read!.Rows);
+        Assert.Null(row.Kind);
+        Assert.Null(row.After!.TimeCodeId);
+    }
 }

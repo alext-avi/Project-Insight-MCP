@@ -10,7 +10,7 @@
     --acc: #1b75bb; --navy: #0b3a62; --bar: #033a64; --barfg: #ffffff; --pos: #1fa855; --neg: #e5304b; --warn: #b86e00; --warnbg: #fff4dc; --chg: #eef5fc;
     --okbg: #dcf5e6; --okfg: #11713a; --stalebg: #fff4dc; --stalefg: #8a5300; --failbg: #fde6e9; --failfg: #b0162f;
     --mutebg: #e9edf1; --mutefg: #5b6b7b; --draftbg: #e3f0fb; --draftfg: #135a92; --otherbg: #f6e8fb; --otherfg: #9b34c2;
-    --primary: #1b75bb; --primaryfg: #ffffff;
+    --primary: #1b75bb; --primaryfg: #ffffff; --pto: #0e8f83;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -18,7 +18,7 @@
       --acc: #5aa9e6; --navy: #cfe3f5; --bar: #06223b; --barfg: #e3eaf1; --pos: #3fcf7a; --neg: #ff6b7f; --warn: #f0b03c; --warnbg: #3a2a08; --chg: #13314b;
       --okbg: #0f3a24; --okfg: #5fe39a; --stalebg: #3a2a08; --stalefg: #f0b03c; --failbg: #4a0f1a; --failfg: #ff8a99;
       --mutebg: #223445; --mutefg: #9aabbc; --draftbg: #13314b; --draftfg: #8cc6f2; --otherbg: #33183f; --otherfg: #dc9cf5;
-      --primary: #2f86cc; --primaryfg: #ffffff;
+      --primary: #2f86cc; --primaryfg: #ffffff; --pto: #3fc9bb;
     }
   }
   :root[data-theme="dark"] {
@@ -26,7 +26,7 @@
       --acc: #5aa9e6; --navy: #cfe3f5; --bar: #06223b; --barfg: #e3eaf1; --pos: #3fcf7a; --neg: #ff6b7f; --warn: #f0b03c; --warnbg: #3a2a08; --chg: #13314b;
       --okbg: #0f3a24; --okfg: #5fe39a; --stalebg: #3a2a08; --stalefg: #f0b03c; --failbg: #4a0f1a; --failfg: #ff8a99;
       --mutebg: #223445; --mutefg: #9aabbc; --draftbg: #13314b; --draftfg: #8cc6f2; --otherbg: #33183f; --otherfg: #dc9cf5;
-      --primary: #2f86cc; --primaryfg: #ffffff;
+      --primary: #2f86cc; --primaryfg: #ffffff; --pto: #3fc9bb;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--page); color: var(--fg); }
@@ -76,6 +76,7 @@
   .row.ctx { color: var(--faint); }
   .row.ctx .hrs { color: var(--faint); }
   .row.chg { background: var(--chg); }
+  .row.pto { box-shadow: inset 3px 0 0 var(--pto); }
   .row.del .label { text-decoration: line-through; text-decoration-color: var(--neg); }
   .act { font-weight: 700; text-align: center; }
   .a-c { color: var(--pos); } .a-d { color: var(--neg); } .a-u { color: var(--acc); }
@@ -383,7 +384,7 @@
     const t = d.totals || {};
     const kpi = (value, label, cls) => el("div", "kpi", el("b", cls || "", value), el("span", "", label));
     return el("div", "kpis",
-      kpi(signed(t.netHours) + "h", "net · billable " + signed(t.billableDelta), t.netHours > 0 ? "pos" : t.netHours < 0 ? "neg" : ""),
+      kpi(signed(t.netHours) + "h", "net · billable " + signed(t.billableDelta) + (t.ptoDelta ? " · PTO " + signed(t.ptoDelta) + "h" : ""), t.netHours > 0 ? "pos" : t.netHours < 0 ? "neg" : ""),
       kpi(String(t.changes || 0), "changes"),
       kpi((t.days || 0) + " · " + (t.people || 0), "days · people"),
       kpi(String(t.warnings || 0), "warnings", t.warnings ? "warn" : ""));
@@ -473,39 +474,52 @@
     return [line, rows];
   }
 
+  // PI's ids are GUIDs, which can come back in either case; the server treats them as the same id.
+  function sameId(a, b) { return String(a || "").toLowerCase() === String(b || "").toLowerCase(); }
+
+  // PTO entries are labelled by their time code and carry no project swatch or billable tag. Without a code (the
+  // person's PTO list couldn't be read) the label is just PTO.
+  function ptoLabel(timeCodeName) { return timeCodeName ? "PTO · " + timeCodeName : "PTO"; }
+  const PTO_BASE = { create_pto: "create", update_pto: "update", delete_pto: "delete" };
+
   function contextRow(c) {
-    return el("div", "row ctx",
+    return el("div", "row ctx" + (c.isPto ? " pto" : ""),
       el("span", ""),
-      el("span", "task", swatch(c.projectColor), el("span", "label", c.projectName + " › " + c.taskName), c.billable ? el("span", "bill", "billable") : null,
+      el("span", "task", c.isPto ? null : swatch(c.projectColor), el("span", "label", c.isPto ? ptoLabel(c.timeCodeName) : c.projectName + " › " + c.taskName), c.billable && !c.isPto ? el("span", "bill", "billable") : null,
         c.description ? el("small", "", c.description) : null),
       el("span", "hrs", hrs(c.hours)),
       el("span", ""));
   }
 
   function changeRow(r, date, w) {
-    const moved = r.action === "update" && r.before && r.after && r.before.date !== r.after.date;
+    const pto = r.kind === "pto";
+    const action = PTO_BASE[r.action] || r.action;
+    const moved = action === "update" && r.before && r.after && r.before.date !== r.after.date;
     const away = moved && r.before.date === date;   // this day loses the entry
     const into = moved && r.after.date === date;     // this day gains it
-    const removing = r.action === "delete" || away;
-    const adding = r.action === "create" || into;
+    const removing = action === "delete" || away;
+    const adding = action === "create" || into;
     const v = removing ? r.before : r.after;
     const [symbol, symbolClass] = adding ? ["+", "a-c"] : removing ? ["−", "a-d"] : ["~", "a-u"];
     const from = adding ? "—" : hrs(r.before.hours);
     const to = removing ? "—" : hrs(r.after.hours);
-    const diff = (removing ? 0 : r.after.hours) - (adding ? 0 : r.before.hours);
+    // What the day counted for this row's before: a PTO whose linked entry was edited in PI counted that entry's hours.
+    // 0 means PI's search didn't list the entry; the PTO's own hours are still what the row removes in PI, so show those.
+    const counted = r.countedBeforeHours ? r.countedBeforeHours : (r.before ? r.before.hours : 0);
+    const diff = (removing ? 0 : r.after.hours) - (adding ? 0 : counted);
     const task = el("span", "task",
-      swatch(v.projectColor), el("span", "label", v.projectName + " › " + v.taskName),
-      v.billable ? el("span", "bill", "billable") : null,
+      pto ? null : swatch(v.projectColor), el("span", "label", pto ? ptoLabel(v.timeCodeName) : v.projectName + " › " + v.taskName),
+      v.billable && !pto ? el("span", "bill", "billable") : null,
       v.description ? el("small", "", v.description) : null,
-      r.action === "update" && r.before.taskId !== r.after.taskId && !removing
-        ? el("small", "", "was " + r.before.projectName + " › " + r.before.taskName) : null,
+      action === "update" && !removing && (pto ? !sameId(r.before.timeCodeId, r.after.timeCodeId) : r.before.taskId !== r.after.taskId)
+        ? el("small", "", "was " + (pto ? ptoLabel(r.before.timeCodeName) : r.before.projectName + " › " + r.before.taskName)) : null,
       away ? el("small", "", "moved to " + day(r.after.date, { weekday: "short", day: "numeric", month: "short" })) : null,
       into ? el("small", "", "moved from " + day(r.before.date, { weekday: "short", day: "numeric", month: "short" })) : null,
       (r.warnings || []).map((x) => el("span", "w", "⚠ " + x.message)),
       r.outcome && r.outcome !== "applied" ? el("span", "st st-" + r.outcome, OUTCOME[r.outcome] || r.outcome) : null,
       r.outcome && r.outcome !== "applied" && r.error ? el("small", "err", r.error) : null,
       r.outcome === "reverse_failed" || r.outcome === "unknown" ? failedEntry(r, w) : null);
-    return el("div", "row chg" + (removing ? " del" : ""),
+    return el("div", "row chg" + (removing ? " del" : "") + (pto ? " pto" : ""),
       el("span", "act " + symbolClass, symbol), task,
       el("span", "hrs", from + " → ", el("b", "", to)),
       delta(diff));
@@ -513,7 +527,9 @@
 
   function failedEntry(r, w) {
     const entryId = r.savedId || r.timeEntryId;
-    const box = el("small", "err", entryId ? "Entry " + entryId : "Entry id unknown");
+    const box = r.kind === "pto"
+      ? el("small", "err", (r.ptoEntryId || r.savedId) ? "PTO " + (r.ptoEntryId || r.savedId) : "PTO id unknown")
+      : el("small", "err", entryId ? "Entry " + entryId : "Entry id unknown");
     if (w && isHttps(w.timesheetUrl)) {
       const link = el("a", "link", "open in PI ↗");
       link.href = "#";

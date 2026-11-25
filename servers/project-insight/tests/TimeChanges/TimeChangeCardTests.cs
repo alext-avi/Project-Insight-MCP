@@ -129,4 +129,35 @@ public class TimeChangeCardTests
         Assert.Contains("if (w && isHttps(w.timesheetUrl))", Html);
         Assert.DoesNotContain("if (w.timesheetUrl)", Html);
     }
+
+    [Fact]
+    public void Card_labels_pto_rows()
+    {
+        Assert.Contains(".row.pto", Html);
+        Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(Html, "--pto:").Count);
+        // A PTO whose code couldn't be read (its person's PTO list was unreadable) is just "PTO", as in the text.
+        Assert.Contains("return timeCodeName ? \"PTO · \" + timeCodeName : \"PTO\";", Html);
+        Assert.DoesNotContain("time off", Html);
+        Assert.Contains("\"PTO \" + (r.ptoEntryId || r.savedId)", Html);
+        Assert.Contains("t.ptoDelta", Html);
+        Assert.Contains("update_pto: \"update\"", Html);
+    }
+
+    [Fact]
+    public void Card_row_delta_takes_off_the_hours_the_day_counted_for_the_row()
+    {
+        // A PTO whose linked entry was edited in PI counted that entry's hours in the day, not the PTO record's.
+        // 0 means PI's search didn't list the linked entry: the PTO's hours are still what the row removes in PI.
+        Assert.Contains("const counted = r.countedBeforeHours ? r.countedBeforeHours : (r.before ? r.before.hours : 0);", Html);
+        Assert.Contains("const diff = (removing ? 0 : r.after.hours) - (adding ? 0 : counted);", Html);
+    }
+
+    [Fact]
+    public void Card_compares_time_code_ids_ignoring_case_as_the_server_does()
+    {
+        // PI's ids are GUIDs; the server treats a code id in another case as the same code, so "was" must not show.
+        Assert.Contains("function sameId(a, b)", Html);
+        Assert.Contains("!sameId(r.before.timeCodeId, r.after.timeCodeId)", Html);
+        Assert.DoesNotContain("r.before.timeCodeId !== r.after.timeCodeId", Html);
+    }
 }

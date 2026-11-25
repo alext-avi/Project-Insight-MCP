@@ -119,6 +119,7 @@ public sealed class TimeChangeToolsTests : IAsyncLifetime
     {
         var listed = Assert.Single(await _client.ListResourcesAsync(), r => r.ProtocolResource.Uri == CardUri);
         Assert.Equal("text/html;profile=mcp-app", listed.ProtocolResource.MimeType);
+        Assert.Contains("PTO", listed.ProtocolResource.Description);
 
         var read = await _client.ReadResourceAsync(CardUri);
         var contents = Assert.IsType<TextResourceContents>(Assert.Single(read.Contents));

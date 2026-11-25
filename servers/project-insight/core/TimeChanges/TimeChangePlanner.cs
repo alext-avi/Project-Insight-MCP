@@ -22,14 +22,28 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
     public static readonly TimeSpan Lifetime = TimeSpan.FromHours(24);
 
     public Task<PlanResult> PlanAsync(string intent, IReadOnlyList<ChangeInput>? changes, CancellationToken ct)
-        => PlanCoreAsync(intent, changes, undoOf: null, undoOfCommittedAt: null, ct);
+        => PlanCoreAsync(intent, changes, undoOf: null, undoOfCommittedAt: null, restoredCodes: null, ct);
 
     /// <summary>A new draft that reverses a committed receipt's rows.</summary>
     public Task<PlanResult> PlanUndoAsync(Draft receipt, CancellationToken ct)
     {
         if (receipt.Status != DraftStatus.Committed)
             throw new TimeChangeException("not_undoable", "Only committed changes can be undone.");
-        var changes = receipt.Rows.Where(r => r.Outcome is null or RowOutcome.Applied).Select(r => r.Action switch
+        var undone = receipt.Rows
+            .Where(r => r.Outcome is null or RowOutcome.Applied)
+            .Where(r => !(r.Action == ChangeAction.CreatePto && r.SavedId is null)) // can't be addressed, so can't be undone
+            .ToList();
+        // The code a PTO update or delete restores may be on none of the person's PTO records any more, so the
+        // resolver couldn't name it. The receipt still knows its name.
+        var restoredCodes = undone
+            .Select(r => r.Action is ChangeAction.UpdatePto or ChangeAction.DeletePto && r.Before?.TimeCodeId is { } id
+                ? new PiTimeCode(id, r.Before.TimeCodeName ?? id)
+                : null)
+            .ToList();
+        // PI recreates a deleted PTO unapproved, so an undo that recreates an approved one says it needs approving again.
+        var recreatesApproved = undone.Select(r => r.Action == ChangeAction.DeletePto && r.PtoApproved == true).ToList();
+        var changes = undone
+            .Select(r => r.Action switch
         {
             ChangeAction.Create => new ChangeInput { Action = ChangeAction.Delete, TimeEntryId = r.SavedId },
             ChangeAction.Update => new ChangeInput
@@ -37,6 +51,19 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                 Action = ChangeAction.Update, TimeEntryId = r.TimeEntryId, TaskId = r.Before!.TaskId,
                 Date = r.Before.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), Hours = r.Before.Hours,
                 Billable = r.Before.Billable, Description = r.Before.Description ?? ""
+            },
+            ChangeAction.CreatePto => new ChangeInput { Action = ChangeAction.DeletePto, PtoEntryId = r.SavedId },
+            ChangeAction.UpdatePto => new ChangeInput
+            {
+                Action = ChangeAction.UpdatePto, PtoEntryId = r.PtoEntryId, TimeCodeId = r.Before!.TimeCodeId,
+                Date = r.Before.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), Hours = r.Before.Hours,
+                Description = r.Before.Description ?? ""
+            },
+            ChangeAction.DeletePto => new ChangeInput
+            {
+                Action = ChangeAction.CreatePto, User = r.UserId, TimeCodeId = r.Before!.TimeCodeId,
+                Date = r.Before.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), Hours = r.Before.Hours,
+                Description = r.Before.Description
             },
             _ => new ChangeInput
             {
@@ -49,7 +76,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         // Labels go by kind, never stacking: X → "Undo: X" → "Redo: X" → "Undo: X".
         var isRedo = receipt.UndoOf is not null && receipt.Intent.StartsWith(UndoPrefix, StringComparison.Ordinal);
         var intent = (isRedo ? RedoPrefix : UndoPrefix) + WithoutUndoPrefix(receipt.Intent);
-        return PlanCoreAsync(intent, changes, receipt.Id, receipt.CommittedAt, ct);
+        return PlanCoreAsync(intent, changes, receipt.Id, receipt.CommittedAt, restoredCodes, ct, recreatesApproved);
     }
 
     private const string UndoPrefix = "Undo: ", RedoPrefix = "Redo: ";
@@ -66,10 +93,16 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         public required DateOnly End { get; init; }
         public PiTimeSheet? Sheet { get; init; }
         public required IReadOnlyList<PiEntry> Entries { get; init; }
+        /// <summary>The person's PTO records dated in this week. Empty when their PTO list couldn't be read.</summary>
+        public IReadOnlyList<PiPto> Pto { get; init; } = [];
         public bool Contains(string userId, DateOnly date) => User.Id == userId && Start <= date && date <= End;
     }
 
-    private async Task<PlanResult> PlanCoreAsync(string intent, IReadOnlyList<ChangeInput>? changes, string? undoOf, DateTimeOffset? undoOfCommittedAt, CancellationToken ct)
+    /// <param name="restoredCodes">Undo only, one per change: the PTO time code (id and name) the change puts back,
+    /// taken from the receipt, so it's named and not flagged unknown when no PTO record uses it any more.</param>
+    /// <param name="recreatesApproved">Undo only, one per change: true when the change recreates a PTO that was approved.</param>
+    private async Task<PlanResult> PlanCoreAsync(string intent, IReadOnlyList<ChangeInput>? changes, string? undoOf, DateTimeOffset? undoOfCommittedAt,
+        IReadOnlyList<PiTimeCode?>? restoredCodes, CancellationToken ct, IReadOnlyList<bool>? recreatesApproved = null)
     {
         intent = (intent ?? "").Trim();
         if (intent.Length == 0)
@@ -89,8 +122,12 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         var rows = new List<DraftRow>();
         for (var i = 0; i < changes.Count; i++)
         {
-            if (await BuildRowAsync(i, changes[i], caller, resolver, clarifications, seen, isUndo: undoOf is not null, ct) is { } row)
+            if (await BuildRowAsync(i, changes[i], caller, resolver, clarifications, seen, isUndo: undoOf is not null, restoredCodes?[i], ct) is { } row)
+            {
+                if (recreatesApproved?[i] == true)
+                    Warn(row, WarningCode.PtoRecreatedUnapproved, TimeChangeCommitter.RecreatedUnapproved);
                 rows.Add(row);
+            }
         }
 
         if (clarifications.Count > 0)
@@ -100,7 +137,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         for (var i = 0; i < rows.Count; i++)
             rows[i].Index = i;
 
-        var weeks = await LoadWeeksAsync(rows, ct);
+        var (weeks, ptoUnread) = await LoadWeeksAsync(rows, resolver, ct);
         var now = time.GetUtcNow();
         var token = DraftIds.NewConfirmToken();
         var draft = new Draft
@@ -116,7 +153,9 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             UndoOf = undoOf,
             UndoOfCommittedAt = undoOfCommittedAt,
             ConfirmTokenHash = DraftIds.Hash(token),
-            Rows = rows
+            Rows = rows,
+            FingerprintVersion = Draft.CurrentFingerprintVersion,
+            PtoUnreadUsers = ptoUnread.Count > 0 ? ptoUnread.Order(StringComparer.Ordinal).ToList() : null
         };
         BuildViews(draft, weeks, caller, Weeks.Today(time));
         await AddAvatarsAsync(draft, ct);
@@ -135,10 +174,14 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
     }
 
     private async Task<DraftRow?> BuildRowAsync(int i, ChangeInput c, PiUser caller, TimeChangeResolver resolver,
-        List<Clarification> clarifications, HashSet<string> seen, bool isUndo, CancellationToken ct)
+        List<Clarification> clarifications, HashSet<string> seen, bool isUndo, PiTimeCode? restoredCode, CancellationToken ct)
     {
         var n = i + 1;
         var action = (c.Action ?? "").Trim().ToLowerInvariant();
+        if (!ChangeAction.IsPto(action) && (c.PtoEntryId is not null || c.TimeCode is not null || c.TimeCodeId is not null))
+            throw Invalid(n, $"{action} takes no ptoEntryId, timeCode or timeCodeId. Those are for create_pto, update_pto and delete_pto.");
+        if (ChangeAction.IsPto(action))
+            return await BuildPtoRowAsync(i, action, c, caller, resolver, clarifications, seen, isUndo, restoredCode, ct);
         if (action == ChangeAction.Create)
         {
             var date = ParseDate(n, c.Date);
@@ -162,7 +205,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         }
 
         if (action is not (ChangeAction.Update or ChangeAction.Delete))
-            throw Invalid(n, "action must be create, update or delete.");
+            throw Invalid(n, "action must be create, update or delete, or create_pto, update_pto or delete_pto.");
         if (string.IsNullOrWhiteSpace(c.TimeEntryId))
             throw Invalid(n, $"{action} needs timeEntryId.");
         var id = c.TimeEntryId.Trim();
@@ -175,6 +218,12 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             clarifications.Add(new Clarification { ChangeIndex = i, Field = "timeEntryId", Query = id, Message = $"No time entry with id {id}." });
             return null;
         }
+        // Editing a PTO's linked entry directly would leave the PTO and its entry disagreeing. The entry's shape (no
+        // task) says so, and so does the owner's PTO list, which names the PTO entry when it can be read.
+        var linkedPto = await LinkedPtoAsync(entry, resolver, ct);
+        if (entry.IsPto || linkedPto is not null)
+            throw Invalid(n, $"time entry {id} belongs to a PTO entry. Use {action}_pto with " +
+                             (linkedPto is null ? "the PTO entry's id" : $"PTO entry {linkedPto.Id}") + " instead.");
         var owner = entry.UserId == caller.Id
             ? caller
             : await resolver.UserByIdAsync(entry.UserId, ct) ?? new PiUser(entry.UserId, entry.UserId);
@@ -216,6 +265,150 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         return new DraftRow { Index = i, Action = action, UserId = owner.Id, UserName = owner.Name, TimeEntryId = id, Before = before, After = after };
     }
 
+    private async Task<DraftRow?> BuildPtoRowAsync(int i, string action, ChangeInput c, PiUser caller, TimeChangeResolver resolver,
+        List<Clarification> clarifications, HashSet<string> seen, bool isUndo, PiTimeCode? restoredCode, CancellationToken ct)
+    {
+        var n = i + 1;
+        if (c.TimeEntryId is not null)
+            throw Invalid(n, $"{action} takes no timeEntryId. Use ptoEntryId to name a PTO entry.");
+        if (c.Billable is not null || c.TaskId is not null || c.Project is not null || c.Task is not null)
+            throw Invalid(n, $"{action} takes no task, project or billable. PTO has a time code instead.");
+        if (action == ChangeAction.CreatePto && c.PtoEntryId is not null)
+            throw Invalid(n, "create_pto takes no ptoEntryId. Project Insight gives the new PTO entry its id; use update_pto to change an existing one.");
+        // A blank user is no user, as on updates.
+        if (action == ChangeAction.DeletePto &&
+            (c.Date is not null || c.Hours is not null || c.Description is not null || c.TimeCode is not null || c.TimeCodeId is not null ||
+             !string.IsNullOrWhiteSpace(c.User)))
+            throw Invalid(n, "delete_pto takes only ptoEntryId.");
+
+        if (action == ChangeAction.CreatePto)
+        {
+            var date = ParseDate(n, c.Date);
+            var hours = ParseHours(n, c.Hours, isUndo);
+            var user = await resolver.UserAsync(i, c.User, caller, ct);
+            if (user.Clarification is { } uc)
+            {
+                clarifications.Add(uc);
+                return null;
+            }
+            var code = await resolver.TimeCodeAsync(i, user.Value!.Id, c.TimeCodeId, c.TimeCode, restoredCode, ct);
+            if (code.Clarification is { } cc)
+            {
+                clarifications.Add(cc);
+                return null;
+            }
+            var row = new DraftRow
+            {
+                Index = i, Action = action, Kind = RowKind.Pto, UserId = user.Value.Id, UserName = user.Value.Name,
+                After = PtoValues(code.Value!, date, hours, Blank(c.Description))
+            };
+            if (code.Unknown)
+                Warn(row, WarningCode.UnknownTimeCode, $"Time code {code.Value!.Id} isn't one this person has used for PTO");
+            WarnIfInactive(row, code.Value!, isUndo);
+            return row;
+        }
+
+        if (string.IsNullOrWhiteSpace(c.PtoEntryId))
+            throw Invalid(n, $"{action} needs ptoEntryId.");
+        var id = c.PtoEntryId.Trim();
+        if (!seen.Add("pto:" + id))
+            throw Invalid(n, $"PTO entry {id} appears in more than one change. Combine them into one change.");
+        var pto = await pi.GetPtoAsync(id, ct);
+        if (pto is null)
+        {
+            clarifications.Add(new Clarification { ChangeIndex = i, Field = "ptoEntryId", Query = id, Message = $"No PTO entry with id {id}." });
+            return null;
+        }
+        // The day's fingerprint comes from the owner's PTO list (read once per plan), so the row's before comes from
+        // that same read: if PI changed the record between the two reads, the draft still describes one state, and a
+        // later change still makes the commit stale. A record the list doesn't have yet keeps the direct read; the
+        // fingerprint then lacks it, so the commit goes stale rather than act on a mismatch. A person with PTO rows
+        // needs their list anyway, so an unreadable list fails the plan here as it would in LoadWeeksAsync.
+        if ((await resolver.PtoAsync(pto.UserId, ct)).FirstOrDefault(p => TimeChangeResolver.SameId(p.Id, pto.Id)) is { } listed)
+            pto = listed;
+        var owner = pto.UserId == caller.Id
+            ? caller
+            : await resolver.UserByIdAsync(pto.UserId, ct) ?? new PiUser(pto.UserId, pto.UserId);
+        var before = PtoValues(new PiTimeCode(pto.TimeCodeId, pto.TimeCodeName ?? pto.TimeCodeId), pto.Date, pto.Hours, Blank(pto.Description));
+        DraftRow Row(EntryValues? after) => new()
+        {
+            Index = i, Action = action, Kind = RowKind.Pto, UserId = owner.Id, UserName = owner.Name, PtoEntryId = id,
+            LinkedTimeEntryId = pto.TimeEntryId, PtoApproved = pto.Approved ? true : null, Before = before, After = after
+        };
+        if (action == ChangeAction.DeletePto)
+            return Row(null);
+
+        if (!string.IsNullOrWhiteSpace(c.User) && !isUndo)
+            throw Invalid(n, "an update can't change whose PTO it is. Delete the entry and create a new one for the other person.");
+        var after = before.Clone();
+        if (c.Date is not null) after.Date = ParseDate(n, c.Date);
+        if (c.Hours is not null) after.Hours = ParseHours(n, c.Hours, isUndo);
+        if (c.Description is not null) after.Description = Blank(c.Description);
+        string? unknownCode = null;
+        PiTimeCode? newCode = null;
+        if (c.TimeCodeId is not null || c.TimeCode is not null)
+        {
+            var code = await resolver.TimeCodeAsync(i, owner.Id, c.TimeCodeId, c.TimeCode, restoredCode, ct);
+            if (code.Clarification is { } cc)
+            {
+                clarifications.Add(cc);
+                return null;
+            }
+            after.TimeCodeId = code.Value!.Id;
+            after.TimeCodeName = code.Value.Name;
+            if (code.Unknown) unknownCode = code.Value.Id;
+            if (!TimeChangeResolver.SameId(code.Value.Id, before.TimeCodeId)) newCode = code.Value;
+        }
+        if (after.Date == before.Date && after.Hours == before.Hours && TimeChangeResolver.SameId(after.TimeCodeId, before.TimeCodeId) &&
+            (after.Description ?? "") == (before.Description ?? ""))
+        {
+            if (isUndo)
+                return null;
+            throw Invalid(n, $"this update changes nothing on PTO entry {id}.");
+        }
+        var updated = Row(after);
+        if (unknownCode is { } unknown)
+            Warn(updated, WarningCode.UnknownTimeCode, $"Time code {unknown} isn't one this person has used for PTO");
+        if (newCode is not null)
+            WarnIfInactive(updated, newCode, isUndo);
+        return updated;
+    }
+
+    /// <summary>
+    /// Flags a PTO row that sets a code PI marks inactive: an exact name can pick one over an active code with a
+    /// longer name. An undo only puts back the code a PTO had, so it isn't flagged.
+    /// </summary>
+    private static void WarnIfInactive(DraftRow row, PiTimeCode code, bool isUndo)
+    {
+        if (!code.IsActive && !isUndo)
+            Warn(row, WarningCode.InactiveTimeCode, $"Time code {code.Name} ({code.Id}) is inactive in Project Insight");
+    }
+
+    /// <summary>
+    /// The PTO record linked to a time entry, from the owner's PTO list (read once per plan). Null when none links to
+    /// it, or when the list can't be read; the guard then goes by the entry's shape alone.
+    /// </summary>
+    private static async Task<PiPto?> LinkedPtoAsync(PiEntry entry, TimeChangeResolver resolver, CancellationToken ct)
+    {
+        try
+        {
+            return (await resolver.PtoAsync(entry.UserId, ct)).FirstOrDefault(p => TimeChangeResolver.SameId(p.TimeEntryId, entry.Id));
+        }
+        catch (TimeChangeException e) when (e.Code == "pi_unavailable")
+        {
+            // A cancelled request reads as a failed one; it's a cancellation, never a reason to plan without PTO.
+            ct.ThrowIfCancellationRequested();
+            return null;
+        }
+    }
+
+    /// <summary>A PTO row's values. PTO has no task or project, so those stay empty.</summary>
+    private static EntryValues PtoValues(PiTimeCode code, DateOnly date, decimal hours, string? description) => new()
+    {
+        TaskId = "", TaskName = "", ProjectId = "", ProjectName = "", Date = date, Hours = hours, Billable = false,
+        Description = description, TimeCodeId = code.Id, TimeCodeName = code.Name
+    };
+
     /// <summary>
     /// PI's own look for each person on the card: their photo, else their initials and colours.
     /// Cosmetic, so a failure here leaves the card on its fallback initials and never fails the plan.
@@ -251,9 +444,12 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
     /// <summary>The longest period <see cref="Weeks.PeriodLike"/> makes up (two weeks).</summary>
     private const int MaxPeriodDays = 14;
 
-    private async Task<List<WeekData>> LoadWeeksAsync(List<DraftRow> rows, CancellationToken ct)
+    private async Task<(List<WeekData> Weeks, HashSet<string> PtoUnread)> LoadWeeksAsync(List<DraftRow> rows, TimeChangeResolver resolver, CancellationToken ct)
     {
         var weeks = new List<WeekData>();
+        var ptoUnread = new HashSet<string>();
+        var ptoByUser = new Dictionary<string, IReadOnlyList<PiPto>>();
+        var usersWithPtoRows = rows.Where(r => r.Kind == RowKind.Pto).Select(r => r.UserId).ToHashSet();
         var touched = rows
             .SelectMany(r => new[] { r.Before?.Date, r.After?.Date }.OfType<DateOnly>().Select(d => (r.UserId, r.UserName, Date: d)))
             .Distinct()
@@ -272,6 +468,23 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                 sheets = await pi.SearchTimeSheetsAsync(userId, dates.Min().AddDays(-PeriodLookbackDays), dates.Max().AddDays(MaxPeriodDays - 1), ct);
                 sheetsByUser[userId] = sheets;
             }
+            if (!ptoByUser.TryGetValue(userId, out var pto))
+            {
+                try
+                {
+                    pto = await resolver.PtoAsync(userId, ct);
+                }
+                catch (TimeChangeException e) when (e.Code == "pi_unavailable" && !usersWithPtoRows.Contains(userId))
+                {
+                    // A cancelled request reads as a failed one; it's a cancellation, never a reason to plan without PTO.
+                    ct.ThrowIfCancellationRequested();
+                    // Someone may edit another person's time without being allowed to read their PTO.
+                    // A time-only draft still works, with their PTO shown as plain PTO and left out of the fingerprint.
+                    pto = [];
+                    ptoUnread.Add(userId);
+                }
+                ptoByUser[userId] = pto;
+            }
             // A date a real timesheet covers belongs in that timesheet's week, never a made-up one.
             var sheet = Weeks.Covering(sheets, date);
             if (weeks.Any(w => w.Contains(userId, date) && (sheet is null || w.Sheet == sheet)))
@@ -280,16 +493,18 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             weeks.Add(new WeekData
             {
                 User = new PiUser(userId, userName), Start = start, End = end, Sheet = sheet,
-                Entries = await pi.SearchEntriesAsync(userId, start, end, ct)
+                Entries = await pi.SearchEntriesAsync(userId, start, end, ct),
+                Pto = pto.Where(p => start <= p.Date && p.Date <= end).ToList()
             });
         }
-        return weeks;
+        return (weeks, ptoUnread);
     }
 
     private static void BuildViews(Draft draft, List<WeekData> weeks, PiUser caller, DateOnly today)
     {
         var rows = draft.Rows;
-        var touchedIds = rows.Select(r => r.TimeEntryId).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // A PTO row's linked time entry is shown through the row, not as greyed context.
+        var touchedIds = rows.SelectMany(r => new[] { r.TimeEntryId, r.LinkedTimeEntryId }).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var w in weeks.OrderBy(w => w.User.Id == caller.Id ? 0 : 1).ThenBy(w => w.User.Name).ThenBy(w => w.Start))
         {
             var view = new WeekView
@@ -303,8 +518,23 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                 var existing = w.Entries.Where(e => e.Date == date).ToList();
                 var here = rows.Where(r => r.UserId == w.User.Id && (r.Before?.Date == date || r.After?.Date == date)).ToList();
                 var before = existing.Sum(e => e.Hours);
+                // Where a PTO's linked entry no longer matches its record, keep what the day counted, so the draft's
+                // net hours and the card's row delta agree with the day totals. An entry PI's search didn't list was
+                // counted as nothing (0).
+                foreach (var r in here.Where(r => r.Kind == RowKind.Pto && r.Before?.Date == date))
+                {
+                    var counted = existing.FirstOrDefault(e => TimeChangeResolver.SameId(e.Id, r.LinkedTimeEntryId))?.Hours ?? 0m;
+                    if (counted != r.Before!.Hours)
+                        r.CountedBeforeHours = counted;
+                }
+                // A PTO's hours are in the day's total through its linked entry, so a PTO change takes off what that
+                // entry counted, which can differ from the PTO record's hours if the entry was edited in PI. PI's
+                // search can lag behind that entry, and then there is nothing to take away.
                 var after = before
-                    - here.Where(r => r.Before?.Date == date).Sum(r => r.Before!.Hours)
+                    - here.Where(r => r.Before?.Date == date)
+                        .Sum(r => r.Kind != RowKind.Pto
+                            ? r.Before!.Hours
+                            : existing.FirstOrDefault(e => TimeChangeResolver.SameId(e.Id, r.LinkedTimeEntryId))?.Hours ?? 0m)
                     + here.Where(r => r.After?.Date == date).Sum(r => r.After!.Hours);
                 var weekend = date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
                 if (here.Count == 0 && weekend && before == 0)
@@ -314,14 +544,10 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                 {
                     Date = date, TotalBefore = before, TotalAfter = after, HasChanges = here.Count > 0,
                     RowIndexes = here.Select(r => r.Index).ToList(),
-                    Context = existing.Where(e => !touchedIds.Contains(e.Id)).Select(e => new ContextEntry
-                    {
-                        TimeEntryId = e.Id, ProjectName = e.ProjectName, ProjectColor = e.ProjectColor, TaskName = e.TaskName,
-                        Hours = e.Hours, Billable = e.Billable, Description = e.Description
-                    }).ToList()
+                    Context = existing.Where(e => !touchedIds.Contains(e.Id)).Select(e => ToContext(e, w.Pto)).ToList()
                 });
                 if (here.Count > 0)
-                    draft.DayFingerprints[Weeks.DayKey(w.User.Id, date)] = Fingerprint.Compute(existing, w.Sheet);
+                    draft.DayFingerprints[Weeks.DayKey(w.User.Id, date)] = Fingerprint.Compute(existing, w.Sheet, w.Pto.Where(p => p.Date == date));
             }
             view.TotalBefore = view.Days.Sum(d => d.TotalBefore);
             view.TotalAfter = view.Days.Sum(d => d.TotalAfter);
@@ -330,7 +556,10 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
 
         AddWarnings(draft, weeks, caller, today);
 
-        var befores = rows.Select(r => r.Before).OfType<EntryValues>().ToList();
+        // What each row takes off its day: a PTO row whose linked entry was edited counted that entry's hours. PtoDelta
+        // stays on the PTO records' hours, since that is the PTO being changed.
+        var befores = rows.Where(r => r.Before is not null)
+            .Select(r => (Hours: r.CountedBeforeHours ?? r.Before!.Hours, r.Before!.Billable)).ToList();
         var afters = rows.Select(r => r.After).OfType<EntryValues>().ToList();
         draft.Totals = new DraftTotals
         {
@@ -340,8 +569,26 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             Changes = rows.Count,
             Days = draft.DayFingerprints.Count,
             People = rows.Select(r => r.UserId).Distinct().Count(),
-            Warnings = rows.Sum(r => r.Warnings.Count)
+            Warnings = rows.Sum(r => r.Warnings.Count),
+            PtoDelta = rows.Where(r => r.Kind == RowKind.Pto).Sum(r => (r.After?.Hours ?? 0m) - (r.Before?.Hours ?? 0m))
         };
+    }
+
+    /// <summary>An existing entry as greyed context. PTO's linked entries read as PTO · time code, not as a task.</summary>
+    private static ContextEntry ToContext(PiEntry e, IReadOnlyList<PiPto> weekPto)
+    {
+        var context = new ContextEntry
+        {
+            TimeEntryId = e.Id, ProjectName = e.ProjectName, ProjectColor = e.ProjectColor, TaskName = e.TaskName,
+            Hours = e.Hours, Billable = e.Billable, Description = e.Description
+        };
+        var pto = weekPto.FirstOrDefault(p => string.Equals(p.TimeEntryId, e.Id, StringComparison.OrdinalIgnoreCase));
+        if (pto is not null || e.IsPto)
+        {
+            context.IsPto = true;
+            context.TimeCodeName = pto is null ? null : string.IsNullOrWhiteSpace(pto.TimeCodeName) ? pto.TimeCodeId : pto.TimeCodeName;
+        }
+        return context;
     }
 
     /// <summary>A row dated further back or ahead than this is flagged as a likely wrong date or year.</summary>
@@ -367,8 +614,28 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                     Warn(row, WarningCode.Over12Hours, $"Day goes over 12h ({Weeks.FormatHours(day.TotalAfter)}h)");
                 if (after.Hours * 4 != decimal.Truncate(after.Hours * 4))
                     Warn(row, WarningCode.NotQuarterHour, $"Not a whole quarter-hour ({Weeks.FormatHours(after.Hours)}h)");
+                if (row.Kind == RowKind.Pto && day.TotalAfter > 8m)
+                    Warn(row, WarningCode.Over8HoursPtoDay, $"PTO day goes over 8h ({Weeks.FormatHours(day.TotalAfter)}h)");
             }
-            if (row.Action == ChangeAction.Create && IsLikelyDuplicate(row, draft.Rows, week.Entries))
+            if (WeekHoursOver40(draft.Weeks.First(v => v.UserId == row.UserId && v.Start == week.Start), date) is { } weekHours)
+                Warn(row, WarningCode.Over40HoursWeek, $"Week goes over 40h ({Weeks.FormatHours(weekHours)}h)");
+            // A linked entry edited in PI's grid no longer matches its PTO. Commit and undo only write the PTO, so the
+            // entry ends up at the PTO's hours, never back at the edited ones. (An entry PI's search didn't list is unknown.)
+            if (row.Kind == RowKind.Pto && row.Before is { } was &&
+                weeks.First(w => w.Contains(row.UserId, was.Date)).Entries
+                    .FirstOrDefault(e => e.Date == was.Date && TimeChangeResolver.SameId(e.Id, row.LinkedTimeEntryId)) is { } linked &&
+                linked.Hours != was.Hours)
+            {
+                var (entryHours, ptoHours) = (Weeks.FormatHours(linked.Hours), Weeks.FormatHours(was.Hours));
+                Warn(row, WarningCode.LinkedEntryDiffers, $"The linked time entry has {entryHours}h but the PTO says {ptoHours}h; " +
+                    (row.Action == ChangeAction.DeletePto
+                        ? $"undo recreates the PTO with {ptoHours}h, not {entryHours}h"
+                        : $"Project Insight will set the entry to the PTO's new hours, and undo restores {ptoHours}h, not {entryHours}h"));
+            }
+            if (row.PtoApproved == true)
+                Warn(row, WarningCode.PtoApproved,
+                    "This PTO was already approved. PI may refuse the change or clear the approval. Undoing a delete recreates the PTO unapproved.");
+            if (row.Action is ChangeAction.Create or ChangeAction.CreatePto && IsLikelyDuplicate(row, draft.Rows, week))
                 Warn(row, WarningCode.LikelyDuplicate, "Looks like a duplicate of an entry already on this day");
             if (row.UserId != caller.Id)
                 Warn(row, WarningCode.OtherPerson, $"Changes {row.UserName}'s time");
@@ -385,7 +652,37 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         }
     }
 
-    private static bool IsLikelyDuplicate(DraftRow row, List<DraftRow> rows, IReadOnlyList<PiEntry> weekEntries)
+    /// <summary>
+    /// The after-total of the 7-day span (counted from the period's start) holding <paramref name="date"/>
+    /// when it's more than 40h, else null. A span cut short by the period's end is checked over the days it has.
+    /// </summary>
+    private static decimal? WeekHoursOver40(WeekView view, DateOnly date)
+    {
+        var chunkStart = view.Start.AddDays((date.DayNumber - view.Start.DayNumber) / 7 * 7);
+        var total = view.Days.Where(d => d.Date >= chunkStart && d.Date < chunkStart.AddDays(7)).Sum(d => d.TotalAfter);
+        return total > 40m ? total : null;
+    }
+
+    private static bool IsLikelyDuplicate(DraftRow row, List<DraftRow> rows, WeekData week)
+        => row.Kind == RowKind.Pto ? IsLikelyDuplicatePto(row, rows, week) : IsLikelyDuplicateTime(row, rows, week.Entries);
+
+    /// <summary>
+    /// Same person, date and time code as an existing PTO record or an earlier create_pto row. A record this draft
+    /// deletes, or moves off that date or to another code, doesn't count.
+    /// </summary>
+    private static bool IsLikelyDuplicatePto(DraftRow row, List<DraftRow> rows, WeekData week)
+    {
+        var a = row.After!;
+        var goingAway = rows
+            .Where(r => r.Action == ChangeAction.DeletePto ||
+                        r.Action == ChangeAction.UpdatePto && (r.After!.Date != r.Before!.Date || !TimeChangeResolver.SameId(r.After.TimeCodeId, r.Before.TimeCodeId)))
+            .Select(r => r.PtoEntryId).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return week.Pto.Any(p => p.Date == a.Date && TimeChangeResolver.SameId(p.TimeCodeId, a.TimeCodeId) && !goingAway.Contains(p.Id)) ||
+               rows.Any(r => r.Index < row.Index && r.Action == ChangeAction.CreatePto && r.UserId == row.UserId &&
+                             r.After!.Date == a.Date && TimeChangeResolver.SameId(r.After.TimeCodeId, a.TimeCodeId));
+    }
+
+    private static bool IsLikelyDuplicateTime(DraftRow row, List<DraftRow> rows, IReadOnlyList<PiEntry> weekEntries)
     {
         var a = row.After!;
         var deleted = rows.Where(r => r.Action == ChangeAction.Delete).Select(r => r.TimeEntryId).ToHashSet();

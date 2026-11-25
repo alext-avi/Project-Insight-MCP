@@ -9,6 +9,13 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
 {
     public static readonly TimeSpan StuckAfter = TimeSpan.FromMinutes(10);
 
+    /// <summary>
+    /// Said of a PTO a rollback or undo recreates after it had been approved. PI's PTO write takes no approval, so the
+    /// recreated PTO is unapproved.
+    /// </summary>
+    public const string RecreatedUnapproved =
+        "This PTO was approved; it was recreated without approval, so it needs approving again in Project Insight";
+
     /// <summary>Loads the caller's draft, first marking it expired, or failed if a commit was interrupted.</summary>
     public async Task<Draft> LoadAsync(PiUser caller, string id, CancellationToken ct)
     {
@@ -82,7 +89,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
             if (result.Success)
             {
                 row.Outcome = RowOutcome.Applied;
-                if (row.Action == ChangeAction.Create)
+                if (row.Action is ChangeAction.Create or ChangeAction.CreatePto)
                     row.SavedId = result.SavedId;
                 applied.Add(row);
                 continue;
@@ -102,8 +109,12 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
                 done.Outcome = reversed.Success ? RowOutcome.Reversed : RowOutcome.ReverseFailed;
                 if (!reversed.Success)
                     done.Error = reversed.Error;
-                else if (done.Action == ChangeAction.Delete)
+                else if (done.Action is ChangeAction.Delete or ChangeAction.DeletePto)
+                {
                     done.SavedId = reversed.SavedId; // recreated under a new id
+                    if (done.Action == ChangeAction.DeletePto && done.PtoApproved == true)
+                        done.Warnings.Add(new DraftWarning { Code = WarningCode.PtoRecreatedUnapproved, Message = RecreatedUnapproved });
+                }
             }
             var error = unknown
                 ? UnansweredError(claimed, row, result.Error, Weeks.Today(time))
@@ -113,6 +124,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
                 d.Status = DraftStatus.Failed;
                 d.Error = error;
                 d.OutcomeUnknown = unknown;
+                d.Totals.Warnings = d.Rows.Sum(r => r.Warnings.Count); // a rollback can add one
             });
         }
 
@@ -188,6 +200,10 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
     {
         var stale = new List<string>();
         var today = Weeks.Today(time);
+        var ptoByUser = new Dictionary<string, IReadOnlyList<PiPto>>();
+        // People whose PTO was readable at plan time but not now, with what the failed read said.
+        var unreadNow = new Dictionary<string, string>();
+        var legacy = draft.FingerprintVersion is null;
         foreach (var week in draft.Weeks)
         {
             var days = draft.DayFingerprints.Keys
@@ -200,11 +216,39 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
                 continue;
             var entries = await pi.SearchEntriesAsync(week.UserId, week.Start, week.End, ct);
             var sheets = await pi.SearchTimeSheetsAsync(week.UserId, week.Start, week.End, ct);
+            // A 2.1.0 draft fingerprinted work entries only: it never saw PTO records or PTO-linked entries.
+            if (legacy)
+                entries = entries.Where(e => !e.IsPto).ToList();
+            // The plan left PTO out of the fingerprint for people whose PTO it couldn't read, so do the same here.
+            IReadOnlyList<PiPto>? pto = null;
+            if (!legacy && draft.PtoUnreadUsers?.Contains(week.UserId) != true && !ptoByUser.TryGetValue(week.UserId, out pto))
+            {
+                try
+                {
+                    ptoByUser[week.UserId] = pto = (await pi.ReadPtoAsync(week.UserId, ct)).Records;
+                }
+                catch (TimeChangeException e) when (e.Code == "pi_unavailable" && !draft.Rows.Any(r => r.Kind == RowKind.Pto && r.UserId == week.UserId))
+                {
+                    // A cancelled request reads as a failed one; it's a cancellation, never a reason to check without PTO.
+                    ct.ThrowIfCancellationRequested();
+                    // PTO was readable at plan time but isn't now. With no PTO rows for this person, fall back to no
+                    // PTO in the fingerprint: a day without PTO hashes as it did, so it can still be checked.
+                    ptoByUser[week.UserId] = [];
+                    pto = null;
+                    unreadNow[week.UserId] = e.Message;
+                }
+            }
             foreach (var (key, date) in days)
             {
-                var now = Fingerprint.Compute(entries.Where(e => e.Date == date), Weeks.Covering(sheets, date));
-                if (now != draft.DayFingerprints[key])
-                    stale.Add(Weeks.DayLabel(week.IsCaller ? "You" : week.UserName, date, today));
+                var now = Fingerprint.Compute(entries.Where(e => e.Date == date), Weeks.Covering(sheets, date),
+                    pto?.Where(p => p.Date == date));
+                if (now == draft.DayFingerprints[key])
+                    continue;
+                // Without this person's PTO, a mismatch may only be the PTO left out, not a change in PI. Stale is
+                // final, so don't guess: report PTO as unreadable, which hands the draft back to commit later.
+                if (unreadNow.TryGetValue(week.UserId, out var unread))
+                    throw new TimeChangeException("pi_unavailable", unread);
+                stale.Add(Weeks.DayLabel(week.IsCaller ? "You" : week.UserName, date, today));
             }
         }
         return stale;
@@ -214,15 +258,46 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
     {
         ChangeAction.Create => pi.CreateEntryAsync(Write(draft, row, row.After!), ct),
         ChangeAction.Update => pi.UpdateEntryAsync(row.TimeEntryId!, Write(draft, row, row.After!), ct),
-        _ => pi.DeleteEntryAsync(row.TimeEntryId!, ct)
+        ChangeAction.Delete => pi.DeleteEntryAsync(row.TimeEntryId!, ct),
+        ChangeAction.CreatePto => CreatePtoAsync(row, row.After!, ct),
+        ChangeAction.UpdatePto => pi.UpdatePtoAsync(row.PtoEntryId!, PtoWrite(row, row.After!), ct),
+        ChangeAction.DeletePto => DeletePtoAsync(row.PtoEntryId!, ct),
+        _ => throw new InvalidOperationException($"Unknown change action \"{row.Action}\".")
     };
 
     private Task<PiWrite> ReverseAsync(Draft draft, DraftRow row, CancellationToken ct) => row.Action switch
     {
         ChangeAction.Create => pi.DeleteEntryAsync(row.SavedId!, ct),
         ChangeAction.Update => pi.UpdateEntryAsync(row.TimeEntryId!, Write(draft, row, row.Before!), ct),
-        _ => pi.CreateEntryAsync(Write(draft, row, row.Before!), ct)
+        ChangeAction.Delete => pi.CreateEntryAsync(Write(draft, row, row.Before!), ct),
+        ChangeAction.CreatePto => DeletePtoAsync(row.SavedId!, ct),
+        ChangeAction.UpdatePto => pi.UpdatePtoAsync(row.PtoEntryId!, PtoWrite(row, row.Before!), ct),
+        ChangeAction.DeletePto => CreatePtoAsync(row, row.Before!, ct),
+        _ => throw new InvalidOperationException($"Unknown change action \"{row.Action}\".")
     };
+
+    private static PtoWrite PtoWrite(DraftRow row, EntryValues v) => new(row.UserId, v.Date, v.Hours, v.TimeCodeId!, v.Description);
+
+    /// <summary>
+    /// Creates a PTO record. PI saying yes without an id leaves nothing to reverse or undo, so that is treated as
+    /// unanswered.
+    /// </summary>
+    private async Task<PiWrite> CreatePtoAsync(DraftRow row, EntryValues values, CancellationToken ct)
+    {
+        var created = await pi.CreatePtoAsync(PtoWrite(row, values), ct);
+        if (!created.Success)
+            return created;
+        if (string.IsNullOrEmpty(created.SavedId))
+            return new PiWrite(false, null, "Project Insight accepted the PTO entry but didn't say which one it created.", Uncertain: true);
+        return created;
+    }
+
+    /// <summary>
+    /// Deletes a PTO record and nothing else. Per docs/PTO.md, PI deletes the PTO's linked time entry itself. Reading or
+    /// deleting that entry straight after the PTO delete races PI (a day search still lists it, and a GET or DELETE of it
+    /// returns HTTP 500), so the committer leaves it to PI.
+    /// </summary>
+    private Task<PiWrite> DeletePtoAsync(string ptoEntryId, CancellationToken ct) => pi.DeletePtoAsync(ptoEntryId, ct);
 
     private static EntryWrite Write(Draft draft, DraftRow row, EntryValues v)
         => new(row.UserId, v.TaskId, v.Date, v.Hours, v.Billable, v.Description,

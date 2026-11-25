@@ -1,7 +1,7 @@
 [
   {
     "name": "plan_time_changes",
-    "description": "Draft changes to Project Insight time entries for the user to review. Writes nothing to Project Insight: returns a draft (shown to the user as a review card where supported), or a clarification when a name is ambiguous. Each change is one of: create {date, hours, taskId or project \u002B task names, description?, billable?, user?}, update {timeEntryId plus only the fields to change}, delete {timeEntryId}. After planning, summarize the draft and ask the user to confirm; only commit when they agree.",
+    "description": "Draft changes to Project Insight time entries and PTO for the user to review. Writes nothing to Project Insight: returns a draft (shown to the user as a review card where supported), or a clarification when a name is ambiguous. Each change is one of: create {date, hours, taskId or project \u002B task names, description?, billable?, user?}, update {timeEntryId plus only the fields to change}, delete {timeEntryId}, create_pto {date, hours, timeCode name or timeCodeId, description?, user?}, update_pto {ptoEntryId plus only the fields to change}, delete_pto {ptoEntryId}. Prefer this over create_pto_entry/update_pto_entry/delete_pto_entry. PTO creates its own linked time entry; never add a time entry for PTO. After planning, summarize the draft and ask the user to confirm; only commit when they agree.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -16,7 +16,7 @@
             "type": "object",
             "properties": {
               "action": {
-                "description": "create, update or delete.",
+                "description": "create, update or delete for time entries; create_pto, update_pto or delete_pto for PTO.",
                 "type": "string"
               },
               "timeEntryId": {
@@ -27,14 +27,14 @@
                 ]
               },
               "date": {
-                "description": "create: required. update: new date. Format yyyy-MM-dd.",
+                "description": "create/create_pto: required. update/update_pto: new date. Format yyyy-MM-dd.",
                 "type": [
                   "string",
                   "null"
                 ]
               },
               "hours": {
-                "description": "create: required. update: new hours. Use 0.25 increments.",
+                "description": "create/create_pto: required. update/update_pto: new hours. Use 0.25 increments.",
                 "type": [
                   "number",
                   "null"
@@ -76,7 +76,28 @@
                 ]
               },
               "user": {
-                "description": "create only: whose time (user id or name). Defaults to the signed-in user.",
+                "description": "create/create_pto only: whose time (user id or name). Defaults to the signed-in user.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "ptoEntryId": {
+                "description": "update_pto/delete_pto: the PTO entry id (not the time entry id it creates).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "timeCode": {
+                "description": "PTO only: the time code name, such as PTO. An exact name wins, else a unique partial match; among several, the only active one. Or give timeCodeId.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "timeCodeId": {
+                "description": "PTO only: the time code id. Use instead of timeCode when known.",
                 "type": [
                   "string",
                   "null"
@@ -197,6 +218,36 @@
                       "null"
                     ]
                   },
+                  "kind": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "linkedTimeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoApproved": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "countedBeforeHours": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
                   "savedId": {
                     "type": [
                       "string",
@@ -238,6 +289,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -288,6 +351,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -478,6 +553,18 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "isPto": {
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
+                              },
+                              "timeCodeName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -526,6 +613,9 @@
                 },
                 "warnings": {
                   "type": "integer"
+                },
+                "ptoDelta": {
+                  "type": "number"
                 }
               }
             },
@@ -629,7 +719,7 @@
   },
   {
     "name": "commit_time_changes",
-    "description": "Apply a draft from plan_time_changes or undo_time_changes to Project Insight, all or nothing. Only call this after the user has agreed to the draft. Refused if the affected days changed in Project Insight since the draft was made (draft again) or if the draft expired (24 hours).",
+    "description": "Apply a draft from plan_time_changes or undo_time_changes to Project Insight, all or nothing. Only call this after the user has agreed to the draft. Refused if the affected days changed in Project Insight since the draft was made (draft again) or if the draft expired (24 hours). Includes PTO rows.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -748,6 +838,36 @@
                       "null"
                     ]
                   },
+                  "kind": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "linkedTimeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoApproved": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "countedBeforeHours": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
                   "savedId": {
                     "type": [
                       "string",
@@ -789,6 +909,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -839,6 +971,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -1029,6 +1173,18 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "isPto": {
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
+                              },
+                              "timeCodeName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -1077,6 +1233,9 @@
                 },
                 "warnings": {
                   "type": "integer"
+                },
+                "ptoDelta": {
+                  "type": "number"
                 }
               }
             },
@@ -1304,6 +1463,36 @@
                       "null"
                     ]
                   },
+                  "kind": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "linkedTimeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoApproved": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "countedBeforeHours": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
                   "savedId": {
                     "type": [
                       "string",
@@ -1345,6 +1534,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -1395,6 +1596,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -1585,6 +1798,18 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "isPto": {
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
+                              },
+                              "timeCodeName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -1633,6 +1858,9 @@
                 },
                 "warnings": {
                   "type": "integer"
+                },
+                "ptoDelta": {
+                  "type": "number"
                 }
               }
             },
@@ -1855,6 +2083,36 @@
                       "null"
                     ]
                   },
+                  "kind": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "linkedTimeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoApproved": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "countedBeforeHours": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
                   "savedId": {
                     "type": [
                       "string",
@@ -1896,6 +2154,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -1946,6 +2216,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -2136,6 +2418,18 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "isPto": {
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
+                              },
+                              "timeCodeName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -2184,6 +2478,9 @@
                 },
                 "warnings": {
                   "type": "integer"
+                },
+                "ptoDelta": {
+                  "type": "number"
                 }
               }
             },
@@ -2288,7 +2585,7 @@
   },
   {
     "name": "undo_time_changes",
-    "description": "Draft the reverse of a committed draft (pass its id as receiptId). Returns a new draft that must be confirmed or committed like any other. Available for 24 hours after commit.",
+    "description": "Draft the reverse of a committed draft (pass its id as receiptId). Returns a new draft that must be confirmed or committed like any other. Available for 24 hours after commit. Includes PTO rows.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2407,6 +2704,36 @@
                       "null"
                     ]
                   },
+                  "kind": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "linkedTimeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoApproved": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "countedBeforeHours": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
                   "savedId": {
                     "type": [
                       "string",
@@ -2448,6 +2775,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -2498,6 +2837,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -2688,6 +3039,18 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "isPto": {
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
+                              },
+                              "timeCodeName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -2736,6 +3099,9 @@
                 },
                 "warnings": {
                   "type": "integer"
+                },
+                "ptoDelta": {
+                  "type": "number"
                 }
               }
             },
@@ -2959,6 +3325,36 @@
                       "null"
                     ]
                   },
+                  "kind": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "linkedTimeEntryId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ptoApproved": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "countedBeforeHours": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
                   "savedId": {
                     "type": [
                       "string",
@@ -3000,6 +3396,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -3050,6 +3458,18 @@
                         "type": "boolean"
                       },
                       "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "timeCodeName": {
                         "type": [
                           "string",
                           "null"
@@ -3240,6 +3660,18 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "isPto": {
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
+                              },
+                              "timeCodeName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -3288,6 +3720,9 @@
                 },
                 "warnings": {
                   "type": "integer"
+                },
+                "ptoDelta": {
+                  "type": "number"
                 }
               }
             },

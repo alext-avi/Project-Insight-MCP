@@ -21,6 +21,17 @@ public sealed class FakeGateway : ITimeEntryGateway
 
     public List<PiEntry> Entries { get; } = new();
 
+    public List<PiPto> Pto { get; } = new();
+
+    /// <summary>PI updates a PTO record's linked time entry in place. Set false to simulate it staying put.</summary>
+    public bool UpdatePtoMovesLinkedEntry { get; set; } = true;
+
+    /// <summary>When true, ReadPtoAsync throws pi_unavailable.</summary>
+    public bool PtoListThrows { get; set; }
+
+    /// <summary>How many times a user's PTO list was read from PI (each read is one list_user_pto API call).</summary>
+    public int PtoReads { get; private set; }
+
     /// <summary>Project colours by project id; projects not listed have none.</summary>
     public Dictionary<string, string> ProjectColors { get; } = new();
 
@@ -35,6 +46,9 @@ public sealed class FakeGateway : ITimeEntryGateway
 
     /// <summary>Timesheets per user id.</summary>
     public Dictionary<string, List<PiTimeSheet>> Sheets { get; } = new();
+
+    /// <summary>What each successful PTO create or update sent, in order, keyed like <see cref="Writes"/>.</summary>
+    public List<(string Write, PtoWrite Values)> PtoWrites { get; } = new();
 
     /// <summary>Successful writes, in order: "create:te-100", "update:te-1", "delete:te-4".</summary>
     public List<string> Writes { get; } = new();
@@ -74,6 +88,25 @@ public sealed class FakeGateway : ITimeEntryGateway
         var entry = new PiEntry(id, userId, date, hours, billable, description, task.Id, task.Name, task.ProjectId, task.ProjectName, null, task.ProjectColor);
         Entries.Add(entry);
         return entry;
+    }
+
+    /// <summary>Time codes seen only on accrual/balance records (no usage), by user id.</summary>
+    public Dictionary<string, List<PiTimeCode>> AccrualCodes { get; } = new();
+
+    public void AddAccrual(string userId, string timeCodeId, string name)
+        => (AccrualCodes.TryGetValue(userId, out var l) ? l : AccrualCodes[userId] = []).Add(new PiTimeCode(timeCodeId, name));
+
+    /// <summary>Time code ids PI marks inactive.</summary>
+    public HashSet<string> InactiveCodes { get; } = new();
+
+    public PiPto AddPto(string id, string userId, DateOnly date, decimal hours, string timeCodeId = "tc-1",
+        string timeCodeName = "PTO", bool approved = false)
+    {
+        var entryId = $"te-pto-{id}";
+        var pto = new PiPto(id, userId, date, hours, timeCodeId, timeCodeName, null, entryId, approved);
+        Pto.Add(pto);
+        Entries.Add(new PiEntry(entryId, userId, date, hours, false, null, "", "", "", "", null, IsPto: true));
+        return pto;
     }
 
     public async Task<PiUser> GetCurrentUserAsync(CancellationToken ct) { await Enter(); return Caller; }
@@ -163,6 +196,94 @@ public sealed class FakeGateway : ITimeEntryGateway
         AfterWrite?.Invoke(Writes.Count);
         return new PiWrite(true, null, null);
     }
+
+    /// <summary>When set, ReadPtoAsync cancels it first: the request is cancelled while PTO is being read.</summary>
+    public CancellationTokenSource? CancelDuringPtoList { get; set; }
+
+    public async Task<PiPtoList> ReadPtoAsync(string userId, CancellationToken ct)
+    {
+        PtoReads++;
+        await Enter();
+        CancelDuringPtoList?.Cancel();
+        // As the real gateway: the API service turns a cancelled request into a failed one, so it reads as unavailable.
+        if (PtoListThrows || ct.IsCancellationRequested) throw new TimeChangeException("pi_unavailable", "Could not read PTO in Project Insight.");
+        var codes = Pto.Where(p => p.UserId == userId && !string.IsNullOrWhiteSpace(p.TimeCodeName))
+            .Select(p => new PiTimeCode(p.TimeCodeId, p.TimeCodeName!))
+            .Concat(AccrualCodes.GetValueOrDefault(userId) ?? [])
+            .GroupBy(c => c.Id).Select(g => g.First() with { IsActive = !InactiveCodes.Contains(g.Key) })
+            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        return new PiPtoList(Pto.Where(p => p.UserId == userId).ToList(), codes);
+    }
+
+    /// <summary>Invoked after each GetPtoAsync with the id read, so a test can change PI between two reads.</summary>
+    public Action<string>? AfterGetPto { get; set; }
+
+    public async Task<PiPto?> GetPtoAsync(string ptoEntryId, CancellationToken ct)
+    {
+        await Enter();
+        var pto = Pto.FirstOrDefault(p => p.Id == ptoEntryId);
+        AfterGetPto?.Invoke(ptoEntryId);
+        return pto;
+    }
+
+    public async Task<PiWrite> CreatePtoAsync(PtoWrite w, CancellationToken ct)
+    {
+        await Enter();
+        if (ThrowOnWrite?.Invoke("create_pto", null) is { } thrown) throw thrown;
+        if (ct.IsCancellationRequested) return new PiWrite(false, null, "The operation was canceled.");
+        if (FailWrite?.Invoke("create_pto", null) is { } error) return new PiWrite(false, null, error);
+        if (UncertainWrite?.Invoke("create_pto", null) is { } unsure) return new PiWrite(false, null, unsure, Uncertain: true);
+        var id = $"pto-{_next++}";
+        var entryId = $"te-pto-{id}";
+        Pto.Add(new PiPto(id, w.UserId, w.Date, w.Hours, w.TimeCodeId, TimeCodeName(w.TimeCodeId), w.Description, entryId, false));
+        Entries.Add(new PiEntry(entryId, w.UserId, w.Date, w.Hours, false, w.Description, "", "", "", "", null, IsPto: true));
+        Writes.Add($"create_pto:{id}");
+        PtoWrites.Add(($"create_pto:{id}", w));
+        AfterWrite?.Invoke(Writes.Count);
+        return new PiWrite(true, id, null);
+    }
+
+    public async Task<PiWrite> UpdatePtoAsync(string ptoEntryId, PtoWrite w, CancellationToken ct)
+    {
+        await Enter();
+        if (ThrowOnWrite?.Invoke("update_pto", ptoEntryId) is { } thrown) throw thrown;
+        if (ct.IsCancellationRequested) return new PiWrite(false, null, "The operation was canceled.");
+        if (FailWrite?.Invoke("update_pto", ptoEntryId) is { } error) return new PiWrite(false, null, error);
+        if (UncertainWrite?.Invoke("update_pto", ptoEntryId) is { } unsure) return new PiWrite(false, null, unsure, Uncertain: true);
+        var i = Pto.FindIndex(p => p.Id == ptoEntryId);
+        if (i < 0) return new PiWrite(false, null, "Not found");
+        var old = Pto[i];
+        Pto[i] = old with
+        {
+            Date = w.Date, Hours = w.Hours, TimeCodeId = w.TimeCodeId, TimeCodeName = TimeCodeName(w.TimeCodeId), Description = w.Description
+        };
+        if (UpdatePtoMovesLinkedEntry && old.TimeEntryId is { } linked && Entries.FindIndex(e => e.Id == linked) is var j and >= 0)
+            Entries[j] = Entries[j] with { Date = w.Date, Hours = w.Hours, Description = w.Description };
+        Writes.Add($"update_pto:{ptoEntryId}");
+        PtoWrites.Add(($"update_pto:{ptoEntryId}", w));
+        AfterWrite?.Invoke(Writes.Count);
+        return new PiWrite(true, ptoEntryId, null);
+    }
+
+    public async Task<PiWrite> DeletePtoAsync(string ptoEntryId, CancellationToken ct)
+    {
+        await Enter();
+        if (ThrowOnWrite?.Invoke("delete_pto", ptoEntryId) is { } thrown) throw thrown;
+        if (ct.IsCancellationRequested) return new PiWrite(false, null, "The operation was canceled.");
+        if (FailWrite?.Invoke("delete_pto", ptoEntryId) is { } error) return new PiWrite(false, null, error);
+        if (UncertainWrite?.Invoke("delete_pto", ptoEntryId) is { } unsure) return new PiWrite(false, null, unsure, Uncertain: true);
+        var pto = Pto.FirstOrDefault(p => p.Id == ptoEntryId);
+        if (pto is null) return new PiWrite(false, null, "Not found");
+        Pto.Remove(pto);
+        if (pto.TimeEntryId is { } linked)
+            Entries.RemoveAll(e => e.Id == linked);
+        Writes.Add($"delete_pto:{ptoEntryId}");
+        AfterWrite?.Invoke(Writes.Count);
+        return new PiWrite(true, null, null);
+    }
+
+    private string? TimeCodeName(string timeCodeId) => Pto.FirstOrDefault(p => p.TimeCodeId == timeCodeId)?.TimeCodeName
+        ?? (timeCodeId == "tc-1" ? "PTO" : null);
 
     public async Task<IReadOnlyDictionary<string, PiLook>> GetUserLooksAsync(IReadOnlyCollection<string> userIds, CancellationToken ct)
     {

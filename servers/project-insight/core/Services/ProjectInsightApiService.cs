@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -161,16 +162,16 @@ public class ProjectInsightApiService
                 requestBody["companyDefault_Id"] = request.CompanyId;
 
             if (request.StartDateFrom.HasValue)
-                requestBody["startDateFrom"] = request.StartDateFrom.Value.ToString("yyyy-MM-dd");
+                requestBody["startDateFrom"] = request.StartDateFrom.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
             if (request.StartDateTo.HasValue)
-                requestBody["startDateTo"] = request.StartDateTo.Value.ToString("yyyy-MM-dd");
+                requestBody["startDateTo"] = request.StartDateTo.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
             if (request.EndDateFrom.HasValue)
-                requestBody["endDateFrom"] = request.EndDateFrom.Value.ToString("yyyy-MM-dd");
+                requestBody["endDateFrom"] = request.EndDateFrom.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
             if (request.EndDateTo.HasValue)
-                requestBody["endDateTo"] = request.EndDateTo.Value.ToString("yyyy-MM-dd");
+                requestBody["endDateTo"] = request.EndDateTo.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
             var json = JsonSerializer.Serialize(requestBody, JsonOptions);
             var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
@@ -686,16 +687,16 @@ public class ProjectInsightApiService
             parameters.Add($"companyDefault_Id={Uri.EscapeDataString(request.CompanyId)}");
 
         if (request.StartDateFrom.HasValue)
-            parameters.Add($"startDateFrom={request.StartDateFrom.Value:yyyy-MM-dd}");
+            parameters.Add($"startDateFrom={request.StartDateFrom.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
 
         if (request.StartDateTo.HasValue)
-            parameters.Add($"startDateTo={request.StartDateTo.Value:yyyy-MM-dd}");
+            parameters.Add($"startDateTo={request.StartDateTo.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
 
         if (request.EndDateFrom.HasValue)
-            parameters.Add($"endDateFrom={request.EndDateFrom.Value:yyyy-MM-dd}");
+            parameters.Add($"endDateFrom={request.EndDateFrom.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
 
         if (request.EndDateTo.HasValue)
-            parameters.Add($"endDateTo={request.EndDateTo.Value:yyyy-MM-dd}");
+            parameters.Add($"endDateTo={request.EndDateTo.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
 
         if (!string.IsNullOrEmpty(request.ModelProperties))
             parameters.Add($"modelProperties={Uri.EscapeDataString(request.ModelProperties)}");
@@ -1296,9 +1297,9 @@ public class ProjectInsightApiService
             if (!string.IsNullOrEmpty(request.UserTypeGuidList))
                 queryParams.Add($"userTypeGuidList={Uri.EscapeDataString(request.UserTypeGuidList)}");
             if (request.StartDate.HasValue)
-                queryParams.Add($"startDate={request.StartDate.Value:yyyy-MM-dd}");
+                queryParams.Add($"startDate={request.StartDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
             if (request.EndDate.HasValue)
-                queryParams.Add($"endDate={request.EndDate.Value:yyyy-MM-dd}");
+                queryParams.Add($"endDate={request.EndDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
             if (request.ExcludeUnsubmitted.HasValue)
                 queryParams.Add($"excludeUnsubmitted={request.ExcludeUnsubmitted.Value.ToString().ToLower()}");
             if (request.ExcludeApproved.HasValue)
@@ -1452,7 +1453,7 @@ public class ProjectInsightApiService
     {
         try
         {
-            var url = $"/api/time-sheet/create-and-submit?startDate={startDate:yyyy-MM-dd}&endDate={endDate:yyyy-MM-dd}&userId={Uri.EscapeDataString(userId)}";
+            var url = $"/api/time-sheet/create-and-submit?startDate={startDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}&endDate={endDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}&userId={Uri.EscapeDataString(userId)}";
 
             _logger.LogInformation("Creating and submitting timesheet for user {UserId}, {StartDate} - {EndDate}", userId, startDate, endDate);
             var response = await PostWithTokenAsync(url, new StringContent("{}", Encoding.UTF8, "application/json"), cancellationToken);
@@ -1636,9 +1637,9 @@ public class ProjectInsightApiService
             if (!string.IsNullOrEmpty(request.TimeSheetGuidList))
                 queryParams.Add($"timeSheetGuidList={Uri.EscapeDataString(request.TimeSheetGuidList)}");
             if (request.StartDate.HasValue)
-                queryParams.Add($"startDate={request.StartDate.Value:yyyy-MM-dd}");
+                queryParams.Add($"startDate={request.StartDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
             if (request.EndDate.HasValue)
-                queryParams.Add($"endDate={request.EndDate.Value:yyyy-MM-dd}");
+                queryParams.Add($"endDate={request.EndDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
             if (request.IsBillable.HasValue)
                 queryParams.Add($"isBillable={request.IsBillable.Value.ToString().ToLower()}");
             if (!string.IsNullOrEmpty(request.ModelProperties))
@@ -1832,7 +1833,7 @@ public class ProjectInsightApiService
         {
             var url = "/api/time-entry/search" +
                 $"?userList={Uri.EscapeDataString(userId)}" +
-                $"&startDate={startDate:yyyy-MM-dd}&endDate={endDate:yyyy-MM-dd}" +
+                $"&startDate={startDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}&endDate={endDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}" +
                 $"&modelProperties={Uri.EscapeDataString(TimeEntryWithNames.ModelProperties)}";
             var response = await GetWithTokenAsync(url, cancellationToken);
             var content = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -2553,7 +2554,7 @@ public class ProjectInsightApiService
             if (!string.IsNullOrEmpty(ptoEntry.UserId))
                 payload["User_Id"] = ptoEntry.UserId;
             if (ptoEntry.Date.HasValue)
-                payload["Date"] = ptoEntry.Date.Value.ToString("M/d/yyyy");
+                payload["Date"] = ptoEntry.Date.Value.ToString("M/d/yyyy", CultureInfo.InvariantCulture);
             if (ptoEntry.PTOHours.HasValue)
                 payload["PTOHours"] = ptoEntry.PTOHours.Value;
             if (!string.IsNullOrEmpty(ptoEntry.TimeCodeId))

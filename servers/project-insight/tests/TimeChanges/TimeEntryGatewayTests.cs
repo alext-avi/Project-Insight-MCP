@@ -160,6 +160,189 @@ public class TimeEntryGatewayTests
         Assert.Null(await gw.GetEntryAsync("te-9", default));
     }
 
+    private const string PtoListJson = """
+        [{"Id":"pto-1","User_Id":"u-1","Date":"2026-11-02T00:00:00","PTOHours":8,"TimeCode_Id":"tc-1",
+          "TimeCode":{"Id":"tc-1","Name":"PTO","IsActive":true},"TimeEntry_Id":"te-9","Description":"Trip"},
+         {"Id":"acc-1","User_Id":"u-1","Date":"2026-01-01T00:00:00","PTOHours":0,"PTOAdded":8,"PTOBalance":8}]
+        """;
+
+    [Fact]
+    public async Task Search_keeps_task_less_entries_as_pto()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.OK,
+            """[{"Id":"te-9","Date":"2026-11-02T00:00:00","ActualHours":8,"IsBillable":false,"Task_Id":null,"User_Id":"u-1"}]"""));
+
+        var e = Assert.Single(await gw.SearchEntriesAsync("u-1", new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 7), default));
+
+        Assert.True(e.IsPto);
+        Assert.Equal("", e.TaskId);
+        Assert.Equal("", e.ProjectId);
+    }
+
+    [Fact]
+    public async Task Search_keeps_an_entry_with_an_empty_task_id_as_an_ordinary_entry_as_2_1_0_did()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.OK,
+            """[{"Id":"te-9","Date":"2026-11-02T00:00:00","ActualHours":8,"IsBillable":false,"Task_Id":"","User_Id":"u-1"}]"""));
+
+        var e = Assert.Single(await gw.SearchEntriesAsync("u-1", new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 7), default));
+
+        Assert.False(e.IsPto);
+        Assert.Equal("", e.TaskId);
+    }
+
+    [Fact]
+    public async Task Search_drops_an_entry_with_a_project_but_no_task()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.OK,
+            """[{"Id":"te-9","Date":"2026-11-02T00:00:00","ActualHours":8,"Task_Id":null,"Project_Id":"p-1","User_Id":"u-1"}]"""));
+
+        Assert.Empty(await gw.SearchEntriesAsync("u-1", new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 7), default));
+    }
+
+    [Fact]
+    public async Task ReadPto_collects_codes_from_every_record_including_accruals()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.OK, """
+            [{"Id":"pto-1","User_Id":"u-1","Date":"2026-11-02T00:00:00","PTOHours":8,"TimeCode_Id":"tc-1","TimeCode":{"Id":"tc-1","Name":"PTO"}},
+             {"Id":"pto-2","User_Id":"u-1","Date":"2026-11-03T00:00:00","PTOHours":4,"TimeCode_Id":"tc-1","TimeCode":{"Id":"tc-1","Name":"PTO"}},
+             {"Id":"acc-1","User_Id":"u-1","Date":"2026-01-01T00:00:00","PTOAdded":8,"TimeCode_Id":"tc-7","TimeCode":{"Id":"tc-7","Name":"Floating Holiday"}},
+             {"Id":"acc-2","User_Id":"u-1","Date":"2026-01-01T00:00:00","PTOAdded":8}]
+            """));
+
+        var codes = (await gw.ReadPtoAsync("u-1", default)).TimeCodes;
+
+        Assert.Equal([new PiTimeCode("tc-7", "Floating Holiday"), new PiTimeCode("tc-1", "PTO")], codes);
+    }
+
+    [Fact]
+    public async Task ReadPto_reads_whether_each_code_is_active()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.OK, """
+            [{"Id":"pto-1","User_Id":"u-1","Date":"2026-11-02T00:00:00","PTOHours":8,"TimeCode_Id":"tc-old","TimeCode":{"Id":"tc-old","Name":"PTO","IsActive":false}},
+             {"Id":"pto-2","User_Id":"u-1","Date":"2026-11-03T00:00:00","PTOHours":4,"TimeCode_Id":"tc-new","TimeCode":{"Id":"tc-new","Name":"PTO","IsActive":true}}]
+            """));
+
+        var codes = (await gw.ReadPtoAsync("u-1", default)).TimeCodes;
+
+        Assert.Equal([("tc-new", true), ("tc-old", false)], codes.OrderBy(c => c.Id, StringComparer.Ordinal).Select(c => (c.Id, c.IsActive)));
+    }
+
+    [Fact]
+    public async Task ReadPto_maps_records_and_time_codes_from_one_call()
+    {
+        var (gw, pi) = Create(Json(HttpStatusCode.OK, PtoListJson));
+
+        var pto = Assert.Single((await gw.ReadPtoAsync("u-1", default)).Records);
+
+        Assert.Equal(new PiPto("pto-1", "u-1", new DateOnly(2026, 11, 2), 8m, "tc-1", "PTO", "Trip", "te-9", false), pto);
+        Assert.Contains("/api/user-pto/list-by-user/u-1", Assert.Single(pi.Requests).Uri.PathAndQuery);
+    }
+
+    [Fact]
+    public async Task GetPto_returns_null_when_missing()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.NotFound, "{}"));
+
+        Assert.Null(await gw.GetPtoAsync("pto-9", default));
+    }
+
+    [Fact]
+    public async Task CreatePto_posts_date_as_M_d_yyyy_without_id()
+    {
+        var (gw, pi) = Create(Json(HttpStatusCode.OK, """{"SavedId":"pto-new","Success":true}"""));
+
+        var result = await gw.CreatePtoAsync(new PtoWrite("u-1", new DateOnly(2026, 11, 2), 8m, "tc-1", "Trip"), default);
+
+        Assert.Equal(new PiWrite(true, "pto-new", null), result);
+        var body = JsonDocument.Parse(Assert.Single(pi.Requests).Body).RootElement;
+        Assert.Equal("11/2/2026", body.GetProperty("Date").GetString());
+        Assert.False(body.TryGetProperty("Id", out _));
+    }
+
+    private static async Task InCulture(string name, Func<Task> body)
+    {
+        var saved = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo(name);
+            await body();
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = saved;
+        }
+    }
+
+    [Theory]
+    [InlineData("de-DE")] // "." date separator, "," decimal separator
+    [InlineData("th-TH")] // Buddhist calendar: 2026 is 2569
+    public async Task Pto_and_time_entry_writes_send_the_same_dates_and_hours_whatever_the_servers_culture(string culture)
+    {
+        var (gw, pi) = Create(
+            Json(HttpStatusCode.OK, """{"SavedId":"pto-new","Success":true}"""),
+            Json(HttpStatusCode.OK, """{"SavedId":"te-new","Success":true}"""));
+
+        await InCulture(culture, async () =>
+        {
+            await gw.CreatePtoAsync(new PtoWrite("u-1", new DateOnly(2026, 11, 2), 7.5m, "tc-1", null), default);
+            await gw.CreateEntryAsync(new EntryWrite("u-1", "t-1", new DateOnly(2026, 11, 2), 1.25m, false, null, null), default);
+        });
+
+        var pto = JsonDocument.Parse(pi.Requests[0].Body).RootElement;
+        Assert.Equal("11/2/2026", pto.GetProperty("Date").GetString());
+        Assert.Equal(7.5m, pto.GetProperty("PTOHours").GetDecimal());
+        var entry = JsonDocument.Parse(pi.Requests[1].Body).RootElement;
+        Assert.StartsWith("2026-11-02", entry.GetProperty("Date").GetString());
+        Assert.Equal(1.25m, entry.GetProperty("ActualHours").GetDecimal());
+    }
+
+    [Theory]
+    [InlineData("de-DE")]
+    [InlineData("th-TH")]
+    public async Task Time_entry_and_timesheet_searches_send_gregorian_dates_whatever_the_servers_culture(string culture)
+    {
+        var (gw, pi) = Create(Json(HttpStatusCode.OK, "[]"), Json(HttpStatusCode.OK, "[]"));
+
+        await InCulture(culture, async () =>
+        {
+            await gw.SearchEntriesAsync("u-1", new DateOnly(2026, 10, 26), new DateOnly(2026, 11, 1), default);
+            await gw.SearchTimeSheetsAsync("u-1", new DateOnly(2026, 10, 26), new DateOnly(2026, 11, 1), default);
+        });
+
+        Assert.All(pi.Requests, r =>
+        {
+            var url = Uri.UnescapeDataString(r.Uri.PathAndQuery);
+            Assert.Contains("startDate=2026-10-26", url);
+            Assert.Contains("endDate=2026-11-01", url);
+        });
+    }
+
+    [Fact]
+    public async Task UpdatePto_posts_id_and_clears_a_null_description()
+    {
+        var (gw, pi) = Create(Json(HttpStatusCode.OK, """{"SavedId":"pto-1","Success":true}"""));
+
+        var result = await gw.UpdatePtoAsync("pto-1", new PtoWrite("u-1", new DateOnly(2026, 11, 3), 4m, "tc-1", null), default);
+
+        Assert.True(result.Success);
+        var body = JsonDocument.Parse(Assert.Single(pi.Requests).Body).RootElement;
+        Assert.Equal("pto-1", body.GetProperty("Id").GetString());
+        Assert.Equal("", body.GetProperty("Description").GetString());
+        Assert.Equal("u-1", body.GetProperty("User_Id").GetString());
+    }
+
+    [Fact]
+    public async Task DeletePto_502_is_uncertain()
+    {
+        var (gw, _) = Create(Json(HttpStatusCode.BadGateway, "bad gateway"));
+
+        var result = await gw.DeletePtoAsync("pto-1", default);
+
+        Assert.False(result.Success);
+        Assert.True(result.Uncertain);
+    }
+
     private static ProjectInsightTimeEntryGateway Unanswered(Exception failure, string? apiToken = "t")
     {
         var config = new ConfigurationBuilder()

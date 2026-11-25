@@ -8,10 +8,17 @@ public sealed record PiUser(string Id, string Name);
 public sealed record PiNamed(string Id, string Name);
 public sealed record PiTask(string Id, string Name, string ProjectId, string ProjectName, string? ProjectColor = null);
 public sealed record PiEntry(string Id, string UserId, DateOnly Date, decimal Hours, bool Billable, string? Description,
-    string TaskId, string TaskName, string ProjectId, string ProjectName, string? TimeSheetId, string? ProjectColor = null);
+    string TaskId, string TaskName, string ProjectId, string ProjectName, string? TimeSheetId, string? ProjectColor = null, bool IsPto = false);
 /// <summary>How PI draws a user: initials on their colours, or their photo (a site-relative path) when they have one.</summary>
 public sealed record PiLook(string? Initials, string? Background, string? Foreground, string? PhotoUrl);
 public sealed record PiTimeSheet(string Id, DateOnly Start, DateOnly End, bool Submitted, bool Approved, bool Locked, string? Url);
+/// <param name="IsActive">False when PI marks the code inactive (an old code kept for past records).</param>
+public sealed record PiTimeCode(string Id, string Name, bool IsActive = true);
+public sealed record PiPto(string Id, string UserId, DateOnly Date, decimal Hours, string TimeCodeId, string? TimeCodeName,
+    string? Description, string? TimeEntryId, bool Approved);
+/// <summary>One read of a user's PTO list: its usage records, and the time codes on any of its records.</summary>
+public sealed record PiPtoList(IReadOnlyList<PiPto> Records, IReadOnlyList<PiTimeCode> TimeCodes);
+public sealed record PtoWrite(string UserId, DateOnly Date, decimal Hours, string TimeCodeId, string? Description);
 public sealed record EntryWrite(string UserId, string TaskId, DateOnly Date, decimal Hours, bool Billable, string? Description, string? TimeSheetId);
 /// <summary>
 /// A write's result. <paramref name="Uncertain"/> is true when PI gave no answer (timeout, dropped
@@ -34,6 +41,18 @@ public interface ITimeEntryGateway
     Task<PiWrite> CreateEntryAsync(EntryWrite entry, CancellationToken ct);
     Task<PiWrite> UpdateEntryAsync(string timeEntryId, EntryWrite values, CancellationToken ct);
     Task<PiWrite> DeleteEntryAsync(string timeEntryId, CancellationToken ct);
+    /// <summary>
+    /// A user's PTO list, read once. <see cref="PiPtoList.Records"/>: every usage record (PTOHours above zero), time code
+    /// expanded; accrual-only and undated records are left out. <see cref="PiPtoList.TimeCodes"/>: the time codes
+    /// (distinct id and name, by name) on any of the records, accrual and balance records included, as list_user_pto
+    /// collects them.
+    /// </summary>
+    Task<PiPtoList> ReadPtoAsync(string userId, CancellationToken ct);
+    Task<PiPto?> GetPtoAsync(string ptoEntryId, CancellationToken ct);
+    /// <summary>Creates PTO; PI makes the linked time entry itself. <see cref="PiWrite.SavedId"/> is the PTO id.</summary>
+    Task<PiWrite> CreatePtoAsync(PtoWrite pto, CancellationToken ct);
+    Task<PiWrite> UpdatePtoAsync(string ptoEntryId, PtoWrite pto, CancellationToken ct);
+    Task<PiWrite> DeletePtoAsync(string ptoEntryId, CancellationToken ct);
     /// <summary>Avatars for the card, keyed by user id. Users PI doesn't return are left out.</summary>
     Task<IReadOnlyDictionary<string, PiLook>> GetUserLooksAsync(IReadOnlyCollection<string> userIds, CancellationToken ct);
     /// <summary>A user photo as a data: URI the card can show, or null.</summary>
@@ -204,6 +223,70 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
         return response.Success ? new PiWrite(true, null, null) : Failed(response.Message, response.Errors);
     }
 
+    private const string PtoModelProperties =
+        "Id,User_Id,Date,PTOHours,PTOAdded,PTOBalance,TimeCode_Id,TimeCode,TimeEntry_Id,Description,DateApproved,UserApproved_Id,CreatedDateTimeUTC,UpdatedDateTimeUTC;TimeCode:Id,Name,IsActive";
+
+    public async Task<PiPtoList> ReadPtoAsync(string userId, CancellationToken ct)
+    {
+        var response = await api.ListUserPtoAsync(userId, PtoModelProperties, ct);
+        if (!response.Success)
+            throw Unavailable("read PTO", response.Message, response.Errors);
+        var all = response.Data ?? new();
+        var codes = all
+            .Select(p => (Id: p.TimeCode?.Id ?? p.TimeCodeId, p.TimeCode?.Name, p.TimeCode?.IsActive))
+            .Where(c => !string.IsNullOrWhiteSpace(c.Id) && !string.IsNullOrWhiteSpace(c.Name))
+            .GroupBy(c => c.Id!)
+            .Select(g => new PiTimeCode(g.Key, g.First().Name!, g.First().IsActive != false))
+            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return new PiPtoList(all.Select(ToPto).OfType<PiPto>().ToList(), codes);
+    }
+
+    public async Task<PiPto?> GetPtoAsync(string ptoEntryId, CancellationToken ct)
+    {
+        var response = await api.GetUserPtoAsync(ptoEntryId, PtoModelProperties, ct);
+        if (!response.Success)
+            return MissingOrThrow<PiPto>(response.Message, response.Errors, "read the PTO entry");
+        return response.Data is { } p ? ToPto(p) : null;
+    }
+
+    public Task<PiWrite> CreatePtoAsync(PtoWrite pto, CancellationToken ct) => SavePtoAsync(null, pto, ct);
+
+    public Task<PiWrite> UpdatePtoAsync(string ptoEntryId, PtoWrite pto, CancellationToken ct) => SavePtoAsync(ptoEntryId, pto, ct);
+
+    public async Task<PiWrite> DeletePtoAsync(string ptoEntryId, CancellationToken ct)
+    {
+        var response = await api.DeleteUserPtoAsync(ptoEntryId, ct);
+        return response.Success ? new PiWrite(true, null, null) : Failed(response.Message, response.Errors);
+    }
+
+    private async Task<PiWrite> SavePtoAsync(string? id, PtoWrite values, CancellationToken ct)
+    {
+        var pto = new UserPto
+        {
+            Id = id,
+            UserId = values.UserId,
+            Date = values.Date.ToDateTime(TimeOnly.MinValue),
+            PTOHours = values.Hours,
+            TimeCodeId = values.TimeCodeId,
+            // As for time entries: an omitted description reads as "unchanged", so an update clears it with "".
+            Description = id is null ? values.Description : values.Description ?? ""
+        };
+        var response = await api.SaveUserPtoAsync(pto, ct);
+        return response.Success
+            ? new PiWrite(true, response.Data?.SavedId ?? id, null)
+            : Failed(response.Message, response.Errors);
+    }
+
+    private static PiPto? ToPto(UserPto p)
+    {
+        // Usage records only: accrual/balance rows have no hours used, and a record needs a date to be placed.
+        if (p.Id is null || p.UserId is null || p.Date is null || p.PTOHours is not > 0m || p.TimeCodeId is null)
+            return null;
+        return new PiPto(p.Id, p.UserId, DateOnly.FromDateTime(p.Date.Value), p.PTOHours.Value, p.TimeCodeId,
+            p.TimeCode?.Name, p.Description, p.TimeEntryId, p.DateApproved is not null);
+    }
+
     private async Task<PiWrite> SaveAsync(string? id, EntryWrite values, CancellationToken ct)
     {
         var entry = new TimeEntry
@@ -244,8 +327,15 @@ public sealed class ProjectInsightTimeEntryGateway(ProjectInsightApiService api,
 
     private static PiEntry? ToEntry(TimeEntryWithNames e)
     {
-        if (e.Id is null || e.UserId is null || e.Date is null || e.TaskId is null)
+        if (e.Id is null || e.UserId is null || e.Date is null)
             return null;
+        // PI links each PTO record to a time entry with no task or project (docs/PTO.md). A project with no task isn't PTO.
+        // Only a missing task counts: an empty task id stays an ordinary entry, as in 2.1.0, so 2.1.0 fingerprints still match.
+        if (e.TaskId is null)
+            return string.IsNullOrEmpty(e.ProjectId)
+                ? new PiEntry(e.Id, e.UserId, DateOnly.FromDateTime(e.Date.Value), e.ActualHours ?? 0m, e.IsBillable == true,
+                    e.Description, "", "", "", "", e.TimeSheetId, IsPto: true)
+                : null;
         return new PiEntry(e.Id, e.UserId, DateOnly.FromDateTime(e.Date.Value), e.ActualHours ?? 0m, e.IsBillable == true,
             e.Description, e.TaskId, e.TaskRef?.Name ?? e.TaskId, e.ProjectId ?? e.ProjectRef?.Id ?? "",
             e.ProjectRef?.Name ?? e.ProjectId ?? "", e.TimeSheetId, Colour(e.ProjectRef?.Color));

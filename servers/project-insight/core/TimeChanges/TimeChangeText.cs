@@ -44,7 +44,7 @@ public static class TimeChangeText
             DraftStatus.Draft =>
                 $"{(d.UndoOf is null ? "Draft" : $"Undo draft (reverses {d.UndoOf})")} {d.Id}: {Count(t.Changes, "change", "changes")} " +
                 $"across {Count(t.Days, "day", "days")} for {Count(t.People, "person", "people")}, net {Signed(t.NetHours)}h " +
-                $"(billable {Signed(t.BillableDelta)}h). Nothing has changed yet. Summarize the draft for the user and ask them " +
+                $"(billable {Signed(t.BillableDelta)}h{(t.PtoDelta != 0 ? $", PTO {Signed(t.PtoDelta)}h" : "")}). Nothing has changed yet. Summarize the draft for the user and ask them " +
                 "to confirm. They can press Confirm on the card, or tell you to commit it with commit_time_changes.",
             DraftStatus.Committing => $"Draft {d.Id} is being committed right now. Check again with get_time_changes.",
             DraftStatus.Committed =>
@@ -84,34 +84,51 @@ public static class TimeChangeText
         return sb.ToString();
     }
 
-    /// <summary>"You · Tue 27 Oct, entry te-1": the day(s) a row touches and, if known, its entry.</summary>
+    /// <summary>"You · Tue 27 Oct, entry te-1" (or "PTO pto-1"): the day(s) a row touches and, if known, its entry.</summary>
     private static string Where(DraftRow r, DraftView d, DateOnly today)
     {
         var who = d.Weeks.Any(w => w.UserId == r.UserId && w.IsCaller) ? "You" : r.UserName;
         var days = new[] { r.Before?.Date, r.After?.Date }.OfType<DateOnly>().Distinct().Order()
             .Select(date => Weeks.DayLabel(who, date, today));
-        var entry = r.SavedId ?? r.TimeEntryId;
-        return string.Join(", ", days) + (entry is null ? "" : $", entry {entry}");
+        // As on the card: a PTO row is found by its PTO entry, never the time entry PI keeps for it.
+        var (label, entry) = ChangeAction.IsPto(r.Action) || r.Kind == RowKind.Pto
+            ? ("PTO", r.PtoEntryId ?? r.SavedId)
+            : ("entry", r.SavedId ?? r.TimeEntryId);
+        return string.Join(", ", days) + (entry is null ? "" : $", {label} {entry}");
     }
 
     private static string Row(DraftRow r, DraftView d, DateOnly today)
     {
         var v = (r.After ?? r.Before)!;
         var who = d.Weeks.Any(w => w.UserId == r.UserId && w.IsCaller) ? "You" : r.UserName;
-        var hours = r.Action switch
+        var pto = ChangeAction.IsPto(r.Action) || r.Kind == RowKind.Pto;
+        // A PTO action reads like its time-entry twin for hours and moved-day logic.
+        var action = r.Action switch
+        {
+            ChangeAction.CreatePto => ChangeAction.Create,
+            ChangeAction.UpdatePto => ChangeAction.Update,
+            ChangeAction.DeletePto => ChangeAction.Delete,
+            var other => other
+        };
+        var hours = action switch
         {
             ChangeAction.Create => $"+{Weeks.FormatHours(r.After!.Hours)}h",
             ChangeAction.Delete => $"−{Weeks.FormatHours(r.Before!.Hours)}h",
             _ => $"{Weeks.FormatHours(r.Before!.Hours)}h → {Weeks.FormatHours(r.After!.Hours)}h"
         };
+        var what = pto ? PtoLabel(v.TimeCodeName) : $"{v.ProjectName} › {v.TaskName}";
         var line = new StringBuilder(
-            $"{r.Index + 1}. {r.Action} · {who} · {Weeks.ShortDate(v.Date, today)} · {v.ProjectName} › {v.TaskName} · {hours}");
-        if (v.Billable) line.Append(" (billable)");
+            $"{r.Index + 1}. {r.Action} · {who} · {Weeks.ShortDate(v.Date, today)} · {what} · {hours}");
+        if (v.Billable && !pto) line.Append(" (billable)");
         if (v.Description is { } desc) line.Append($" — \"{desc}\"");
-        if (r is { Action: ChangeAction.Update, Before: { } b, After: { } a })
+        if (action == ChangeAction.Update && r is { Before: { } b, After: { } a })
         {
             if (b.Date != a.Date) line.Append($"; moved from {Weeks.ShortDate(b.Date, today)}");
-            if (b.TaskId != a.TaskId) line.Append($"; was {b.ProjectName} › {b.TaskName}");
+            if (pto)
+            {
+                if (!TimeChangeResolver.SameId(b.TimeCodeId, a.TimeCodeId)) line.Append($"; was {PtoLabel(b.TimeCodeName)}");
+            }
+            else if (b.TaskId != a.TaskId) line.Append($"; was {b.ProjectName} › {b.TaskName}");
         }
         foreach (var w in r.Warnings) line.Append($" [warning: {w.Message}]");
         if (r.Outcome is { } outcome && outcome != RowOutcome.Applied)
@@ -119,6 +136,9 @@ public static class TimeChangeText
                         $"{(r.Error is null ? "" : ": " + r.Error)}]");
         return line.ToString();
     }
+
+    /// <summary>"PTO · Vacation", or just "PTO" without a time code name, as on the card.</summary>
+    private static string PtoLabel(string? timeCodeName) => string.IsNullOrWhiteSpace(timeCodeName) ? "PTO" : $"PTO · {timeCodeName}";
 
     private static string Count(int n, string one, string many) => $"{n} {(n == 1 ? one : many)}";
 

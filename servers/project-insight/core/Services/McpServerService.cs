@@ -3178,7 +3178,7 @@ public class McpServerService
         }
         if (availableTimeCodes.Any())
         {
-            summaryLines.Add("Available PTO time codes (use these IDs for create_pto_entry):");
+            summaryLines.Add("Available PTO time codes (use these IDs as timeCodeId in a plan_time_changes create_pto change, or with create_pto_entry):");
             summaryLines.AddRange(availableTimeCodes.Select(tc => $"  {tc.Name}: {tc.Id}"));
         }
 
@@ -4444,7 +4444,7 @@ public class McpServerService
             new()
             {
                 Name = "list_user_pto",
-                Description = "List all PTO (Paid Time Off) entries for a user. Returns the complete PTO history including both usage entries (time off taken, PTOHours set) and balance entries (accruals, PTOAdded set). Also returns the available PTO time codes (categories like Vacation, Personal Day, etc.) with their IDs and names — use these IDs when creating new PTO entries. NOTE: The API returns ALL entries with no server-side date filtering — use startDate/endDate to filter client-side. Each usage entry has a TimeEntry_Id linking to its auto-generated time entry.",
+                Description = "List all PTO (Paid Time Off) entries for a user. Returns the complete PTO history including both usage entries (time off taken, PTOHours set) and balance entries (accruals, PTOAdded set). Also returns the available PTO time codes (categories like Vacation, Personal Day, etc.) with their IDs and names — use these IDs as timeCodeId in a plan_time_changes create_pto change (or with create_pto_entry). NOTE: The API returns ALL entries with no server-side date filtering — use startDate/endDate to filter client-side. Each usage entry has a TimeEntry_Id linking to its auto-generated time entry.",
                 InputSchema = new
                 {
                     type = "object",
@@ -4461,7 +4461,7 @@ public class McpServerService
             new()
             {
                 Name = "create_pto_entry",
-                Description = "Create a new PTO (Paid Time Off) entry. This records time off for a user on a specific date. IMPORTANT: Creating a PTO entry automatically generates a linked non-billable time entry (no project/task) — do NOT also create a time entry manually. Required fields: userId, date, ptoHours (must be > 0), and timeCodeId. To discover available timeCodeId values, call list_user_pto first — the response includes the available time codes with their names and IDs.",
+                Description = "Writes to Project Insight immediately, with no review or undo. Prefer plan_time_changes with a create_pto/update_pto/delete_pto change. Create a new PTO (Paid Time Off) entry. This records time off for a user on a specific date. IMPORTANT: Creating a PTO entry automatically generates a linked non-billable time entry (no project/task) — do NOT also create a time entry manually. Required fields: userId, date, ptoHours (must be > 0), and timeCodeId. To discover available timeCodeId values, call list_user_pto first — the response includes the available time codes with their names and IDs.",
                 InputSchema = new
                 {
                     type = "object",
@@ -4479,7 +4479,7 @@ public class McpServerService
             new()
             {
                 Name = "update_pto_entry",
-                Description = "Update an existing PTO entry. Provide the ptoEntryId of the entry to update along with any fields to change. The linked time entry is automatically updated to match. Only include fields you want to change.",
+                Description = "Writes to Project Insight immediately, with no review or undo. Prefer plan_time_changes with a create_pto/update_pto/delete_pto change. Update an existing PTO entry. Provide the ptoEntryId of the entry to update along with any fields to change. The linked time entry is automatically updated to match. Only include fields you want to change.",
                 InputSchema = new
                 {
                     type = "object",
@@ -4497,7 +4497,7 @@ public class McpServerService
             new()
             {
                 Name = "delete_pto_entry",
-                Description = "Delete a PTO entry. IMPORTANT: This also automatically deletes the linked time entry — do NOT separately delete the time entry. Use get_pto_entry or list_user_pto to find the PTO entry ID.",
+                Description = "Writes to Project Insight immediately, with no review or undo. Prefer plan_time_changes with a create_pto/update_pto/delete_pto change. Delete a PTO entry. IMPORTANT: This also automatically deletes the linked time entry — do NOT separately delete the time entry. Use get_pto_entry or list_user_pto to find the PTO entry ID.",
                 InputSchema = new
                 {
                     type = "object",

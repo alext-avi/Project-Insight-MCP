@@ -42,6 +42,34 @@ public class FingerprintTests
         Assert.NotEqual(before, Fingerprint.Compute(after, null));
     }
 
+    private const string Hash210 = "C1DB6B20070FCAC88E3EC2387D83623C1621F85EB25D160CEBA6F6E3D91B6C14";
+
+    [Fact]
+    public void No_pto_hashes_as_before()
+    {
+        PiEntry[] entries = [Entry("a", 1.5m), Entry("b", 2m, task: "", billable: false, desc: null)];
+        var sheet = new PiTimeSheet("ts", Day, Day, true, false, false, null);
+
+        Assert.Equal(Hash210, Fingerprint.Compute(entries, sheet));
+        Assert.Equal(Hash210, Fingerprint.Compute(entries, sheet, null));
+        Assert.Equal(Hash210, Fingerprint.Compute(entries, sheet, []));
+    }
+
+    [Fact]
+    public void Pto_change_changes_hash()
+    {
+        PiEntry[] entries = [Entry("a")];
+        PiPto Pto(decimal hours = 4m, string code = "tc-1", string? desc = null, bool approved = false) => new("p-1", "u-1", Day, hours, code, "PTO", desc, "te-pto", approved);
+        var baseline = Fingerprint.Compute(entries, null, [Pto()]);
+
+        Assert.NotEqual(Fingerprint.Compute(entries, null), baseline);
+        Assert.NotEqual(baseline, Fingerprint.Compute(entries, null, [Pto(hours: 3m)]));
+        Assert.NotEqual(baseline, Fingerprint.Compute(entries, null, [Pto(code: "tc-2")]));
+        Assert.NotEqual(baseline, Fingerprint.Compute(entries, null, [Pto(desc: "trip")]));
+        Assert.NotEqual(baseline, Fingerprint.Compute(entries, null, [Pto(approved: true)]));
+        Assert.Equal(baseline, Fingerprint.Compute(entries, null, [Pto()]));
+    }
+
     [Fact]
     public void Timesheet_status_is_part_of_the_fingerprint()
     {

@@ -27,11 +27,14 @@ public static class NameMatch
 /// <summary>Turns the names an agent gives into PI ids. One instance per plan (it caches lookups).</summary>
 public sealed class TimeChangeResolver(ITimeEntryGateway pi)
 {
-    public sealed record Resolved<T>(T? Value, Clarification? Clarification) where T : class;
+    /// <param name="Unknown">A time code id taken as given because this person has no PTO using it.</param>
+    public sealed record Resolved<T>(T? Value, Clarification? Clarification, bool Unknown = false) where T : class;
 
     private IReadOnlyList<PiNamed>? _projects;
     private readonly Dictionary<string, IReadOnlyList<PiNamed>> _tasks = new();
     private readonly Dictionary<string, PiUser?> _users = new();
+    private readonly Dictionary<string, PiPtoList> _pto = new();
+    private readonly Dictionary<string, TimeChangeException> _ptoFailed = new();
 
     public async Task<Resolved<PiUser>> UserAsync(int index, string? user, PiUser caller, CancellationToken ct)
     {
@@ -111,6 +114,98 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
 
         return new(new PiTask(t.Match.Id, t.Match.Name, p.Match.Id, p.Match.Name), null);
     }
+
+    /// <summary>A person's PTO records, from their PTO list read once per plan.</summary>
+    public async Task<IReadOnlyList<PiPto>> PtoAsync(string userId, CancellationToken ct)
+        => (await PtoListAsync(userId, ct)).Records;
+
+    /// <summary>
+    /// A person's PTO list, read once per plan for both their records and their time codes. A failed read is
+    /// remembered too, so every later caller gets the same failure without another read (each failing read can take
+    /// PI's whole timeout). A cancelled read is a cancellation, not a failure, so it isn't remembered.
+    /// </summary>
+    private async Task<PiPtoList> PtoListAsync(string userId, CancellationToken ct)
+    {
+        if (_pto.TryGetValue(userId, out var list))
+            return list;
+        if (_ptoFailed.TryGetValue(userId, out var failed))
+            throw new TimeChangeException(failed.Code, failed.Message);
+        try
+        {
+            return _pto[userId] = await pi.ReadPtoAsync(userId, ct);
+        }
+        catch (TimeChangeException e) when (!ct.IsCancellationRequested)
+        {
+            _ptoFailed[userId] = e;
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// A PTO time code: the id as given (flagged unknown when this person has never used it), else an exact
+    /// name, else a unique partial name. PI has no time-code list, so the known codes are the ones on this
+    /// person's PTO records.
+    /// </summary>
+    /// <param name="restored">Undo only: the code (with the name a receipt recorded) the change puts back. An id
+    /// matching it that's on none of this person's records is taken with that name, not flagged unknown.</param>
+    public async Task<Resolved<PiTimeCode>> TimeCodeAsync(int index, string userId, string? timeCodeId, string? timeCode,
+        PiTimeCode? restored, CancellationToken ct)
+    {
+        var known = (await PtoListAsync(userId, ct)).TimeCodes;
+        if (!string.IsNullOrWhiteSpace(timeCodeId))
+        {
+            var id = timeCodeId.Trim();
+            // PI's ids are GUIDs, which an agent may give in either case; keep PI's own spelling.
+            if (known.FirstOrDefault(c => SameId(c.Id, id)) is { } byId)
+            {
+                if (!string.IsNullOrWhiteSpace(timeCode) && !NameFits(known, byId, timeCode.Trim()))
+                    throw new TimeChangeException("invalid_change",
+                        $"Change {index + 1}: timeCode \"{timeCode.Trim()}\" and timeCodeId {byId.Id} (\"{byId.Name.Trim()}\") name different " +
+                        "time codes. Give the one you mean, or just the timeCodeId.");
+                return new(byId, null);
+            }
+            if (restored is not null && SameId(restored.Id, id))
+                return new(restored, null);
+            return new(new PiTimeCode(id, id), null, Unknown: true);
+        }
+        if (string.IsNullOrWhiteSpace(timeCode))
+            return new(null, Clarify(index, "timeCode", "", "Give timeCode or timeCodeId.", CodeCandidates(known)));
+
+        // An exact name wins, else a partial one. Among several matches, the only active one wins: PI keeps old,
+        // inactive codes on past records, often under the same name as their replacement.
+        var query = timeCode.Trim();
+        var exact = known.Where(c => string.Equals(c.Name.Trim(), query, StringComparison.OrdinalIgnoreCase)).ToList();
+        var matches = exact.Count > 0 ? exact : known.Where(c => c.Name.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (matches.Count == 1)
+            return new(matches[0], null);
+        if (matches.Count(c => c.IsActive) == 1)
+            return new(matches.Single(c => c.IsActive), null);
+        if (matches.Count == 0)
+            return new(null, Clarify(index, "timeCode", query, $"No PTO time code matches \"{query}\".", CodeCandidates(known)));
+        var sameName = matches.Select(c => c.Name.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1;
+        return new(null, Clarify(index, "timeCode", query,
+            sameName
+                ? $"{matches.Count} PTO time codes are named \"{matches[0].Name.Trim()}\". Use the timeCodeId of the one you mean."
+                : $"{matches.Count} PTO time codes match \"{query}\". Use the exact name or a timeCodeId.",
+            CodeCandidates(matches)));
+    }
+
+    /// <summary>
+    /// Whether a time code name, given alongside an id, could mean that id's code. As name resolution: when some code
+    /// has the name exactly (ignoring case) the id's code must be one of those; otherwise its name must contain it. The
+    /// id settles which of several codes a name fits, so the match needn't be unique.
+    /// </summary>
+    private static bool NameFits(IReadOnlyList<PiTimeCode> known, PiTimeCode code, string query)
+    {
+        static bool Exact(PiTimeCode c, string q) => string.Equals(c.Name.Trim(), q, StringComparison.OrdinalIgnoreCase);
+        return known.Any(c => Exact(c, query)) ? Exact(code, query) : code.Name.Contains(query, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static IEnumerable<Candidate> CodeCandidates(IEnumerable<PiTimeCode> codes)
+        => codes.Select(c => new Candidate { Id = c.Id, Name = c.IsActive ? c.Name : c.Name + " (inactive)" });
+
+    /// <summary>Whether two PI ids (GUIDs) are the same, ignoring case.</summary>
+    public static bool SameId(string? a, string? b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
     private static Clarification Clarify(int index, string field, string query, string message, IEnumerable<Candidate>? candidates = null)
         => new() { ChangeIndex = index, Field = field, Query = query, Message = message, Candidates = candidates?.ToList() ?? new() };
