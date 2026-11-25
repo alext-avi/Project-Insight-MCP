@@ -86,7 +86,7 @@ internal static class TimeChangeTools
             UriTemplate = CardUri,
             Name = "time-changes",
             Title = "Time changes review card",
-            Description = "Review card for Project Insight time-entry drafts.",
+            Description = "Review card for Project Insight time-entry and PTO drafts.",
             MimeType = McpApps.HtmlMimeType
         });
 
