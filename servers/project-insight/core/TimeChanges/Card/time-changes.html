@@ -503,7 +503,9 @@
     const [symbol, symbolClass] = adding ? ["+", "a-c"] : removing ? ["−", "a-d"] : ["~", "a-u"];
     const from = adding ? "—" : hrs(r.before.hours);
     const to = removing ? "—" : hrs(r.after.hours);
-    const diff = (removing ? 0 : r.after.hours) - (adding ? 0 : r.before.hours);
+    // What the day counted for this row's before: a PTO whose linked entry was edited in PI counted that entry's hours.
+    const counted = r.countedBeforeHours != null ? r.countedBeforeHours : (r.before ? r.before.hours : 0);
+    const diff = (removing ? 0 : r.after.hours) - (adding ? 0 : counted);
     const task = el("span", "task",
       pto ? null : swatch(v.projectColor), el("span", "label", pto ? ptoLabel(v.timeCodeName) : v.projectName + " › " + v.taskName),
       v.billable && !pto ? el("span", "bill", "billable") : null,

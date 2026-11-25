@@ -504,6 +504,11 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                 var existing = w.Entries.Where(e => e.Date == date).ToList();
                 var here = rows.Where(r => r.UserId == w.User.Id && (r.Before?.Date == date || r.After?.Date == date)).ToList();
                 var before = existing.Sum(e => e.Hours);
+                // Where a PTO's linked entry no longer matches its record, keep what the day counted, so the draft's
+                // net hours and the card's row delta agree with the day totals.
+                foreach (var r in here.Where(r => r.Kind == RowKind.Pto && r.Before?.Date == date))
+                    if (existing.FirstOrDefault(e => TimeChangeResolver.SameId(e.Id, r.LinkedTimeEntryId)) is { } linked && linked.Hours != r.Before!.Hours)
+                        r.CountedBeforeHours = linked.Hours;
                 // A PTO's hours are in the day's total through its linked entry, so a PTO change takes off what that
                 // entry counted, which can differ from the PTO record's hours if the entry was edited in PI. PI's
                 // search can lag behind that entry, and then there is nothing to take away.
@@ -533,7 +538,10 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
 
         AddWarnings(draft, weeks, caller, today);
 
-        var befores = rows.Select(r => r.Before).OfType<EntryValues>().ToList();
+        // What each row takes off its day: a PTO row whose linked entry was edited counted that entry's hours. PtoDelta
+        // stays on the PTO records' hours, since that is the PTO being changed.
+        var befores = rows.Where(r => r.Before is not null)
+            .Select(r => (Hours: r.CountedBeforeHours ?? r.Before!.Hours, r.Before!.Billable)).ToList();
         var afters = rows.Select(r => r.After).OfType<EntryValues>().ToList();
         draft.Totals = new DraftTotals
         {

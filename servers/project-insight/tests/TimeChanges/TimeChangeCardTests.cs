@@ -144,6 +144,14 @@ public class TimeChangeCardTests
     }
 
     [Fact]
+    public void Card_row_delta_takes_off_the_hours_the_day_counted_for_the_row()
+    {
+        // A PTO whose linked entry was edited in PI counted that entry's hours in the day, not the PTO record's.
+        Assert.Contains("const counted = r.countedBeforeHours != null ? r.countedBeforeHours : (r.before ? r.before.hours : 0);", Html);
+        Assert.Contains("const diff = (removing ? 0 : r.after.hours) - (adding ? 0 : counted);", Html);
+    }
+
+    [Fact]
     public void Card_compares_time_code_ids_ignoring_case_as_the_server_does()
     {
         // PI's ids are GUIDs; the server treats a code id in another case as the same code, so "was" must not show.

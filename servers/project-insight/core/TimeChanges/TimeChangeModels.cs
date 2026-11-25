@@ -164,6 +164,12 @@ public sealed class DraftRow
     /// <summary>True when the PTO being updated or deleted was already approved; otherwise null.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? PtoApproved { get; set; }
+    /// <summary>
+    /// PTO update/delete rows: the hours the day total counted for this row's before, its linked entry's, when they
+    /// differ from the PTO record's (the entry was edited in PI). Null when they're the same or the entry wasn't loaded.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public decimal? CountedBeforeHours { get; set; }
     /// <summary>Id PI gave a created entry, or the new id of a deleted entry recreated during rollback.</summary>
     public string? SavedId { get; set; }
     public EntryValues? Before { get; set; }

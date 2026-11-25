@@ -242,6 +242,12 @@
                       "null"
                     ]
                   },
+                  "countedBeforeHours": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
                   "savedId": {
                     "type": [
                       "string",
@@ -853,6 +859,12 @@
                   "ptoApproved": {
                     "type": [
                       "boolean",
+                      "null"
+                    ]
+                  },
+                  "countedBeforeHours": {
+                    "type": [
+                      "number",
                       "null"
                     ]
                   },
@@ -1475,6 +1487,12 @@
                       "null"
                     ]
                   },
+                  "countedBeforeHours": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
                   "savedId": {
                     "type": [
                       "string",
@@ -2086,6 +2104,12 @@
                   "ptoApproved": {
                     "type": [
                       "boolean",
+                      "null"
+                    ]
+                  },
+                  "countedBeforeHours": {
+                    "type": [
+                      "number",
                       "null"
                     ]
                   },
@@ -2704,6 +2728,12 @@
                       "null"
                     ]
                   },
+                  "countedBeforeHours": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
                   "savedId": {
                     "type": [
                       "string",
@@ -3316,6 +3346,12 @@
                   "ptoApproved": {
                     "type": [
                       "boolean",
+                      "null"
+                    ]
+                  },
+                  "countedBeforeHours": {
+                    "type": [
+                      "number",
                       "null"
                     ]
                   },

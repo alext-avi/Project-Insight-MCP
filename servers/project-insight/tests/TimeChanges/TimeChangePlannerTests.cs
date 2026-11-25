@@ -1144,6 +1144,37 @@ public sealed class TimeChangePlannerTests : IDisposable
         Assert.Equal((16m, totalAfter), (Day(draft, Wed).TotalBefore, Day(draft, Wed).TotalAfter));
     }
 
+    [Theory]
+    [InlineData("delete_pto", -8)]
+    [InlineData("update_pto", -5)]
+    public async Task Net_hours_agree_with_the_day_totals_when_a_pto_linked_entry_was_edited(string action, decimal net)
+    {
+        var pto = _pi.AddPto("pto-7", "u-1", Wed, 4m);
+        var i = _pi.Entries.FindIndex(e => e.Id == pto.TimeEntryId);
+        _pi.Entries[i] = _pi.Entries[i] with { Hours = 8m };
+
+        var draft = (await PlanPto(action == "delete_pto"
+            ? new() { Action = action, PtoEntryId = "pto-7" }
+            : new() { Action = action, PtoEntryId = "pto-7", Hours = 3m })).Draft!;
+
+        var day = Day(draft, Wed);
+        Assert.Equal(net, day.TotalAfter - day.TotalBefore);
+        Assert.Equal((net, net), (draft.Totals.NetHours, draft.Totals.NonBillableDelta));
+        Assert.Equal(8m, draft.Rows[0].CountedBeforeHours);   // what the card's row delta takes off
+        Assert.Equal(action == "delete_pto" ? -4m : -1m, draft.Totals.PtoDelta); // PTO change stays the record's
+    }
+
+    [Fact]
+    public async Task A_pto_row_whose_linked_entry_matches_its_record_stores_no_counted_hours()
+    {
+        _pi.AddPto("pto-7", "u-1", Wed, 4m);
+
+        var draft = (await PlanPto(new() { Action = "delete_pto", PtoEntryId = "pto-7" })).Draft!;
+
+        Assert.Null(draft.Rows[0].CountedBeforeHours);
+        Assert.Equal(-4m, draft.Totals.NetHours);
+    }
+
     [Fact]
     public async Task Updating_a_pto_whose_linked_entry_the_day_search_missed_adds_only_the_new_hours()
     {
