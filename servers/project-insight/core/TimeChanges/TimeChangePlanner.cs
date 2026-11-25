@@ -211,8 +211,12 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             clarifications.Add(new Clarification { ChangeIndex = i, Field = "timeEntryId", Query = id, Message = $"No time entry with id {id}." });
             return null;
         }
-        if (entry.IsPto)
-            throw Invalid(n, $"time entry {id} belongs to a PTO entry. Use {action}_pto with the PTO entry's id instead.");
+        // Editing a PTO's linked entry directly would leave the PTO and its entry disagreeing. The entry's shape (no
+        // task) says so, and so does the owner's PTO list, which names the PTO entry when it can be read.
+        var linkedPto = await LinkedPtoAsync(entry, resolver, ct);
+        if (entry.IsPto || linkedPto is not null)
+            throw Invalid(n, $"time entry {id} belongs to a PTO entry. Use {action}_pto with " +
+                             (linkedPto is null ? "the PTO entry's id" : $"PTO entry {linkedPto.Id}") + " instead.");
         var owner = entry.UserId == caller.Id
             ? caller
             : await resolver.UserByIdAsync(entry.UserId, ct) ?? new PiUser(entry.UserId, entry.UserId);
@@ -347,6 +351,24 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         if (unknownCode is { } unknown)
             Warn(updated, WarningCode.UnknownTimeCode, $"Time code {unknown} isn't one this person has used for PTO");
         return updated;
+    }
+
+    /// <summary>
+    /// The PTO record linked to a time entry, from the owner's PTO list (read once per plan). Null when none links to
+    /// it, or when the list can't be read; the guard then goes by the entry's shape alone.
+    /// </summary>
+    private static async Task<PiPto?> LinkedPtoAsync(PiEntry entry, TimeChangeResolver resolver, CancellationToken ct)
+    {
+        try
+        {
+            return (await resolver.PtoAsync(entry.UserId, ct)).FirstOrDefault(p => TimeChangeResolver.SameId(p.TimeEntryId, entry.Id));
+        }
+        catch (TimeChangeException e) when (e.Code == "pi_unavailable")
+        {
+            // A cancelled request reads as a failed one; it's a cancellation, never a reason to plan without PTO.
+            ct.ThrowIfCancellationRequested();
+            return null;
+        }
     }
 
     /// <summary>A PTO row's values. PTO has no task or project, so those stay empty.</summary>

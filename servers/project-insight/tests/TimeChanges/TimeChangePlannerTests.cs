@@ -815,6 +815,40 @@ public sealed class TimeChangePlannerTests : IDisposable
         Assert.Contains("delete_pto", ex2.Message);
     }
 
+    [Theory]
+    [InlineData("update")]
+    [InlineData("delete")]
+    public async Task Time_change_on_an_entry_a_pto_links_to_is_refused_whatever_its_shape(string action)
+    {
+        // PI could give the linked entry an empty task id rather than none, so it reads as an ordinary entry.
+        var pto = _pi.AddPto("pto-9", "u-1", Wed, 4m);
+        var i = _pi.Entries.FindIndex(e => e.Id == pto.TimeEntryId);
+        _pi.Entries[i] = _pi.Entries[i] with { IsPto = false };
+        // PI's ids are GUIDs, which can come back in another case.
+        _pi.Pto[0] = pto with { TimeEntryId = pto.TimeEntryId!.ToUpperInvariant() };
+
+        var ex = await Assert.ThrowsAsync<TimeChangeException>(() =>
+            PlanPto(new() { Action = action, TimeEntryId = pto.TimeEntryId, Hours = action == "update" ? 1m : null }));
+
+        Assert.Equal("invalid_change", ex.Code);
+        Assert.Contains($"{action}_pto", ex.Message);
+        Assert.Contains("pto-9", ex.Message);
+    }
+
+    [Fact]
+    public async Task Time_change_guard_falls_back_to_the_entrys_shape_when_pto_cant_be_read()
+    {
+        var pto = _pi.AddPto("pto-9", "u-1", Wed, 4m);
+        _pi.PtoListThrows = true;
+
+        var ex = await Assert.ThrowsAsync<TimeChangeException>(() => PlanPto(new() { Action = "delete", TimeEntryId = pto.TimeEntryId }));
+        Assert.Contains("delete_pto", ex.Message);
+
+        // An ordinary entry still plans, with PTO left unread.
+        var draft = (await PlanPto(new() { Action = "delete", TimeEntryId = "te-5" })).Draft!;
+        Assert.Equal(["u-1"], draft.PtoUnreadUsers);
+    }
+
     [Fact]
     public async Task Approved_pto_is_flagged_on_the_row()
     {
