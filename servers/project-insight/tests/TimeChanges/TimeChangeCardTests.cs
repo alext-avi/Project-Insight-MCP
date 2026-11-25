@@ -141,4 +141,13 @@ public class TimeChangeCardTests
         Assert.Contains("t.ptoDelta", Html);
         Assert.Contains("update_pto: \"update\"", Html);
     }
+
+    [Fact]
+    public void Card_compares_time_code_ids_ignoring_case_as_the_server_does()
+    {
+        // PI's ids are GUIDs; the server treats a code id in another case as the same code, so "was" must not show.
+        Assert.Contains("function sameId(a, b)", Html);
+        Assert.Contains("!sameId(r.before.timeCodeId, r.after.timeCodeId)", Html);
+        Assert.DoesNotContain("r.before.timeCodeId !== r.after.timeCodeId", Html);
+    }
 }

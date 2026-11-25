@@ -474,6 +474,9 @@
     return [line, rows];
   }
 
+  // PI's ids are GUIDs, which can come back in either case; the server treats them as the same id.
+  function sameId(a, b) { return String(a || "").toLowerCase() === String(b || "").toLowerCase(); }
+
   // PTO entries are labelled by their time code and carry no project swatch or billable tag.
   function ptoLabel(timeCodeName) { return "PTO · " + (timeCodeName || "time off"); }
   const PTO_BASE = { create_pto: "create", update_pto: "update", delete_pto: "delete" };
@@ -504,7 +507,7 @@
       pto ? null : swatch(v.projectColor), el("span", "label", pto ? ptoLabel(v.timeCodeName) : v.projectName + " › " + v.taskName),
       v.billable && !pto ? el("span", "bill", "billable") : null,
       v.description ? el("small", "", v.description) : null,
-      action === "update" && !removing && (pto ? r.before.timeCodeId !== r.after.timeCodeId : r.before.taskId !== r.after.taskId)
+      action === "update" && !removing && (pto ? !sameId(r.before.timeCodeId, r.after.timeCodeId) : r.before.taskId !== r.after.taskId)
         ? el("small", "", "was " + (pto ? ptoLabel(r.before.timeCodeName) : r.before.projectName + " › " + r.before.taskName)) : null,
       away ? el("small", "", "moved to " + day(r.after.date, { weekday: "short", day: "numeric", month: "short" })) : null,
       into ? el("small", "", "moved from " + day(r.before.date, { weekday: "short", day: "numeric", month: "short" })) : null,
