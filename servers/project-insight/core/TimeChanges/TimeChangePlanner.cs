@@ -40,6 +40,8 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                 ? new PiTimeCode(id, r.Before.TimeCodeName ?? id)
                 : null)
             .ToList();
+        // PI recreates a deleted PTO unapproved, so an undo that recreates an approved one says it needs approving again.
+        var recreatesApproved = undone.Select(r => r.Action == ChangeAction.DeletePto && r.PtoApproved == true).ToList();
         var changes = undone
             .Select(r => r.Action switch
         {
@@ -74,7 +76,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         // Labels go by kind, never stacking: X → "Undo: X" → "Redo: X" → "Undo: X".
         var isRedo = receipt.UndoOf is not null && receipt.Intent.StartsWith(UndoPrefix, StringComparison.Ordinal);
         var intent = (isRedo ? RedoPrefix : UndoPrefix) + WithoutUndoPrefix(receipt.Intent);
-        return PlanCoreAsync(intent, changes, receipt.Id, receipt.CommittedAt, restoredCodes, ct);
+        return PlanCoreAsync(intent, changes, receipt.Id, receipt.CommittedAt, restoredCodes, ct, recreatesApproved);
     }
 
     private const string UndoPrefix = "Undo: ", RedoPrefix = "Redo: ";
@@ -98,8 +100,9 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
 
     /// <param name="restoredCodes">Undo only, one per change: the PTO time code (id and name) the change puts back,
     /// taken from the receipt, so it's named and not flagged unknown when no PTO record uses it any more.</param>
+    /// <param name="recreatesApproved">Undo only, one per change: true when the change recreates a PTO that was approved.</param>
     private async Task<PlanResult> PlanCoreAsync(string intent, IReadOnlyList<ChangeInput>? changes, string? undoOf, DateTimeOffset? undoOfCommittedAt,
-        IReadOnlyList<PiTimeCode?>? restoredCodes, CancellationToken ct)
+        IReadOnlyList<PiTimeCode?>? restoredCodes, CancellationToken ct, IReadOnlyList<bool>? recreatesApproved = null)
     {
         intent = (intent ?? "").Trim();
         if (intent.Length == 0)
@@ -120,7 +123,11 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         for (var i = 0; i < changes.Count; i++)
         {
             if (await BuildRowAsync(i, changes[i], caller, resolver, clarifications, seen, isUndo: undoOf is not null, restoredCodes?[i], ct) is { } row)
+            {
+                if (recreatesApproved?[i] == true)
+                    Warn(row, WarningCode.PtoRecreatedUnapproved, TimeChangeCommitter.RecreatedUnapproved);
                 rows.Add(row);
+            }
         }
 
         if (clarifications.Count > 0)

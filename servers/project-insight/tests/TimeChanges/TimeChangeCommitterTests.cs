@@ -828,6 +828,57 @@ public sealed class TimeChangeCommitterTests : IDisposable
         Assert.Empty(_pi.Writes);
     }
 
+    private static string Text(Draft d) => TimeChangeText.For(new TimeChangesView { Kind = "draft", Draft = DraftView.From(d, Drafts.T0) }, TimeChangePlannerTests.Wed);
+
+    [Fact]
+    public async Task A_rollback_that_recreates_an_approved_pto_says_it_needs_approving_again()
+    {
+        _pi.AddPto("pto-1", "u-1", TimeChangePlannerTests.Wed, 4m, approved: true);
+        _pi.FailWrite = (op, _) => op == "create" ? "Task is closed to time entry." : null;
+        var (draft, _) = await Plan([new() { Action = "delete_pto", PtoEntryId = "pto-1" }, new() { Action = "create", Date = "2026-10-28", Hours = 4m, TaskId = "t-1" }]);
+
+        var result = await Commit(draft.Id);
+
+        Assert.Equal(DraftStatus.Failed, result.Status);
+        var row = result.Rows[0];
+        Assert.Equal(RowOutcome.Reversed, row.Outcome);
+        var w = Assert.Single(row.Warnings, w => w.Code == WarningCode.PtoRecreatedUnapproved);
+        Assert.Contains("without approval", w.Message);
+        Assert.Contains($"[warning: {w.Message}]", Text(result));
+        Assert.Equal(result.Rows.Sum(r => r.Warnings.Count), result.Totals.Warnings);
+        Assert.DoesNotContain(result.Rows[1].Warnings, w => w.Code == WarningCode.PtoRecreatedUnapproved);
+    }
+
+    [Fact]
+    public async Task A_rollback_that_recreates_an_unapproved_pto_adds_no_approval_warning()
+    {
+        _pi.AddPto("pto-1", "u-1", TimeChangePlannerTests.Wed, 4m);
+        _pi.FailWrite = (op, _) => op == "create" ? "Task is closed to time entry." : null;
+        var (draft, _) = await Plan([new() { Action = "delete_pto", PtoEntryId = "pto-1" }, new() { Action = "create", Date = "2026-10-28", Hours = 4m, TaskId = "t-1" }]);
+
+        var result = await Commit(draft.Id);
+
+        Assert.Equal(RowOutcome.Reversed, result.Rows[0].Outcome);
+        Assert.DoesNotContain(result.Rows[0].Warnings, w => w.Code == WarningCode.PtoRecreatedUnapproved);
+    }
+
+    [Fact]
+    public async Task An_undo_that_recreates_an_approved_pto_says_it_needs_approving_again()
+    {
+        _pi.AddPto("pto-1", "u-1", TimeChangePlannerTests.Wed, 4m, approved: true);
+        _pi.AddPto("pto-2", "u-1", TimeChangePlannerTests.Mon, 4m);
+        var receipt = await Commit((await _planner.PlanAsync("PTO",
+            [new() { Action = "delete_pto", PtoEntryId = "pto-1" }, new() { Action = "delete_pto", PtoEntryId = "pto-2" }], default)).Draft!.Id);
+        Assert.Equal(DraftStatus.Committed, receipt.Status);
+
+        var undo = (await _planner.PlanUndoAsync(receipt, default)).Draft!;
+
+        var w = Assert.Single(undo.Rows[0].Warnings, w => w.Code == WarningCode.PtoRecreatedUnapproved);
+        Assert.Contains("without approval", w.Message);
+        Assert.DoesNotContain(undo.Rows[1].Warnings, w => w.Code == WarningCode.PtoRecreatedUnapproved);
+        Assert.Contains($"[warning: {w.Message}]", Text(undo));
+    }
+
     private async Task<Draft> CommitPlan(ChangeInput change)
     {
         var plan = await _planner.PlanAsync("PTO", [change], default);

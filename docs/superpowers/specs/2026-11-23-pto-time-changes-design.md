@@ -116,6 +116,7 @@ Rows still apply in order through the same loop, with the same uncertain-write h
 | `not_quarter_hour` | Hours not a multiple of 0.25 | PTO rows too (already applies to time rows) |
 | `unknown_time_code` (new) | `timeCodeId` isn't among the person's known codes | PTO rows |
 | `inactive_time_code` (new, review fix) | A `create_pto`, or an `update_pto` that changes the code, sets a code PI marks inactive (an exact name can pick one over an active code with a longer name) | PTO rows, never undo rows (they put back the code the PTO had) |
+| `pto_recreated_unapproved` (new, review fix) | A rollback (at commit) or an undo draft recreates a deleted PTO that was approved. PI's PTO write takes no approval, so it comes back unapproved and needs approving again | The reversed `delete_pto` row of a failed commit; the undo draft's `create_pto` row |
 | `pto_approved` (new) | `update_pto`/`delete_pto` on a PTO record with `DateApproved` set | That row. The text says PI may refuse the change or clear the approval, and that undoing a delete recreates the PTO **unapproved**. A warning, not a block, matching the rest. If PI refuses, the commit fails and rolls back as usual. (My call.) |
 | existing (`timesheet_*`, `over_12h`, `far_date`, `other_person`, `likely_duplicate`) | as today | PTO rows too. `likely_duplicate` for PTO: same person, date and time code as an existing PTO record or an earlier row |
 

@@ -9,6 +9,13 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
 {
     public static readonly TimeSpan StuckAfter = TimeSpan.FromMinutes(10);
 
+    /// <summary>
+    /// Said of a PTO a rollback or undo recreates after it had been approved. PI's PTO write takes no approval, so the
+    /// recreated PTO is unapproved.
+    /// </summary>
+    public const string RecreatedUnapproved =
+        "This PTO was approved; it was recreated without approval, so it needs approving again in Project Insight";
+
     /// <summary>Loads the caller's draft, first marking it expired, or failed if a commit was interrupted.</summary>
     public async Task<Draft> LoadAsync(PiUser caller, string id, CancellationToken ct)
     {
@@ -103,7 +110,11 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
                 if (!reversed.Success)
                     done.Error = reversed.Error;
                 else if (done.Action is ChangeAction.Delete or ChangeAction.DeletePto)
+                {
                     done.SavedId = reversed.SavedId; // recreated under a new id
+                    if (done.Action == ChangeAction.DeletePto && done.PtoApproved == true)
+                        done.Warnings.Add(new DraftWarning { Code = WarningCode.PtoRecreatedUnapproved, Message = RecreatedUnapproved });
+                }
             }
             var error = unknown
                 ? UnansweredError(claimed, row, result.Error, Weeks.Today(time))
@@ -113,6 +124,7 @@ public sealed class TimeChangeCommitter(ITimeEntryGateway pi, IDraftStore store,
                 d.Status = DraftStatus.Failed;
                 d.Error = error;
                 d.OutcomeUnknown = unknown;
+                d.Totals.Warnings = d.Rows.Sum(r => r.Warnings.Count); // a rollback can add one
             });
         }
 

@@ -70,6 +70,8 @@ public static class WarningCode
     public const string UnknownTimeCode = "unknown_time_code";
     /// <summary>The PTO time code is one PI marks inactive (an old code kept for past records).</summary>
     public const string InactiveTimeCode = "inactive_time_code";
+    /// <summary>A rollback or undo recreates a PTO that was approved. PI recreates it unapproved, so it needs approving again.</summary>
+    public const string PtoRecreatedUnapproved = "pto_recreated_unapproved";
     /// <summary>The PTO being changed or deleted was already approved.</summary>
     public const string PtoApproved = "pto_approved";
 }
