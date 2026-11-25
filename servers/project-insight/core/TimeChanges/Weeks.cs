@@ -8,7 +8,7 @@ public static class Weeks
 
     public static DateOnly SundayOf(DateOnly date) => MondayOf(date).AddDays(6);
 
-    public static string DayKey(string userId, DateOnly date) => $"{userId}|{date:yyyy-MM-dd}";
+    public static string DayKey(string userId, DateOnly date) => userId + "|" + date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     /// <summary>Inverse of <see cref="DayKey"/>. Splits at the last '|' so user ids may contain one.</summary>
     public static (string UserId, DateOnly Date) ParseDayKey(string key)
