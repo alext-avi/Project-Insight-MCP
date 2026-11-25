@@ -849,6 +849,42 @@ public sealed class TimeChangePlannerTests : IDisposable
         Assert.All(new[] { e1, e2, e3 }, e => { Assert.Equal("invalid_change", e.Code); Assert.Contains("Change 1", e.Message); });
     }
 
+    [Fact]
+    public async Task Create_pto_rejects_a_pto_entry_id()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m);
+
+        var ex = await Assert.ThrowsAsync<TimeChangeException>(() =>
+            PlanPto(new() { Action = "create_pto", PtoEntryId = "pto-1", Date = "2026-10-29", Hours = 3m, TimeCode = "PTO" }));
+
+        Assert.Equal("invalid_change", ex.Code);
+        Assert.Contains("Change 1", ex.Message);
+        Assert.Contains("ptoEntryId", ex.Message);
+    }
+
+    public static TheoryData<ChangeInput> DeletePtoWithStrayFields() => new()
+    {
+        new() { Action = "delete_pto", PtoEntryId = "pto-1", Date = "2026-10-28" },
+        new() { Action = "delete_pto", PtoEntryId = "pto-1", Hours = 4m },
+        new() { Action = "delete_pto", PtoEntryId = "pto-1", Description = "Trip" },
+        new() { Action = "delete_pto", PtoEntryId = "pto-1", TimeCode = "PTO" },
+        new() { Action = "delete_pto", PtoEntryId = "pto-1", TimeCodeId = "tc-1" },
+        new() { Action = "delete_pto", PtoEntryId = "pto-1", User = "u-1" }
+    };
+
+    [Theory]
+    [MemberData(nameof(DeletePtoWithStrayFields))]
+    public async Task Delete_pto_rejects_fields_it_would_ignore(ChangeInput change)
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m);
+
+        var ex = await Assert.ThrowsAsync<TimeChangeException>(() => PlanPto(change));
+
+        Assert.Equal("invalid_change", ex.Code);
+        Assert.Contains("Change 1", ex.Message);
+        Assert.Contains("delete_pto takes only ptoEntryId", ex.Message);
+    }
+
     // ---- PTO in views, totals, fingerprints and warnings ----
 
     private static DayView Day(Draft d, DateOnly date, string userId = "u-1") => d.Weeks.First(w => w.UserId == userId).Days.Single(x => x.Date == date);
