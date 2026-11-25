@@ -84,14 +84,17 @@ public static class TimeChangeText
         return sb.ToString();
     }
 
-    /// <summary>"You · Tue 27 Oct, entry te-1": the day(s) a row touches and, if known, its entry.</summary>
+    /// <summary>"You · Tue 27 Oct, entry te-1" (or "PTO pto-1"): the day(s) a row touches and, if known, its entry.</summary>
     private static string Where(DraftRow r, DraftView d, DateOnly today)
     {
         var who = d.Weeks.Any(w => w.UserId == r.UserId && w.IsCaller) ? "You" : r.UserName;
         var days = new[] { r.Before?.Date, r.After?.Date }.OfType<DateOnly>().Distinct().Order()
             .Select(date => Weeks.DayLabel(who, date, today));
-        var entry = r.SavedId ?? r.TimeEntryId;
-        return string.Join(", ", days) + (entry is null ? "" : $", entry {entry}");
+        // As on the card: a PTO row is found by its PTO entry, never the time entry PI keeps for it.
+        var (label, entry) = ChangeAction.IsPto(r.Action) || r.Kind == RowKind.Pto
+            ? ("PTO", r.PtoEntryId ?? r.SavedId)
+            : ("entry", r.SavedId ?? r.TimeEntryId);
+        return string.Join(", ", days) + (entry is null ? "" : $", {label} {entry}");
     }
 
     private static string Row(DraftRow r, DraftView d, DateOnly today)

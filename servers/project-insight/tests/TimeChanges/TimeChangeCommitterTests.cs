@@ -461,6 +461,32 @@ public sealed class TimeChangeCommitterTests : IDisposable
     }
 
     [Fact]
+    public async Task The_text_for_an_unanswered_pto_update_names_the_pto_entry()
+    {
+        AddWedPto();
+        _pi.UncertainWrite = (op, _) => op == "update_pto" ? "timeout" : null;
+        var (draft, _) = await Plan([new() { Action = "update_pto", PtoEntryId = "pto-1", Hours = 2m }]);
+
+        var failed = await Commit(draft.Id);
+
+        var text = TimeChangeText.For(new TimeChangesView { Kind = "draft", Draft = DraftView.From(failed, Drafts.T0) }, TimeChangePlannerTests.Wed);
+        Assert.Contains("change 1 (You · Wed 28 Oct, PTO pto-1)", text.Split("Check in Project Insight")[1]);
+    }
+
+    [Fact]
+    public async Task The_text_for_a_created_pto_that_could_not_be_reversed_names_the_new_pto()
+    {
+        var (draft, _) = await Plan([CreatePto("2026-10-28", 2m), new() { Action = "create", Date = "2026-10-27", Hours = 2m, TaskId = "t-1" }]);
+        _pi.FailWrite = (op, _) => op switch { "create" => "nope", "delete_pto" => "locked", _ => null };
+
+        var failed = await Commit(draft.Id);
+
+        Assert.Equal(RowOutcome.ReverseFailed, failed.Rows[0].Outcome);
+        var text = TimeChangeText.For(new TimeChangesView { Kind = "draft", Draft = DraftView.From(failed, Drafts.T0) }, TimeChangePlannerTests.Wed);
+        Assert.Contains("change 1 (You · Wed 28 Oct, PTO pto-100)", text.Split("Check in Project Insight")[1]);
+    }
+
+    [Fact]
     public async Task Create_pto_without_a_saved_id_is_unknown_not_applied()
     {
         var (draft, _) = await Plan([CreatePto("2026-10-26", 3m)]);
