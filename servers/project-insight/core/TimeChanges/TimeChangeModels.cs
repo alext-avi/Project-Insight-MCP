@@ -68,6 +68,8 @@ public static class WarningCode
     public const string Over8HoursPtoDay = "over_8h_day";
     /// <summary>The PTO time code id isn't one this person has used.</summary>
     public const string UnknownTimeCode = "unknown_time_code";
+    /// <summary>The PTO time code is one PI marks inactive (an old code kept for past records).</summary>
+    public const string InactiveTimeCode = "inactive_time_code";
     /// <summary>The PTO being changed or deleted was already approved.</summary>
     public const string PtoApproved = "pto_approved";
 }

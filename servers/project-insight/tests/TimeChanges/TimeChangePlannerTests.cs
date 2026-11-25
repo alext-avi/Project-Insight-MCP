@@ -685,6 +685,38 @@ public sealed class TimeChangePlannerTests : IDisposable
     }
 
     [Fact]
+    public async Task An_inactive_time_code_matched_by_exact_name_warns()
+    {
+        // The exact name wins over an active partial match, so the inactive code is used, and the row says so.
+        _pi.AddPto("pto-old", "u-1", new DateOnly(2026, 9, 1), 8m, "tc-old", "Vacation");
+        _pi.AddAccrual("u-1", "tc-new", "Vacation 2026");
+        _pi.InactiveCodes.Add("tc-old");
+
+        var row = (await PlanPto(new() { Action = "create_pto", Date = "2026-10-29", Hours = 8m, TimeCode = "Vacation" })).Draft!.Rows[0];
+
+        Assert.Equal("tc-old", row.After!.TimeCodeId);
+        var w = Assert.Single(row.Warnings, w => w.Code == WarningCode.InactiveTimeCode);
+        Assert.Contains("Vacation", w.Message);
+        Assert.Contains("inactive", w.Message);
+    }
+
+    [Fact]
+    public async Task An_update_pto_to_an_inactive_time_code_id_warns_and_an_active_one_does_not()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m, "tc-1", "PTO");
+        _pi.AddPto("pto-2", "u-1", Mon, 4m, "tc-old", "Old PTO");
+        _pi.InactiveCodes.Add("tc-old");
+
+        var toInactive = (await PlanPto(new() { Action = "update_pto", PtoEntryId = "pto-1", TimeCodeId = "TC-OLD" })).Draft!.Rows[0];
+        var hoursOnly = (await PlanPto(new() { Action = "update_pto", PtoEntryId = "pto-2", Hours = 2m })).Draft!.Rows[0];
+        var toActive = (await PlanPto(new() { Action = "update_pto", PtoEntryId = "pto-2", TimeCode = "PTO" })).Draft!.Rows[0];
+
+        Assert.Single(toInactive.Warnings, w => w.Code == WarningCode.InactiveTimeCode);
+        Assert.DoesNotContain(hoursOnly.Warnings, w => w.Code == WarningCode.InactiveTimeCode); // its code isn't being set
+        Assert.DoesNotContain(toActive.Warnings, w => w.Code == WarningCode.InactiveTimeCode);
+    }
+
+    [Fact]
     public async Task A_time_code_id_matches_whatever_its_case()
     {
         _pi.AddPto("pto-1", "u-1", Wed, 4m, "tc-1", "PTO");

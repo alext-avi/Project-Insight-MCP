@@ -875,6 +875,28 @@ public sealed class TimeChangeCommitterTests : IDisposable
     }
 
     [Fact]
+    public async Task Undo_that_puts_back_an_inactive_time_code_does_not_warn_about_it()
+    {
+        // The undo restores the code each PTO had, which PI has since made inactive.
+        _pi.AddPto("pto-1", "u-1", TimeChangePlannerTests.Wed, 4m, "tc-old", "Old PTO");
+        _pi.AddPto("pto-2", "u-1", TimeChangePlannerTests.Mon, 4m, "tc-old", "Old PTO");
+        _pi.AddPto("pto-3", "u-1", TimeChangePlannerTests.Tue, 4m, "tc-1", "PTO");
+        _pi.InactiveCodes.Add("tc-old");
+        var receipt = await Commit((await _planner.PlanAsync("PTO",
+        [
+            new() { Action = "delete_pto", PtoEntryId = "pto-1" },
+            new() { Action = "update_pto", PtoEntryId = "pto-2", TimeCodeId = "tc-1" }
+        ], default)).Draft!.Id);
+        Assert.Equal(DraftStatus.Committed, receipt.Status);
+        _pi.AddPto("pto-4", "u-1", TimeChangePlannerTests.Mon.AddDays(-7), 4m, "tc-old", "Old PTO"); // keeps tc-old known
+
+        var undo = (await _planner.PlanUndoAsync(receipt, default)).Draft!;
+
+        Assert.Equal(["tc-old", "tc-old"], undo.Rows.Select(r => r.After!.TimeCodeId));
+        Assert.All(undo.Rows, r => Assert.DoesNotContain(r.Warnings, w => w.Code == WarningCode.InactiveTimeCode));
+    }
+
+    [Fact]
     public async Task Undo_after_pto_deleted_in_pi_clarifies()
     {
         var receipt = await CommitPlan(CreatePto("2026-10-26", 3m));

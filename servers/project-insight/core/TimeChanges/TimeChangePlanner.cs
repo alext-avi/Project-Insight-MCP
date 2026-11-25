@@ -295,6 +295,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             };
             if (code.Unknown)
                 Warn(row, WarningCode.UnknownTimeCode, $"Time code {code.Value!.Id} isn't one this person has used for PTO");
+            WarnIfInactive(row, code.Value!, isUndo);
             return row;
         }
 
@@ -328,6 +329,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         if (c.Hours is not null) after.Hours = ParseHours(n, c.Hours, isUndo);
         if (c.Description is not null) after.Description = Blank(c.Description);
         string? unknownCode = null;
+        PiTimeCode? newCode = null;
         if (c.TimeCodeId is not null || c.TimeCode is not null)
         {
             var code = await resolver.TimeCodeAsync(i, owner.Id, c.TimeCodeId, c.TimeCode, restoredCode, ct);
@@ -339,6 +341,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             after.TimeCodeId = code.Value!.Id;
             after.TimeCodeName = code.Value.Name;
             if (code.Unknown) unknownCode = code.Value.Id;
+            if (!TimeChangeResolver.SameId(code.Value.Id, before.TimeCodeId)) newCode = code.Value;
         }
         if (after.Date == before.Date && after.Hours == before.Hours && TimeChangeResolver.SameId(after.TimeCodeId, before.TimeCodeId) &&
             (after.Description ?? "") == (before.Description ?? ""))
@@ -350,7 +353,19 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
         var updated = Row(after);
         if (unknownCode is { } unknown)
             Warn(updated, WarningCode.UnknownTimeCode, $"Time code {unknown} isn't one this person has used for PTO");
+        if (newCode is not null)
+            WarnIfInactive(updated, newCode, isUndo);
         return updated;
+    }
+
+    /// <summary>
+    /// Flags a PTO row that sets a code PI marks inactive: an exact name can pick one over an active code with a
+    /// longer name. An undo only puts back the code a PTO had, so it isn't flagged.
+    /// </summary>
+    private static void WarnIfInactive(DraftRow row, PiTimeCode code, bool isUndo)
+    {
+        if (!code.IsActive && !isUndo)
+            Warn(row, WarningCode.InactiveTimeCode, $"Time code {code.Name} ({code.Id}) is inactive in Project Insight");
     }
 
     /// <summary>
