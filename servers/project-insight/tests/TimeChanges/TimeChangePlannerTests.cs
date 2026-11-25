@@ -983,6 +983,23 @@ public sealed class TimeChangePlannerTests : IDisposable
         Assert.Equal((2.5m, 2.5m), (Day(draft, Tue).TotalBefore, Day(draft, Tue).TotalAfter));
     }
 
+    [Theory]
+    [InlineData("delete_pto", 8)]  // PI removes the linked entry: 8h of work left
+    [InlineData("update_pto", 11)] // PI rewrites the linked entry to the new 3h
+    public async Task A_pto_change_takes_off_the_hours_its_linked_entry_counted_not_the_records(string action, decimal totalAfter)
+    {
+        // The linked entry was edited in PI's timesheet grid, so it no longer matches the PTO record's 4h.
+        var pto = _pi.AddPto("pto-7", "u-1", Wed, 4m);
+        var i = _pi.Entries.FindIndex(e => e.Id == pto.TimeEntryId);
+        _pi.Entries[i] = _pi.Entries[i] with { Hours = 8m };
+
+        var draft = (await PlanPto(action == "delete_pto"
+            ? new() { Action = action, PtoEntryId = "pto-7" }
+            : new() { Action = action, PtoEntryId = "pto-7", Hours = 3m })).Draft!;
+
+        Assert.Equal((16m, totalAfter), (Day(draft, Wed).TotalBefore, Day(draft, Wed).TotalAfter));
+    }
+
     [Fact]
     public async Task Updating_a_pto_whose_linked_entry_the_day_search_missed_adds_only_the_new_hours()
     {
