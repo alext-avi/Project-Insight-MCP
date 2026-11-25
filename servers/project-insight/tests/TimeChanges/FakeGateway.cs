@@ -47,6 +47,9 @@ public sealed class FakeGateway : ITimeEntryGateway
     /// <summary>Timesheets per user id.</summary>
     public Dictionary<string, List<PiTimeSheet>> Sheets { get; } = new();
 
+    /// <summary>What each successful PTO create or update sent, in order, keyed like <see cref="Writes"/>.</summary>
+    public List<(string Write, PtoWrite Values)> PtoWrites { get; } = new();
+
     /// <summary>Successful writes, in order: "create:te-100", "update:te-1", "delete:te-4".</summary>
     public List<string> Writes { get; } = new();
 
@@ -233,6 +236,7 @@ public sealed class FakeGateway : ITimeEntryGateway
         Pto.Add(new PiPto(id, w.UserId, w.Date, w.Hours, w.TimeCodeId, TimeCodeName(w.TimeCodeId), w.Description, entryId, false));
         Entries.Add(new PiEntry(entryId, w.UserId, w.Date, w.Hours, false, w.Description, "", "", "", "", null, IsPto: true));
         Writes.Add($"create_pto:{id}");
+        PtoWrites.Add(($"create_pto:{id}", w));
         AfterWrite?.Invoke(Writes.Count);
         return new PiWrite(true, id, null);
     }
@@ -254,6 +258,7 @@ public sealed class FakeGateway : ITimeEntryGateway
         if (UpdatePtoMovesLinkedEntry && old.TimeEntryId is { } linked && Entries.FindIndex(e => e.Id == linked) is var j and >= 0)
             Entries[j] = Entries[j] with { Date = w.Date, Hours = w.Hours, Description = w.Description };
         Writes.Add($"update_pto:{ptoEntryId}");
+        PtoWrites.Add(($"update_pto:{ptoEntryId}", w));
         AfterWrite?.Invoke(Writes.Count);
         return new PiWrite(true, ptoEntryId, null);
     }

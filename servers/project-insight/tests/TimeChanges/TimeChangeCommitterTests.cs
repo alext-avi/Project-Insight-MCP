@@ -507,7 +507,10 @@ public sealed class TimeChangeCommitterTests : IDisposable
     public async Task Update_pto_commit_sends_every_field_and_reverse_restores_before()
     {
         AddWedPto();
-        var (draft, _) = await Plan([new() { Action = "update_pto", PtoEntryId = "pto-1", Hours = 2m },
+        _pi.Pto[0] = _pi.Pto[0] with { Description = "Trip" };
+        _pi.AddPto("pto-2", "u-1", TimeChangePlannerTests.Mon, 4m, "tc-2", "Floating");
+        var thu = new DateOnly(2026, 10, 29);
+        var (draft, _) = await Plan([new() { Action = "update_pto", PtoEntryId = "pto-1", Hours = 2m, Date = "2026-10-29", TimeCodeId = "tc-2", Description = "Dentist" },
             new() { Action = "create", Date = "2026-10-27", Hours = 2m, TaskId = "t-1" }]);
         _pi.FailWrite = (op, _) => op == "create" ? "nope" : null;
 
@@ -515,8 +518,32 @@ public sealed class TimeChangeCommitterTests : IDisposable
 
         Assert.Equal([RowOutcome.Reversed, RowOutcome.Rejected], result.Rows.Select(r => r.Outcome));
         Assert.Equal(["update_pto:pto-1", "update_pto:pto-1"], _pi.Writes);
-        Assert.Equal(4m, _pi.Pto.Single().Hours);
+        Assert.Equal(
+        [
+            ("update_pto:pto-1", new PtoWrite("u-1", thu, 2m, "tc-2", "Dentist")),
+            ("update_pto:pto-1", new PtoWrite("u-1", TimeChangePlannerTests.Wed, 4m, "tc-1", "Trip"))
+        ], _pi.PtoWrites);
+        var pto = _pi.Pto.Single(p => p.Id == "pto-1");
+        Assert.Equal((TimeChangePlannerTests.Wed, 4m, "tc-1", "Trip"), (pto.Date, pto.Hours, pto.TimeCodeId, pto.Description));
         Assert.Equal(4m, Entry("te-pto-pto-1")!.Hours);
+    }
+
+    [Fact]
+    public async Task Update_pto_clearing_the_description_sends_no_description_and_the_reverse_restores_it()
+    {
+        AddWedPto();
+        _pi.Pto[0] = _pi.Pto[0] with { Description = "Trip" };
+        var (draft, _) = await Plan([new() { Action = "update_pto", PtoEntryId = "pto-1", Description = "" },
+            new() { Action = "create", Date = "2026-10-27", Hours = 2m, TaskId = "t-1" }]);
+        _pi.FailWrite = (op, _) => op == "create" ? "nope" : null;
+
+        await Commit(draft.Id);
+
+        Assert.Equal(
+        [
+            ("update_pto:pto-1", new PtoWrite("u-1", TimeChangePlannerTests.Wed, 4m, "tc-1", null)),
+            ("update_pto:pto-1", new PtoWrite("u-1", TimeChangePlannerTests.Wed, 4m, "tc-1", "Trip"))
+        ], _pi.PtoWrites);
     }
 
     [Fact]
@@ -558,6 +585,28 @@ public sealed class TimeChangeCommitterTests : IDisposable
         var (draft, _) = await Plan([new() { Action = "delete_pto", PtoEntryId = "pto-1" }]);
         Assert.Null(draft.Rows[0].PtoApproved); // planned without the approval warning
         _pi.Pto[0] = _pi.Pto[0] with { Approved = true };
+
+        var result = await Commit(draft.Id);
+
+        Assert.Equal(DraftStatus.Stale, result.Status);
+        Assert.Empty(_pi.Writes);
+    }
+
+    [Theory]
+    [InlineData("code")]
+    [InlineData("description")]
+    [InlineData("hours")]
+    public async Task Stale_when_only_the_pto_record_changes_on_affected_day(string field)
+    {
+        // The linked entry is left as it was: only the PTO record itself changed in PI.
+        _pi.AddPto("pto-1", "u-1", TimeChangePlannerTests.Wed, 2m);
+        var (draft, _) = await Plan([new() { Action = "create", Date = "2026-10-28", Hours = 1m, TaskId = "t-1" }]);
+        _pi.Pto[0] = field switch
+        {
+            "code" => _pi.Pto[0] with { TimeCodeId = "tc-2", TimeCodeName = "Floating" },
+            "description" => _pi.Pto[0] with { Description = "Dentist" },
+            _ => _pi.Pto[0] with { Hours = 3m }
+        };
 
         var result = await Commit(draft.Id);
 
