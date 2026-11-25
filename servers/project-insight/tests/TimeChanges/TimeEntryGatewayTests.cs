@@ -260,6 +260,64 @@ public class TimeEntryGatewayTests
         Assert.False(body.TryGetProperty("Id", out _));
     }
 
+    private static async Task InCulture(string name, Func<Task> body)
+    {
+        var saved = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo(name);
+            await body();
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = saved;
+        }
+    }
+
+    [Theory]
+    [InlineData("de-DE")] // "." date separator, "," decimal separator
+    [InlineData("th-TH")] // Buddhist calendar: 2026 is 2569
+    public async Task Pto_and_time_entry_writes_send_the_same_dates_and_hours_whatever_the_servers_culture(string culture)
+    {
+        var (gw, pi) = Create(
+            Json(HttpStatusCode.OK, """{"SavedId":"pto-new","Success":true}"""),
+            Json(HttpStatusCode.OK, """{"SavedId":"te-new","Success":true}"""));
+
+        await InCulture(culture, async () =>
+        {
+            await gw.CreatePtoAsync(new PtoWrite("u-1", new DateOnly(2026, 11, 2), 7.5m, "tc-1", null), default);
+            await gw.CreateEntryAsync(new EntryWrite("u-1", "t-1", new DateOnly(2026, 11, 2), 1.25m, false, null, null), default);
+        });
+
+        var pto = JsonDocument.Parse(pi.Requests[0].Body).RootElement;
+        Assert.Equal("11/2/2026", pto.GetProperty("Date").GetString());
+        Assert.Equal(7.5m, pto.GetProperty("PTOHours").GetDecimal());
+        var entry = JsonDocument.Parse(pi.Requests[1].Body).RootElement;
+        Assert.StartsWith("2026-11-02", entry.GetProperty("Date").GetString());
+        Assert.Equal(1.25m, entry.GetProperty("ActualHours").GetDecimal());
+    }
+
+    [Theory]
+    [InlineData("de-DE")]
+    [InlineData("th-TH")]
+    public async Task Time_entry_and_timesheet_searches_send_gregorian_dates_whatever_the_servers_culture(string culture)
+    {
+        var (gw, pi) = Create(Json(HttpStatusCode.OK, "[]"), Json(HttpStatusCode.OK, "[]"));
+
+        await InCulture(culture, async () =>
+        {
+            await gw.SearchEntriesAsync("u-1", new DateOnly(2026, 10, 26), new DateOnly(2026, 11, 1), default);
+            await gw.SearchTimeSheetsAsync("u-1", new DateOnly(2026, 10, 26), new DateOnly(2026, 11, 1), default);
+        });
+
+        Assert.All(pi.Requests, r =>
+        {
+            var url = Uri.UnescapeDataString(r.Uri.PathAndQuery);
+            Assert.Contains("startDate=2026-10-26", url);
+            Assert.Contains("endDate=2026-11-01", url);
+        });
+    }
+
     [Fact]
     public async Task UpdatePto_posts_id_and_clears_a_null_description()
     {
