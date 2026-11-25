@@ -61,6 +61,19 @@ A **Model Context Protocol (MCP)** server for integrating with the **Project Ins
 |------|-------------|--------|
 | `get_project_time_entries` | Get time entries for a project with date/user/task filters | ✅ Working |
 
+### Time Change Drafts (time entries and PTO)
+Draft changes for review on a card, confirm, and undo within 24 hours. Nothing in Project Insight changes until a draft is committed.
+
+| Tool | Description |
+|------|-------------|
+| `plan_time_changes` | Draft up to 100 changes: `create` / `update` / `delete` for time entries, `create_pto` / `update_pto` / `delete_pto` for PTO (by time code name or `timeCodeId`; `list_user_pto` lists the ids) |
+| `commit_time_changes` | Apply a draft, after checking nothing changed in Project Insight since it was made; rolls back on the first failure |
+| `cancel_time_changes` | Cancel a draft |
+| `undo_time_changes` | Draft the reverse of a committed draft, within 24 hours |
+| `get_time_changes` | Show a draft or receipt and its status |
+
+See [PTO through time-change drafts](../../docs/PTO.md) for how PTO behaves in Project Insight.
+
 ### User Tools
 | Tool | Description | Status |
 |------|-------------|--------|

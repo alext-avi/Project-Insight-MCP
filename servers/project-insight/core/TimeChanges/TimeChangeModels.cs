@@ -81,10 +81,10 @@ public sealed class ChangeInput
     [Description("update/delete: the time entry id (GUID).")]
     public string? TimeEntryId { get; set; }
 
-    [Description("create: required. update: new date. Format yyyy-MM-dd.")]
+    [Description("create/create_pto: required. update/update_pto: new date. Format yyyy-MM-dd.")]
     public string? Date { get; set; }
 
-    [Description("create: required. update: new hours. Use 0.25 increments.")]
+    [Description("create/create_pto: required. update/update_pto: new hours. Use 0.25 increments.")]
     public decimal? Hours { get; set; }
 
     [Description("Task id (GUID). Or give project and task names instead.")]
@@ -108,7 +108,7 @@ public sealed class ChangeInput
     [Description("update_pto/delete_pto: the PTO entry id (not the time entry id it creates).")]
     public string? PtoEntryId { get; set; }
 
-    [Description("PTO only: the time code name, such as PTO. An exact name wins, else a unique partial match. Or give timeCodeId.")]
+    [Description("PTO only: the time code name, such as PTO. An exact name wins, else a unique partial match; among several, the only active one. Or give timeCodeId.")]
     public string? TimeCode { get; set; }
 
     [Description("PTO only: the time code id. Use instead of timeCode when known.")]

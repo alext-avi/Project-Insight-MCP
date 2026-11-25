@@ -1098,7 +1098,7 @@
   },
   {
     "name": "list_user_pto",
-    "description": "List all PTO (Paid Time Off) entries for a user. Returns the complete PTO history including both usage entries (time off taken, PTOHours set) and balance entries (accruals, PTOAdded set). Also returns the available PTO time codes (categories like Vacation, Personal Day, etc.) with their IDs and names \u2014 use these IDs when creating new PTO entries. NOTE: The API returns ALL entries with no server-side date filtering \u2014 use startDate/endDate to filter client-side. Each usage entry has a TimeEntry_Id linking to its auto-generated time entry.",
+    "description": "List all PTO (Paid Time Off) entries for a user. Returns the complete PTO history including both usage entries (time off taken, PTOHours set) and balance entries (accruals, PTOAdded set). Also returns the available PTO time codes (categories like Vacation, Personal Day, etc.) with their IDs and names \u2014 use these IDs as timeCodeId in a plan_time_changes create_pto change (or with create_pto_entry). NOTE: The API returns ALL entries with no server-side date filtering \u2014 use startDate/endDate to filter client-side. Each usage entry has a TimeEntry_Id linking to its auto-generated time entry.",
     "inputSchema": {
       "type": "object",
       "properties": {

@@ -27,14 +27,14 @@
                 ]
               },
               "date": {
-                "description": "create: required. update: new date. Format yyyy-MM-dd.",
+                "description": "create/create_pto: required. update/update_pto: new date. Format yyyy-MM-dd.",
                 "type": [
                   "string",
                   "null"
                 ]
               },
               "hours": {
-                "description": "create: required. update: new hours. Use 0.25 increments.",
+                "description": "create/create_pto: required. update/update_pto: new hours. Use 0.25 increments.",
                 "type": [
                   "number",
                   "null"
@@ -90,7 +90,7 @@
                 ]
               },
               "timeCode": {
-                "description": "PTO only: the time code name, such as PTO. An exact name wins, else a unique partial match. Or give timeCodeId.",
+                "description": "PTO only: the time code name, such as PTO. An exact name wins, else a unique partial match; among several, the only active one. Or give timeCodeId.",
                 "type": [
                   "string",
                   "null"

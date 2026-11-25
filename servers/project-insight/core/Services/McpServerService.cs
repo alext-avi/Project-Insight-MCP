@@ -3178,7 +3178,7 @@ public class McpServerService
         }
         if (availableTimeCodes.Any())
         {
-            summaryLines.Add("Available PTO time codes (use these IDs for create_pto_entry):");
+            summaryLines.Add("Available PTO time codes (use these IDs as timeCodeId in a plan_time_changes create_pto change, or with create_pto_entry):");
             summaryLines.AddRange(availableTimeCodes.Select(tc => $"  {tc.Name}: {tc.Id}"));
         }
 
@@ -4444,7 +4444,7 @@ public class McpServerService
             new()
             {
                 Name = "list_user_pto",
-                Description = "List all PTO (Paid Time Off) entries for a user. Returns the complete PTO history including both usage entries (time off taken, PTOHours set) and balance entries (accruals, PTOAdded set). Also returns the available PTO time codes (categories like Vacation, Personal Day, etc.) with their IDs and names — use these IDs when creating new PTO entries. NOTE: The API returns ALL entries with no server-side date filtering — use startDate/endDate to filter client-side. Each usage entry has a TimeEntry_Id linking to its auto-generated time entry.",
+                Description = "List all PTO (Paid Time Off) entries for a user. Returns the complete PTO history including both usage entries (time off taken, PTOHours set) and balance entries (accruals, PTOAdded set). Also returns the available PTO time codes (categories like Vacation, Personal Day, etc.) with their IDs and names — use these IDs as timeCodeId in a plan_time_changes create_pto change (or with create_pto_entry). NOTE: The API returns ALL entries with no server-side date filtering — use startDate/endDate to filter client-side. Each usage entry has a TimeEntry_Id linking to its auto-generated time entry.",
                 InputSchema = new
                 {
                     type = "object",

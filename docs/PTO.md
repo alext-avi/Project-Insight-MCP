@@ -11,7 +11,7 @@ created, updated, moved and deleted, and both affected days were left empty.
 
 | # | Question | Finding |
 |---|---|---|
-| 1 | What does the linked time entry look like? | Non-billable, with the PTO's hours, date and description, and **no task and no project** (`Task_Id` and `Project_Id` absent/null). The draft flow treats a time entry with no task as PTO-linked. |
+| 1 | What does the linked time entry look like? | Non-billable, with the PTO's hours, date and description, and **no task and no project** (`Task_Id` and `Project_Id` absent/null). The draft flow treats a time entry with no task and no project as PTO-linked. |
 | 2 | What id does a PTO save return? | `savedId` is the **PTO record's id**, not the time entry's. Reading the PTO back gives its `TimeEntry_Id`. |
 | 3 | Does updating a PTO update its linked entry? | **Yes.** Changing hours, and moving the date, both update the same linked time entry in place, and its id doesn't change. No extra write is needed. |
 | 4 | Does deleting a PTO delete its linked entry? | **Yes.** After `DELETE /api/user-pto/pto-calendar/{id}`, the linked time entry is gone. The committer relies on this and never touches the linked entry itself: straight after the PTO delete, a day search can still list the linked entry and a GET or DELETE of it returns HTTP 500, so a defensive cleanup would race PI. |
