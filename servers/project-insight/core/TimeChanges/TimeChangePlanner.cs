@@ -519,10 +519,14 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                 var here = rows.Where(r => r.UserId == w.User.Id && (r.Before?.Date == date || r.After?.Date == date)).ToList();
                 var before = existing.Sum(e => e.Hours);
                 // Where a PTO's linked entry no longer matches its record, keep what the day counted, so the draft's
-                // net hours and the card's row delta agree with the day totals.
+                // net hours and the card's row delta agree with the day totals. An entry PI's search didn't list was
+                // counted as nothing (0).
                 foreach (var r in here.Where(r => r.Kind == RowKind.Pto && r.Before?.Date == date))
-                    if (existing.FirstOrDefault(e => TimeChangeResolver.SameId(e.Id, r.LinkedTimeEntryId)) is { } linked && linked.Hours != r.Before!.Hours)
-                        r.CountedBeforeHours = linked.Hours;
+                {
+                    var counted = existing.FirstOrDefault(e => TimeChangeResolver.SameId(e.Id, r.LinkedTimeEntryId))?.Hours ?? 0m;
+                    if (counted != r.Before!.Hours)
+                        r.CountedBeforeHours = counted;
+                }
                 // A PTO's hours are in the day's total through its linked entry, so a PTO change takes off what that
                 // entry counted, which can differ from the PTO record's hours if the entry was edited in PI. PI's
                 // search can lag behind that entry, and then there is nothing to take away.

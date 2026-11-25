@@ -1125,6 +1125,10 @@ public sealed class TimeChangePlannerTests : IDisposable
         var draft = (await PlanPto(new() { Action = "delete_pto", PtoEntryId = "pto-1" })).Draft!;
 
         Assert.Equal((2.5m, 2.5m), (Day(draft, Tue).TotalBefore, Day(draft, Tue).TotalAfter));
+        // The draft's net hours agree with the day: nothing counted, nothing taken off.
+        Assert.Equal(0m, draft.Rows[0].CountedBeforeHours);
+        Assert.Equal((0m, 0m), (draft.Totals.NetHours, draft.Totals.NonBillableDelta));
+        Assert.Equal(-4m, draft.Totals.PtoDelta);
     }
 
     [Theory]
@@ -1213,6 +1217,8 @@ public sealed class TimeChangePlannerTests : IDisposable
         var draft = (await PlanPto(new() { Action = "update_pto", PtoEntryId = "pto-1", Hours = 3m })).Draft!;
 
         Assert.Equal((2.5m, 5.5m), (Day(draft, Tue).TotalBefore, Day(draft, Tue).TotalAfter));
+        Assert.Equal(0m, draft.Rows[0].CountedBeforeHours);
+        Assert.Equal(3m, draft.Totals.NetHours);
     }
 
     [Fact]

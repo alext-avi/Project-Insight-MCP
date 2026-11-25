@@ -170,7 +170,8 @@ public sealed class DraftRow
     public bool? PtoApproved { get; set; }
     /// <summary>
     /// PTO update/delete rows: the hours the day total counted for this row's before, its linked entry's, when they
-    /// differ from the PTO record's (the entry was edited in PI). Null when they're the same or the entry wasn't loaded.
+    /// differ from the PTO record's (the entry was edited in PI), or 0 when PI's search didn't list the entry. Null when
+    /// they're the same.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public decimal? CountedBeforeHours { get; set; }

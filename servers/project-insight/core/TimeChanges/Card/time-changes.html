@@ -504,7 +504,8 @@
     const from = adding ? "—" : hrs(r.before.hours);
     const to = removing ? "—" : hrs(r.after.hours);
     // What the day counted for this row's before: a PTO whose linked entry was edited in PI counted that entry's hours.
-    const counted = r.countedBeforeHours != null ? r.countedBeforeHours : (r.before ? r.before.hours : 0);
+    // 0 means PI's search didn't list the entry; the PTO's own hours are still what the row removes in PI, so show those.
+    const counted = r.countedBeforeHours ? r.countedBeforeHours : (r.before ? r.before.hours : 0);
     const diff = (removing ? 0 : r.after.hours) - (adding ? 0 : counted);
     const task = el("span", "task",
       pto ? null : swatch(v.projectColor), el("span", "label", pto ? ptoLabel(v.timeCodeName) : v.projectName + " › " + v.taskName),

@@ -147,7 +147,8 @@ public class TimeChangeCardTests
     public void Card_row_delta_takes_off_the_hours_the_day_counted_for_the_row()
     {
         // A PTO whose linked entry was edited in PI counted that entry's hours in the day, not the PTO record's.
-        Assert.Contains("const counted = r.countedBeforeHours != null ? r.countedBeforeHours : (r.before ? r.before.hours : 0);", Html);
+        // 0 means PI's search didn't list the linked entry: the PTO's hours are still what the row removes in PI.
+        Assert.Contains("const counted = r.countedBeforeHours ? r.countedBeforeHours : (r.before ? r.before.hours : 0);", Html);
         Assert.Contains("const diff = (removing ? 0 : r.after.hours) - (adding ? 0 : counted);", Html);
     }
 
