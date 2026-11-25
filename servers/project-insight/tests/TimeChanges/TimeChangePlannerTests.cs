@@ -684,6 +684,63 @@ public sealed class TimeChangePlannerTests : IDisposable
         Assert.All(c.Candidates, x => Assert.Equal("PTO (inactive)", x.Name));
     }
 
+    [Theory]
+    [InlineData("create_pto")]
+    [InlineData("update_pto")]
+    public async Task A_time_code_name_and_id_naming_different_codes_is_refused(string action)
+    {
+        _pi.AddPto("pto-a", "u-1", new DateOnly(2026, 9, 1), 8m, "tc-1", "PTO");
+        _pi.AddPto("pto-b", "u-1", new DateOnly(2026, 9, 2), 8m, "tc-2", "Sick");
+
+        var ex = await Assert.ThrowsAsync<TimeChangeException>(() => PlanPto(action == "create_pto"
+            ? new() { Action = action, Date = "2026-10-29", Hours = 4m, TimeCode = "Sick", TimeCodeId = "tc-1" }
+            : new() { Action = action, PtoEntryId = "pto-b", TimeCode = "Sick", TimeCodeId = "tc-1" }));
+
+        Assert.Equal("invalid_change", ex.Code);
+        Assert.Contains("Change 1", ex.Message);
+        Assert.Contains("tc-1", ex.Message);
+        Assert.Contains("Sick", ex.Message);
+    }
+
+    [Fact]
+    public async Task A_time_code_name_and_id_that_agree_are_accepted()
+    {
+        _pi.AddPto("pto-a", "u-1", new DateOnly(2026, 9, 1), 8m, "tc-1", "PTO");
+        _pi.AddPto("pto-b", "u-1", new DateOnly(2026, 9, 2), 8m, "tc-2", "Floating Holiday");
+        _pi.AddPto("pto-c", "u-1", new DateOnly(2026, 9, 3), 8m, "tc-3", "Floating Holiday 2025");
+        _pi.AddPto("pto-d", "u-1", new DateOnly(2026, 9, 4), 8m, "tc-4", "PTO");
+
+        async Task<string> Code(string name, string id)
+            => (await PlanPto(new() { Action = "create_pto", Date = "2026-10-29", Hours = 4m, TimeCode = name, TimeCodeId = id })).Draft!.Rows[0].After!.TimeCodeId!;
+
+        Assert.Equal("tc-1", await Code("pto", "TC-1"));     // exact name, any case
+        Assert.Equal("tc-4", await Code("PTO", "tc-4"));     // the id picks between codes with the same name
+        Assert.Equal("tc-3", await Code("float", "tc-3"));   // a partial name the id's code has
+    }
+
+    [Fact]
+    public async Task A_time_code_name_that_exactly_names_another_code_disagrees_with_an_id_it_only_partly_matches()
+    {
+        _pi.AddPto("pto-a", "u-1", new DateOnly(2026, 9, 1), 8m, "tc-1", "PTO");
+        _pi.AddPto("pto-b", "u-1", new DateOnly(2026, 9, 2), 8m, "tc-2", "PTO Rollover");
+
+        var ex = await Assert.ThrowsAsync<TimeChangeException>(() =>
+            PlanPto(new() { Action = "create_pto", Date = "2026-10-29", Hours = 4m, TimeCode = "PTO", TimeCodeId = "tc-2" }));
+
+        Assert.Equal("invalid_change", ex.Code);
+    }
+
+    [Fact]
+    public async Task A_time_code_name_with_an_unknown_id_keeps_the_id_and_warns()
+    {
+        _pi.AddPto("pto-a", "u-1", new DateOnly(2026, 9, 1), 8m, "tc-1", "PTO");
+
+        var row = (await PlanPto(new() { Action = "create_pto", Date = "2026-10-29", Hours = 4m, TimeCode = "Sick", TimeCodeId = "tc-9" })).Draft!.Rows[0];
+
+        Assert.Equal("tc-9", row.After!.TimeCodeId);
+        Assert.Single(row.Warnings, w => w.Code == WarningCode.UnknownTimeCode);
+    }
+
     [Fact]
     public async Task An_inactive_time_code_matched_by_exact_name_warns()
     {

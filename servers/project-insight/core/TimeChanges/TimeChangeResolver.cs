@@ -145,7 +145,13 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
             var id = timeCodeId.Trim();
             // PI's ids are GUIDs, which an agent may give in either case; keep PI's own spelling.
             if (known.FirstOrDefault(c => SameId(c.Id, id)) is { } byId)
+            {
+                if (!string.IsNullOrWhiteSpace(timeCode) && !NameFits(known, byId, timeCode.Trim()))
+                    throw new TimeChangeException("invalid_change",
+                        $"Change {index + 1}: timeCode \"{timeCode.Trim()}\" and timeCodeId {byId.Id} (\"{byId.Name.Trim()}\") name different " +
+                        "time codes. Give the one you mean, or just the timeCodeId.");
                 return new(byId, null);
+            }
             if (restored is not null && SameId(restored.Id, id))
                 return new(restored, null);
             return new(new PiTimeCode(id, id), null, Unknown: true);
@@ -170,6 +176,17 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
                 ? $"{matches.Count} PTO time codes are named \"{matches[0].Name.Trim()}\". Use the timeCodeId of the one you mean."
                 : $"{matches.Count} PTO time codes match \"{query}\". Use the exact name or a timeCodeId.",
             CodeCandidates(matches)));
+    }
+
+    /// <summary>
+    /// Whether a time code name, given alongside an id, could mean that id's code. As name resolution: when some code
+    /// has the name exactly (ignoring case) the id's code must be one of those; otherwise its name must contain it. The
+    /// id settles which of several codes a name fits, so the match needn't be unique.
+    /// </summary>
+    private static bool NameFits(IReadOnlyList<PiTimeCode> known, PiTimeCode code, string query)
+    {
+        static bool Exact(PiTimeCode c, string q) => string.Equals(c.Name.Trim(), q, StringComparison.OrdinalIgnoreCase);
+        return known.Any(c => Exact(c, query)) ? Exact(code, query) : code.Name.Contains(query, StringComparison.OrdinalIgnoreCase);
     }
 
     private static IEnumerable<Candidate> CodeCandidates(IEnumerable<PiTimeCode> codes)
