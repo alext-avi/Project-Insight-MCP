@@ -633,6 +633,37 @@ public sealed class TimeChangePlannerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_time_code_id_matches_whatever_its_case()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m, "tc-1", "PTO");
+
+        var row = (await PlanPto(new() { Action = "create_pto", Date = "2026-10-29", Hours = 3m, TimeCodeId = "TC-1" })).Draft!.Rows[0];
+
+        Assert.Equal(("tc-1", "PTO"), (row.After!.TimeCodeId, row.After.TimeCodeName));
+        Assert.DoesNotContain(row.Warnings, w => w.Code == WarningCode.UnknownTimeCode);
+    }
+
+    [Fact]
+    public async Task An_update_pto_giving_the_same_time_code_id_in_another_case_changes_nothing()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m, "tc-1", "PTO");
+
+        var ex = await Assert.ThrowsAsync<TimeChangeException>(() => PlanPto(new() { Action = "update_pto", PtoEntryId = "pto-1", TimeCodeId = "TC-1" }));
+
+        Assert.Contains("changes nothing", ex.Message);
+    }
+
+    [Fact]
+    public async Task A_create_pto_duplicating_a_pto_by_a_differently_cased_code_id_warns()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m, "tc-1", "PTO");
+
+        var row = (await PlanPto(new() { Action = "create_pto", Date = "2026-10-28", Hours = 2m, TimeCodeId = "TC-1" })).Draft!.Rows[0];
+
+        Assert.Contains(row.Warnings, w => w.Code == WarningCode.LikelyDuplicate);
+    }
+
+    [Fact]
     public async Task A_failed_pto_list_surfaces_as_pi_unavailable()
     {
         _pi.PtoListThrows = true;

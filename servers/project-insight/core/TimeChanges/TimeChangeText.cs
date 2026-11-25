@@ -123,7 +123,7 @@ public static class TimeChangeText
             if (b.Date != a.Date) line.Append($"; moved from {Weeks.ShortDate(b.Date, today)}");
             if (pto)
             {
-                if (b.TimeCodeId != a.TimeCodeId) line.Append($"; was PTO · {b.TimeCodeName ?? "time off"}");
+                if (!TimeChangeResolver.SameId(b.TimeCodeId, a.TimeCodeId)) line.Append($"; was PTO · {b.TimeCodeName ?? "time off"}");
             }
             else if (b.TaskId != a.TaskId) line.Append($"; was {b.ProjectName} › {b.TaskName}");
         }

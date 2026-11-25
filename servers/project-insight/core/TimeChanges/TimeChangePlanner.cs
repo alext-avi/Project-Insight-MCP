@@ -331,7 +331,7 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             after.TimeCodeName = code.Value.Name;
             if (code.Unknown) unknownCode = code.Value.Id;
         }
-        if (after.Date == before.Date && after.Hours == before.Hours && after.TimeCodeId == before.TimeCodeId &&
+        if (after.Date == before.Date && after.Hours == before.Hours && TimeChangeResolver.SameId(after.TimeCodeId, before.TimeCodeId) &&
             (after.Description ?? "") == (before.Description ?? ""))
         {
             if (isUndo)
@@ -580,9 +580,9 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
     {
         var a = row.After!;
         var deleted = rows.Where(r => r.Action == ChangeAction.DeletePto).Select(r => r.PtoEntryId).ToHashSet();
-        return week.Pto.Any(p => p.Date == a.Date && p.TimeCodeId == a.TimeCodeId && !deleted.Contains(p.Id)) ||
+        return week.Pto.Any(p => p.Date == a.Date && TimeChangeResolver.SameId(p.TimeCodeId, a.TimeCodeId) && !deleted.Contains(p.Id)) ||
                rows.Any(r => r.Index < row.Index && r.Action == ChangeAction.CreatePto && r.UserId == row.UserId &&
-                             r.After!.Date == a.Date && r.After.TimeCodeId == a.TimeCodeId);
+                             r.After!.Date == a.Date && TimeChangeResolver.SameId(r.After.TimeCodeId, a.TimeCodeId));
     }
 
     private static bool IsLikelyDuplicateTime(DraftRow row, List<DraftRow> rows, IReadOnlyList<PiEntry> weekEntries)

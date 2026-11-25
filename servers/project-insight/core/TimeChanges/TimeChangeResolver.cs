@@ -138,9 +138,10 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
         if (!string.IsNullOrWhiteSpace(timeCodeId))
         {
             var id = timeCodeId.Trim();
-            if (known.FirstOrDefault(c => c.Id == id) is { } byId)
+            // PI's ids are GUIDs, which an agent may give in either case; keep PI's own spelling.
+            if (known.FirstOrDefault(c => SameId(c.Id, id)) is { } byId)
                 return new(byId, null);
-            if (restored is not null && restored.Id == id)
+            if (restored is not null && SameId(restored.Id, id))
                 return new(restored, null);
             return new(new PiTimeCode(id, id), null, Unknown: true);
         }
@@ -161,6 +162,9 @@ public sealed class TimeChangeResolver(ITimeEntryGateway pi)
                 : $"{partial.Count} PTO time codes match \"{query}\". Use the exact name or a timeCodeId.",
             candidates));
     }
+
+    /// <summary>Whether two PI ids (GUIDs) are the same, ignoring case.</summary>
+    public static bool SameId(string? a, string? b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
     private static Clarification Clarify(int index, string field, string query, string message, IEnumerable<Candidate>? candidates = null)
         => new() { ChangeIndex = index, Field = field, Query = query, Message = message, Candidates = candidates?.ToList() ?? new() };
