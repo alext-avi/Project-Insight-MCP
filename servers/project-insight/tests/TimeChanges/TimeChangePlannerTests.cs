@@ -902,6 +902,29 @@ public sealed class TimeChangePlannerTests : IDisposable
     }
 
     [Fact]
+    public async Task Deleting_a_pto_whose_linked_entry_the_day_search_missed_leaves_the_day_total_alone()
+    {
+        // PI's search can lag behind a PTO's linked entry, so its hours were never in the day's total.
+        _pi.AddPto("pto-1", "u-1", Tue, 4m);
+        _pi.Entries.RemoveAll(e => e.Id == "te-pto-pto-1");
+
+        var draft = (await PlanPto(new() { Action = "delete_pto", PtoEntryId = "pto-1" })).Draft!;
+
+        Assert.Equal((2.5m, 2.5m), (Day(draft, Tue).TotalBefore, Day(draft, Tue).TotalAfter));
+    }
+
+    [Fact]
+    public async Task Updating_a_pto_whose_linked_entry_the_day_search_missed_adds_only_the_new_hours()
+    {
+        _pi.AddPto("pto-1", "u-1", Tue, 4m);
+        _pi.Entries.RemoveAll(e => e.Id == "te-pto-pto-1");
+
+        var draft = (await PlanPto(new() { Action = "update_pto", PtoEntryId = "pto-1", Hours = 3m })).Draft!;
+
+        Assert.Equal((2.5m, 5.5m), (Day(draft, Tue).TotalBefore, Day(draft, Tue).TotalAfter));
+    }
+
+    [Fact]
     public async Task Update_pto_into_next_period_shows_both_weeks()
     {
         _pi.AddPto("pto-1", "u-1", Wed, 4m);

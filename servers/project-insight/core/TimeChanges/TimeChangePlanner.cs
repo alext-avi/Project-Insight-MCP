@@ -458,8 +458,12 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
                 var existing = w.Entries.Where(e => e.Date == date).ToList();
                 var here = rows.Where(r => r.UserId == w.User.Id && (r.Before?.Date == date || r.After?.Date == date)).ToList();
                 var before = existing.Sum(e => e.Hours);
+                // A PTO's hours are in the day's total through its linked entry. PI's search can lag behind that
+                // entry, and then there is nothing to take away.
                 var after = before
-                    - here.Where(r => r.Before?.Date == date).Sum(r => r.Before!.Hours)
+                    - here.Where(r => r.Before?.Date == date && (r.Kind != RowKind.Pto ||
+                                      existing.Any(e => string.Equals(e.Id, r.LinkedTimeEntryId, StringComparison.OrdinalIgnoreCase))))
+                        .Sum(r => r.Before!.Hours)
                     + here.Where(r => r.After?.Date == date).Sum(r => r.After!.Hours);
                 var weekend = date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
                 if (here.Count == 0 && weekend && before == 0)
