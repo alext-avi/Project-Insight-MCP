@@ -1164,6 +1164,35 @@ public sealed class TimeChangePlannerTests : IDisposable
         Assert.Equal(action == "delete_pto" ? -4m : -1m, draft.Totals.PtoDelta); // PTO change stays the record's
     }
 
+    [Theory]
+    [InlineData("update_pto", "The linked time entry has 8h but the PTO says 4h; Project Insight will set the entry to the PTO's new hours, and undo restores 4h, not 8h")]
+    [InlineData("delete_pto", "The linked time entry has 8h but the PTO says 4h; undo recreates the PTO with 4h, not 8h")]
+    public async Task A_pto_change_whose_linked_entry_was_edited_warns_what_commit_and_undo_will_do(string action, string message)
+    {
+        var pto = _pi.AddPto("pto-7", "u-1", Wed, 4m);
+        var i = _pi.Entries.FindIndex(e => e.Id == pto.TimeEntryId);
+        _pi.Entries[i] = _pi.Entries[i] with { Hours = 8m };
+
+        var draft = (await PlanPto(action == "delete_pto"
+            ? new() { Action = action, PtoEntryId = "pto-7" }
+            : new() { Action = action, PtoEntryId = "pto-7", Hours = 3m })).Draft!;
+
+        var w = Assert.Single(draft.Rows[0].Warnings, w => w.Code == WarningCode.LinkedEntryDiffers);
+        Assert.Equal(message, w.Message);
+    }
+
+    [Fact]
+    public async Task A_pto_change_whose_linked_entry_matches_or_was_not_listed_does_not_warn_about_it()
+    {
+        _pi.AddPto("pto-1", "u-1", Wed, 4m);
+        _pi.AddPto("pto-2", "u-1", Tue, 4m);
+        _pi.Entries.RemoveAll(e => e.Id == "te-pto-pto-2"); // PI's search lagging behind
+
+        var draft = (await PlanPto(new() { Action = "update_pto", PtoEntryId = "pto-1", Hours = 3m }, new() { Action = "delete_pto", PtoEntryId = "pto-2" })).Draft!;
+
+        Assert.All(draft.Rows, r => Assert.DoesNotContain(r.Warnings, w => w.Code == WarningCode.LinkedEntryDiffers));
+    }
+
     [Fact]
     public async Task A_pto_row_whose_linked_entry_matches_its_record_stores_no_counted_hours()
     {

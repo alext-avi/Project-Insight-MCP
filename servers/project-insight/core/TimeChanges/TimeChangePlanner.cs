@@ -615,6 +615,19 @@ public sealed class TimeChangePlanner(ITimeEntryGateway pi, IDraftStore store, T
             }
             if (WeekHoursOver40(draft.Weeks.First(v => v.UserId == row.UserId && v.Start == week.Start), date) is { } weekHours)
                 Warn(row, WarningCode.Over40HoursWeek, $"Week goes over 40h ({Weeks.FormatHours(weekHours)}h)");
+            // A linked entry edited in PI's grid no longer matches its PTO. Commit and undo only write the PTO, so the
+            // entry ends up at the PTO's hours, never back at the edited ones. (An entry PI's search didn't list is unknown.)
+            if (row.Kind == RowKind.Pto && row.Before is { } was &&
+                weeks.First(w => w.Contains(row.UserId, was.Date)).Entries
+                    .FirstOrDefault(e => e.Date == was.Date && TimeChangeResolver.SameId(e.Id, row.LinkedTimeEntryId)) is { } linked &&
+                linked.Hours != was.Hours)
+            {
+                var (entryHours, ptoHours) = (Weeks.FormatHours(linked.Hours), Weeks.FormatHours(was.Hours));
+                Warn(row, WarningCode.LinkedEntryDiffers, $"The linked time entry has {entryHours}h but the PTO says {ptoHours}h; " +
+                    (row.Action == ChangeAction.DeletePto
+                        ? $"undo recreates the PTO with {ptoHours}h, not {entryHours}h"
+                        : $"Project Insight will set the entry to the PTO's new hours, and undo restores {ptoHours}h, not {entryHours}h"));
+            }
             if (row.PtoApproved == true)
                 Warn(row, WarningCode.PtoApproved,
                     "This PTO was already approved. PI may refuse the change or clear the approval. Undoing a delete recreates the PTO unapproved.");

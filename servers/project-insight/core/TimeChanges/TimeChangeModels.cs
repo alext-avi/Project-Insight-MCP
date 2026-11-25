@@ -72,6 +72,8 @@ public static class WarningCode
     public const string InactiveTimeCode = "inactive_time_code";
     /// <summary>A rollback or undo recreates a PTO that was approved. PI recreates it unapproved, so it needs approving again.</summary>
     public const string PtoRecreatedUnapproved = "pto_recreated_unapproved";
+    /// <summary>A PTO's linked time entry has other hours than the PTO (edited in PI); commit and undo go by the PTO's.</summary>
+    public const string LinkedEntryDiffers = "linked_entry_differs";
     /// <summary>The PTO being changed or deleted was already approved.</summary>
     public const string PtoApproved = "pto_approved";
 }
